@@ -534,10 +534,10 @@ void ShowAboutDialog(void)
 	MessageBox(g_hWinMain, "This is a program that simplifies communication between you and "
 					"your Digital Paint: Paintball 2 server. It's released under GPL, "
 					"the source code should come with the file. Also, you can find it here:\r\n"
-					"http://dplogin.com/forums/index.php?topic=26565.0\r\n"
+					"http://sourceforge.net/p/pb2rconpanel/code/\r\n"
 					"If there are any questions, feel free to ask me on the forums or "
 					"per mail to 'crkrichard@gmx.de'.\r\n\r\n"
-					"Copyright (C) 2013 'xRichardx'\r\n",
+					"Copyright (C) " YEAR " 'xRichardx'\r\n",
 					sTitle.c_str(),
 					MB_OK | MB_ICONINFORMATION);
 }
