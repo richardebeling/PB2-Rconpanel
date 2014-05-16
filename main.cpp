@@ -3300,7 +3300,7 @@ int LoadConfig() // loads the servers and settings from the config file
 	g_iMaxConsoleLineCount  = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "limitConsoleLineCount", std::to_string(DEFAULT_MAXCONSOLELINECOUNT).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_bLimitConsoleLineCount  = atoi(szReadBuffer);
+	g_bLimitConsoleLineCount  = (atoi(szReadBuffer)) ? true : false;
 	
 	GetPrivateProfileString("general", "colorPlayers", std::to_string(DEFAULT_COLORPLAYERS).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
 	g_bColorPlayers  = (atoi(szReadBuffer)) ? true : false;
@@ -3312,7 +3312,7 @@ int LoadConfig() // loads the servers and settings from the config file
 	g_iAutoReloadDelay  = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "runAutoReloadThread", std::to_string(DEFAULT_RUNAUTORELOADTHREAD).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_bRunAutoReloadThread  = atoi(szReadBuffer);
+	g_bRunAutoReloadThread  = (atoi(szReadBuffer)) ? true : false;
 	
 	if (g_bRunAutoReloadThread && WaitForSingleObject(g_hAutoReloadThread, 0) != WAIT_TIMEOUT)
 	{
@@ -3321,7 +3321,7 @@ int LoadConfig() // loads the servers and settings from the config file
 	}
 	
 	GetPrivateProfileString("bans", "runBanThread", std::to_string(DEFAULT_RUNBANTHREAD).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_bRunBanThread  = atoi(szReadBuffer);
+	g_bRunBanThread  = (atoi(szReadBuffer)) ? true : false;
 	if (g_bRunBanThread)
 	{
 		CheckMenuItem(GetMenu(g_hWinMain), IDM_BANS_ENABLE, MF_CHECKED);

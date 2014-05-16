@@ -149,8 +149,8 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 	{
 		FD_ZERO(&fdset);
 		FD_SET(hUdpSocket, &fdset);
-		tv.tv_sec = dTimeout;
-		tv.tv_usec = (fmod(dTimeout, 1))*1000000;
+		tv.tv_sec = static_cast<long>(dTimeout);
+		tv.tv_usec = static_cast<long>((fmod(dTimeout, 1))*1000000);
 
 		int iRetVal = select(FD_SETSIZE, &fdset, 0, 0, &tv);
 		if (iRetVal > 0)
