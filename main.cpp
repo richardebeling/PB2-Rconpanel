@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2013 Richard Ebeling
+	Copyright (C) 2014 Richard Ebeling
 
 	This file is part of "DP:PB2 Rconpanel".
 	"DP:PB2 Rconpanel" is free software: you can redistribute it and/or modify
@@ -74,14 +74,13 @@ std::vector <BAN> 	 g_vBannedPlayers (0);	//stores either ID or name of a banned
 SOCKET g_hUdpSocket         = 0;
 SOCKET g_hBanSocket         = 0;
 SOCKET g_hSendRconSocket    = 0;
-SOCKET g_hLoadServersSocket = 0;
 
 HANDLE g_hAutoReloadThread  = 0;
 HANDLE g_hBanThread         = 0;
 HANDLE g_hSendRconThread    = 0;
-HANDLE g_hLoadServersThread = 0;
 
 std::map <int, HANDLE> g_mRefreshThreads; //contains UID and ExitEvent for every reload thread
+std::map <int, HANDLE> g_mLoadServersThreads; //contains UID and ExitEvent for every reload thread
 
 int g_iDontWriteConfig      = 0;
 int g_iAutoReloadThreadTimeWaited;
@@ -107,14 +106,14 @@ HWND g_hWinMain, g_hComboServer, g_hListPlayers, g_hButtonKick, g_hButtonBanID, 
 	g_hButtonReload, g_hButtonDPLoginProfile, g_hButtonUtrace, g_hButtonForcejoin, g_hEditConsole,
 	g_hComboRcon, g_hButtonSend, g_hButtonJoin, g_hStaticServerInfo;
 
-HBRUSH g_ConsoleBackgroundBrush = (HBRUSH) CreateSolidBrush(RGB(255, 255, 255));
+const HBRUSH g_hConsoleBackgroundBrush = (HBRUSH) CreateSolidBrush(RGB(255, 255, 255));
 HFONT g_hFont, g_hConsoleFont;
 
-DWORD g_dwRed    = RGB(255, 100, 60);
-DWORD g_dwBlue   = RGB(100, 150, 255);
-DWORD g_dwPurple = RGB(225, 0,   225);
-DWORD g_dwYellow = RGB(240, 240, 0);
-DWORD g_dwWhite  = RGB(255, 255, 255);
+const DWORD g_dwRed    = RGB(255, 100, 60);
+const DWORD g_dwBlue   = RGB(100, 150, 255);
+const DWORD g_dwPurple = RGB(225, 0,   225);
+const DWORD g_dwYellow = RGB(240, 240, 0);
+const DWORD g_dwWhite  = RGB(255, 255, 255);
 
 
 //--------------------------------------------------------------------------------------------------
@@ -127,8 +126,6 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 	WNDCLASSEX wincl;
 	CHAR szClassName[ ] = "Rconpanel\0";
 	INITCOMMONCONTROLSEX icex;			//needed for list view control
-	HDC hdc;							//needed for font
-	long lfHeight;
 
 	WM_RELOADCONTENT =  RegisterWindowMessage("RCONPANEL_RELOADCONTENT");
 	if (!WM_RELOADCONTENT)
@@ -161,9 +158,14 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 		exit(-1);
 	}
 	
-	//{ Create Controls
+	int retVal = InitializeWinsock();
+	if (retVal != 0)
+	{
+		MessageBox(NULL, "Could not initialize winsock 2", NULL, MB_OK | MB_ICONERROR);
+		exit(-1);
+	}
+
 	DWORD dwBaseUnits = GetDialogBaseUnits();
-	
 	g_hWinMain = CreateWindowEx (0,
 						szClassName, "DP:PB2 Rconpanel\0",
 						WS_OVERLAPPEDWINDOW,
@@ -173,165 +175,10 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 						HWND_DESKTOP,
 						LoadMenu (hThisInstance, MAKEINTRESOURCE(IDM)),
 						hThisInstance, NULL);
-
-	HWND hStaticServer = CreateWindowEx(0, "STATIC\0", "Server: \0",
-						SS_SIMPLE | WS_CHILD | WS_VISIBLE,
-						MulDiv(3  , LOWORD(dwBaseUnits), 4), // Units to Pixel
-						MulDiv(4  , HIWORD(dwBaseUnits), 8),
-						MulDiv(30 , LOWORD(dwBaseUnits), 4),
-						MulDiv(8  , HIWORD(dwBaseUnits), 8),
-						g_hWinMain, NULL, NULL, NULL);
-
-	//The following controls will be resized when the window is shown and HandleResize is called.
-	g_hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX\0", "\0",
-						CBS_DROPDOWNLIST | CBS_SORT | WS_CHILD | WS_VISIBLE,
-						0, 0, 0, CW_USEDEFAULT,	//automatically adapt to content
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hStaticServerInfo = CreateWindowEx(0, WC_STATIC, "\0",
-						SS_LEFTNOWORDWRAP | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hListPlayers = CreateWindowEx(WS_EX_CLIENTEDGE | WS_EX_RIGHTSCROLLBAR, WC_LISTVIEW, "\0",
-						LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hButtonJoin = CreateWindowEx(0, WC_BUTTON, "&Join\0", WS_CHILD | WS_VISIBLE , 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hButtonReload = CreateWindowEx(0, WC_BUTTON, "&Reload\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hButtonKick = CreateWindowEx(0, WC_BUTTON, "&Kick\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hButtonBanID = CreateWindowEx(0, WC_BUTTON, "Ban I&D / Name\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hButtonBanIP = CreateWindowEx(0, WC_BUTTON, "Ban I&P\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "&DPLogin Profile\0", WS_CHILD | WS_VISIBLE,
-						0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hButtonUtrace = CreateWindowEx(0, WC_BUTTON, "&uTrace\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hButtonForcejoin = CreateWindowEx(0, WC_BUTTON, "&Forcejoin\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hComboRcon = CreateWindowEx(WS_EX_CLIENTEDGE, WC_COMBOBOX, "\0",
-						CBS_AUTOHSCROLL | CBS_SIMPLE | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hButtonSend = CreateWindowEx(0, WC_BUTTON, "&Send Rcon\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	g_hEditConsole = CreateWindowEx(WS_EX_CLIENTEDGE, WC_EDIT, "\0",
-						WS_VSCROLL | ES_AUTOVSCROLL | ES_MULTILINE | ES_READONLY | WS_CHILD | WS_VISIBLE,
-						0, 0, 0, 0,
-						g_hWinMain, NULL, NULL, NULL);
-
-	//}
-
-	hdc = GetDC(NULL);
-	lfHeight = -MulDiv(9, GetDeviceCaps(hdc, LOGPIXELSY), 72);
-	ReleaseDC(NULL, hdc);
-	g_hFont = CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "MS Shell Dlg\0");
-	g_hConsoleFont = CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "Courier New\0");
-
-	SendMessage(hStaticServer			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hStaticServerInfo 	, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hComboServer			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hListPlayers			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonJoin			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonKick			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonBanID			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonBanIP			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonReload			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonDPLoginProfile , WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonUtrace			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonForcejoin		, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hComboRcon			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonSend			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hEditConsole			, WM_SETFONT, WPARAM(g_hConsoleFont), true);
 	
-	SendMessage(g_hEditConsole			, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
-
-	LVCOLUMN lvc;
-	char szText[6]; //maximum: "Build\0"
-	lvc.mask = LVCF_TEXT | LVCF_SUBITEM | LVCF_FMT;
-	for (int i = 0; i <= 7; i++)
-	{
-		lvc.iSubItem = i;
-		lvc.pszText = szText;
-		lvc.fmt = LVCFMT_RIGHT;
-		switch (i)
-		{
-			case SUBITEM_NUMBER:
-				strcpy(szText, "Num\0");
-				break;
-			case SUBITEM_NAME:
-				strcpy(szText, "Name\0");
-				lvc.fmt = LVCFMT_LEFT;
-				break;
-			case SUBITEM_BUILD:
-				strcpy(szText, "Build\0");
-				break;
-			case SUBITEM_ID:
-				strcpy(szText, "ID\0");
-				break;
-			case SUBITEM_OP:
-				strcpy(szText, "OP\0");
-				break;
-			case SUBITEM_IP:
-				strcpy(szText, "IP\0");
-				lvc.fmt = LVCFMT_LEFT;
-				break;
-			case SUBITEM_PING:
-				strcpy(szText, "Ping\0");
-				break;
-			case SUBITEM_SCORE:
-				strcpy(szText, "Score\0");
-				break;
-		}
-		ListView_InsertColumn(g_hListPlayers, i, &lvc);
-	}
-	SendMessage(g_hListPlayers, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
-
-	int retVal = InitializeWinsock();
-	if (retVal != 0)
-	{
-		MessageBox(NULL, "Could not initialize winsock", NULL, MB_OK | MB_ICONERROR);
-		exit(-1);
-	}
-
-	MainWindowWriteConsole("DP:PB2 Rconpanel started, console initialized");
-	MainWindowWriteConsole("Loading configuration file...");
-
-	retVal = LoadConfig();
-	
-	if (retVal == -1)
-		MainWindowWriteConsole("No configuration file found, the program will save it's settings when you close it.");
-	else if (retVal == -2)
-		MainWindowWriteConsole("Error while reading bans from config file.");
-	else if (retVal == 1)
-		MainWindowWriteConsole("Success.");
-	else
-		MainWindowWriteConsole("!!! Unexpected error when loading the configuration file: " + std::to_string(retVal) + " !!!");
-
-	ShowWindow (g_hWinMain, nCmdShow);
-	
-	int * piKey;
-	HANDLE hThread;
-	
-	piKey = new int; //will be deleted as first operation in thread
-	*piKey = iGetFirstUnusedMapIntKey(&g_mRefreshThreads);
-	
-	g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
-	hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
-	CloseHandle(hThread);
+	ShowWindow(g_hWinMain, nCmdShow);
+						
+	//All other windows will be created in OnMainWindowCreate
 
 	while (GetMessage (&messages, NULL, 0, 0))
 	{
@@ -386,8 +233,8 @@ void ShowPlayerInfo(void)
 		std::string sPlayersite ("");
 		std::string sUrlBuffer = "http://www.dplogin.com/index.php?action=viewmember&playerid=";
 		sUrlBuffer.append(LvItem.pszText);
-		std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(MAJOR)
-							+ "." + std::to_string(MINOR) + "." + std::to_string(BUILD);
+		std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(AutoVersion::MAJOR)
+							+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 		HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 		HINTERNET hFile = InternetOpenUrl(hInternet, sUrlBuffer.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
 		char szBuffer[MTU] = {0};
@@ -471,8 +318,8 @@ void ShowPlayerInfo(void)
 		std::string sUtraceXml;
 		std::string sUrlBuffer = "http://xml.utrace.de/?query=";
 		sUrlBuffer.append(LvItem.pszText);
-		std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(MAJOR)
-							+ "." + std::to_string(MINOR) + "." + std::to_string(BUILD);
+		std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(AutoVersion::MAJOR)
+							+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 		HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 		HINTERNET hFile = InternetOpenUrl(hInternet, sUrlBuffer.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
 		char szBuffer[MTU] = {0};
@@ -528,16 +375,16 @@ void ShowPlayerInfo(void)
 
 void ShowAboutDialog(void)
 {
-	std::string sTitle = "About - DP:PB2 Rconpanel V" + std::to_string(MAJOR)
-						+ "." + std::to_string(MINOR) + "." + std::to_string(BUILD);
+	std::string sTitle = "About - DP:PB2 Rconpanel V" + std::to_string(AutoVersion::MAJOR)
+						+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 
-	MessageBox(g_hWinMain, "This is a program that simplifies communication between you and "
+	MessageBox(g_hWinMain, std::string("This is a program that simplifies communication between you and "
 					"your Digital Paint: Paintball 2 server. It's released under GPL, "
 					"the source code should come with the file. Also, you can find it here:\r\n"
 					"http://sourceforge.net/p/pb2rconpanel/code/\r\n"
 					"If there are any questions, feel free to ask me on the forums or "
 					"per mail to 'crkrichard@gmx.de'.\r\n\r\n"
-					"Copyright (C) " YEAR " 'xRichardx'\r\n",
+					"Copyright (C) " + std::string(AutoVersion::YEAR) + " 'xRichardx'\r\n").c_str(),
 					sTitle.c_str(),
 					MB_OK | MB_ICONINFORMATION);
 }
@@ -644,9 +491,9 @@ inline bool MainWindowRefreshThreadExitIfSignaled(int iKey, SOCKET hSocket)
 	}
 }
 
-inline void MainWindowSignalAllRefreshThreads(void)
+inline void SignalAllThreads(std::map<int, HANDLE> * m)
 {
-	for (auto iterator = g_mRefreshThreads.begin(); iterator != g_mRefreshThreads.end(); iterator++)
+	for (auto iterator = m->begin(); iterator != m->end(); iterator++)
 	{
 		SetEvent(iterator->second);
 	}
@@ -901,6 +748,148 @@ int CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lPa
 	return 0;
 }
 
+BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
+{
+	//{ Create Controls
+	DWORD dwBaseUnits = GetDialogBaseUnits();
+
+	HWND hStaticServer = CreateWindowEx(0, "STATIC\0", "Server: \0",
+						SS_SIMPLE | WS_CHILD | WS_VISIBLE,
+						MulDiv(3  , LOWORD(dwBaseUnits), 4), // Units to Pixel
+						MulDiv(4  , HIWORD(dwBaseUnits), 8),
+						MulDiv(30 , LOWORD(dwBaseUnits), 4),
+						MulDiv(8  , HIWORD(dwBaseUnits), 8),
+						hwnd, NULL, NULL, NULL);
+
+	//The following controls will be resized when the window is shown and HandleResize is called.
+	g_hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX\0", "\0",
+						CBS_DROPDOWNLIST | CBS_SORT | WS_CHILD | WS_VISIBLE,
+						0, 0, 0, CW_USEDEFAULT,	//automatically adapt to content
+						hwnd, NULL, NULL, NULL);
+
+	g_hStaticServerInfo = CreateWindowEx(0, WC_STATIC, "\0",
+						SS_LEFTNOWORDWRAP | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hListPlayers = CreateWindowEx(WS_EX_CLIENTEDGE | WS_EX_RIGHTSCROLLBAR, WC_LISTVIEW, "\0",
+						LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hButtonJoin = CreateWindowEx(0, WC_BUTTON, "&Join\0", WS_CHILD | WS_VISIBLE , 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hButtonReload = CreateWindowEx(0, WC_BUTTON, "&Reload\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hButtonKick = CreateWindowEx(0, WC_BUTTON, "&Kick\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hButtonBanID = CreateWindowEx(0, WC_BUTTON, "Ban I&D / Name\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hButtonBanIP = CreateWindowEx(0, WC_BUTTON, "Ban I&P\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "&DPLogin Profile\0", WS_CHILD | WS_VISIBLE,
+						0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hButtonUtrace = CreateWindowEx(0, WC_BUTTON, "&uTrace\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hButtonForcejoin = CreateWindowEx(0, WC_BUTTON, "&Forcejoin\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hComboRcon = CreateWindowEx(WS_EX_CLIENTEDGE, WC_COMBOBOX, "\0",
+						CBS_AUTOHSCROLL | CBS_SIMPLE | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hButtonSend = CreateWindowEx(0, WC_BUTTON, "&Send Rcon\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	g_hEditConsole = CreateWindowEx(WS_EX_CLIENTEDGE, WC_EDIT, "\0",
+						WS_VSCROLL | ES_AUTOVSCROLL | ES_MULTILINE | ES_READONLY | WS_CHILD | WS_VISIBLE,
+						0, 0, 0, 0,
+						hwnd, NULL, NULL, NULL);
+
+	//}
+
+	HDC hdc = GetDC(NULL);
+	LONG lfHeight = -MulDiv(9, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+	ReleaseDC(NULL, hdc);
+	g_hFont = CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "MS Shell Dlg\0");
+	g_hConsoleFont = CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "Courier New\0");
+
+	SendMessage(hStaticServer			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hStaticServerInfo 	, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hComboServer			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hListPlayers			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hButtonJoin			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hButtonKick			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hButtonBanID			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hButtonBanIP			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hButtonReload			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hButtonDPLoginProfile , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hButtonUtrace			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hButtonForcejoin		, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hComboRcon			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hButtonSend			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(g_hEditConsole			, WM_SETFONT, WPARAM(g_hConsoleFont), true);
+	
+	SendMessage(g_hEditConsole			, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
+
+	LVCOLUMN lvc;
+	char szText[32]; //maximum: "Build\0"
+	lvc.mask = LVCF_TEXT | LVCF_SUBITEM | LVCF_FMT;
+	for (int i = 0; i <= 7; i++)
+	{
+		lvc.iSubItem = i;
+		lvc.pszText = szText;
+		lvc.fmt = LVCFMT_RIGHT;
+		switch (i)
+		{
+			case SUBITEM_NUMBER: strcpy(szText, "Num\0");   break;
+			case SUBITEM_NAME:   strcpy(szText, "Name\0");  lvc.fmt = LVCFMT_LEFT; break;
+			case SUBITEM_BUILD:  strcpy(szText, "Build\0"); break;
+			case SUBITEM_ID:     strcpy(szText, "ID\0");    break;
+			case SUBITEM_OP:     strcpy(szText, "OP\0");    break;
+			case SUBITEM_IP:     strcpy(szText, "IP\0");    lvc.fmt = LVCFMT_LEFT; break;
+			case SUBITEM_PING:   strcpy(szText, "Ping\0");  break;
+			case SUBITEM_SCORE:  strcpy(szText, "Score\0"); break;
+		}
+		ListView_InsertColumn(g_hListPlayers, i, &lvc);
+	}
+	SendMessage(g_hListPlayers, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+
+	MainWindowWriteConsole("DP:PB2 Rconpanel started, console initialized");
+	MainWindowWriteConsole("Loading configuration file...");
+
+	int retVal = LoadConfig();
+	
+	if (retVal == -1)
+		MainWindowWriteConsole("No configuration file found, the program will save it's settings when you close it.");
+	else if (retVal == -2)
+		MainWindowWriteConsole("Error while reading bans from config file.");
+	else if (retVal == 1)
+		MainWindowWriteConsole("Success.");
+	else
+		MainWindowWriteConsole("!!! Unexpected error when loading the configuration file: " + std::to_string(retVal) + " !!!");
+	
+	int * piKey;
+	HANDLE hThread;
+	
+	piKey = new int; //will be deleted as first operation in thread
+	*piKey = iGetFirstUnusedMapIntKey(&g_mRefreshThreads);
+	
+	g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
+	hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
+	CloseHandle(hThread);
+	
+	return true;
+	//Will make the window procedure return 0 because the message cracker changes the return value:
+	//#define HANDLE_WM_CREATE(hwnd,wParam,lParam,fn) (LRESULT)((fn)((hwnd),(LPCREATESTRUCT)(lParam)) ? 0 : -1)
+}
+
 void OnMainWindowForcejoin(void)
 {
 	std::string sOldName;
@@ -949,7 +938,7 @@ void OnMainWindowForcejoin(void)
 	
 	int * piKey;
 	
-	MainWindowSignalAllRefreshThreads();
+	SignalAllThreads(&g_mRefreshThreads);
 	
 	piKey = new int; //will be deleted as first operation in thread
 	*piKey = iGetFirstUnusedMapIntKey(&g_mRefreshThreads);
@@ -1181,7 +1170,7 @@ void OnMainWindowKickPlayer(void)
 
 	int * piKey;
 	
-	MainWindowSignalAllRefreshThreads();
+	SignalAllThreads(&g_mRefreshThreads);
 	
 	piKey = new int; //will be deleted as first operation in thread
 	*piKey = iGetFirstUnusedMapIntKey(&g_mRefreshThreads);
@@ -1345,8 +1334,8 @@ void OnMainWindowDestroy(HWND hwnd)
 	g_bRunAutoReloadThread = 0;
 	g_bRunBanThread = 0;
 	
-	HANDLE rHandles[4] = {g_hBanThread, g_hAutoReloadThread, g_hSendRconThread, g_hLoadServersThread};
-	WaitForMultipleObjects(4, rHandles, TRUE, 10000);
+	HANDLE rHandles[3] = {g_hBanThread, g_hAutoReloadThread, g_hSendRconThread};
+	WaitForMultipleObjects(3, rHandles, TRUE, 10000);
 	
 	if (g_hBanThread != INVALID_HANDLE_VALUE)
 	{
@@ -1365,20 +1354,14 @@ void OnMainWindowDestroy(HWND hwnd)
 		TerminateThread(g_hSendRconThread, 0);
 		CloseHandle(g_hSendRconThread);
 	}
-	
-	if (g_hLoadServersThread != INVALID_HANDLE_VALUE)
-	{
-		TerminateThread(g_hLoadServersThread, 0);
-		CloseHandle(g_hLoadServersThread);
-	}
 
 	if (g_hUdpSocket         != INVALID_SOCKET) closesocket(g_hUdpSocket);
 	if (g_hBanSocket         != INVALID_SOCKET) closesocket(g_hBanSocket);
 	if (g_hSendRconSocket    != INVALID_SOCKET) closesocket(g_hSendRconSocket);
-	if (g_hLoadServersSocket != INVALID_SOCKET) closesocket(g_hLoadServersSocket);
 	
 	ShutdownWinsock();
 
+	DeleteObject(g_hConsoleBackgroundBrush);
 	DeleteObject(g_hFont);
 	DeleteObject(g_hConsoleFont);
 
@@ -1409,7 +1392,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				HANDLE hThread;
 				EnumWindows(MainWindowEnumChildProc, 0); //Send reload message to all child windows
 				
-				MainWindowSignalAllRefreshThreads();
+				SignalAllThreads(&g_mRefreshThreads);
 				
 				piKey = new int; //will be deleted as first operation in thread
 				*piKey = iGetFirstUnusedMapIntKey(&g_mRefreshThreads);
@@ -1447,7 +1430,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				HANDLE hThread;
 				EnumWindows(MainWindowEnumChildProc, 0); //Send reload message to all child windows
 				
-				MainWindowSignalAllRefreshThreads();
+				SignalAllThreads(&g_mRefreshThreads);
 				
 				piKey = new int; //will be deleted as first operation in thread
 				*piKey = iGetFirstUnusedMapIntKey(&g_mRefreshThreads);
@@ -1678,7 +1661,7 @@ HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type)
 	{
 		SetTextColor(hdc, RGB(0, 0, 0) );
 		SetBkColor  (hdc, RGB(255, 255, 255) );
-		return g_ConsoleBackgroundBrush;
+		return g_hConsoleBackgroundBrush;
 	}
 	return FORWARD_WM_CTLCOLORSTATIC(hwnd, hdc, hwndChild, DefWindowProc);
 }
@@ -1687,6 +1670,7 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 {
 	switch (message)
 	{
+		HANDLE_MSG(hwnd, WM_CREATE,         OnMainWindowCreate);
 		HANDLE_MSG(hwnd, WM_DESTROY,        OnMainWindowDestroy);
 		HANDLE_MSG(hwnd, WM_COMMAND,        OnMainWindowCommand);
 		HANDLE_MSG(hwnd, WM_NOTIFY,         OnMainWindowNotify);
@@ -2277,12 +2261,19 @@ LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPA
 // Callback Manage Servers Dialog                                                                  |
 //{-------------------------------------------------------------------------------------------------
 
-void LoadServersToListbox(HWND hwndListbox)
+void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has to delete its argument
 {
+	int iKey = static_cast<LOADSERVERSARGS *>(lpArgumentStruct)->iKey;
+	HWND hwndListbox = static_cast<LOADSERVERSARGS *>(lpArgumentStruct)->hwnd;
+	delete static_cast<LOADSERVERSARGS *>(lpArgumentStruct);
+	
+	bool bExit = false;
+	
 	MainWindowWriteConsole("Loading servers, this may take a short time...");
+	
 	std::string sServerlist ("");
-	std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(MAJOR)
-						+ "." + std::to_string(MINOR) + "." + std::to_string(BUILD);
+	std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(AutoVersion::MAJOR)
+						+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 	HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 	HINTERNET hFile = InternetOpenUrl(hInternet, "http://www.dplogin.com/serverlist.php", NULL, 0, INTERNET_FLAG_RELOAD, 0);
 	char szBuffer[MTU] = {0};
@@ -2298,15 +2289,16 @@ void LoadServersToListbox(HWND hwndListbox)
 	}
 	InternetCloseHandle(hFile);
 	InternetCloseHandle(hInternet);
+	
+	SOCKET hSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (hSocket == INVALID_SOCKET)
+		return;
 
 	boost::smatch MatchResults;
 	boost::regex rx ("(\\d+\\.\\d+\\.\\d+\\.\\d+):(\\d{2,5})");
 
 	std::string::const_iterator start = sServerlist.begin();
 	std::string::const_iterator end   = sServerlist.end();
-	
-	if (g_hLoadServersSocket == INVALID_SOCKET)
-		g_hLoadServersSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 
 	while (boost::regex_search(start, end, MatchResults, rx)) //add all servers who answer to the listbox
 	{
@@ -2315,18 +2307,35 @@ void LoadServersToListbox(HWND hwndListbox)
 		start = MatchResults[0].second;
 
 		SERVER tempserver;
-		iServerStructFromAddress(sIP, atoi(sPort.c_str()), &tempserver, g_hLoadServersSocket, g_fAllServersTimeout);
-
+		iServerStructFromAddress(sIP, atoi(sPort.c_str()), &tempserver, hSocket, g_fAllServersTimeout);
+		
+		try
+		{
+			if (WaitForSingleObject(g_mLoadServersThreads.at(iKey), 0) == WAIT_OBJECT_0)
+			{
+				bExit = true;
+				break;
+			}
+		}
+		catch (const std::out_of_range& oor)
+		{
+			closesocket(hSocket);
+			return;
+		}
+		
 		if (tempserver.sHostname.compare("COULD NOT GET HOSTNAME") != 0)
 		{
+			
 			g_vAllServers.push_back(tempserver);
 			int index = SendMessage(hwndListbox, LB_ADDSTRING, 0, (LPARAM)tempserver.sHostname.c_str());
 			SendMessage(hwndListbox, LB_SETITEMDATA, index, g_vAllServers.size() - 1);
 		}
 	}
-	closesocket(g_hLoadServersSocket);
-	g_hLoadServersSocket = INVALID_SOCKET;
-	MainWindowWriteConsole("Done.");
+
+	CloseHandle(g_mLoadServersThreads.at(iKey)); //Delete the Event
+	closesocket(hSocket);
+	g_mLoadServersThreads.erase(g_mLoadServersThreads.find(iKey));
+	if (!bExit) MainWindowWriteConsole("Done.");
 }
 
 void OnManageServersClose(HWND hwnd)
@@ -2344,15 +2353,8 @@ void OnManageServersDestroy(HWND hwnd)
 	}
 	SendMessage(g_hComboServer, CB_SETCURSEL, 0, 0);
 	
-	if (WaitForSingleObject(g_hLoadServersThread, 0) == WAIT_TIMEOUT) //TODO (#9#): Use signal instead of TemrinateThread.
-	{
-		TerminateThread(g_hLoadServersThread, 0);
-		CloseHandle(g_hLoadServersThread);
-		g_hLoadServersThread = INVALID_HANDLE_VALUE;
-		closesocket(g_hLoadServersSocket);
-		g_hLoadServersSocket = INVALID_SOCKET;
-		MainWindowWriteConsole("Aborting.");
-	}
+	SignalAllThreads(&g_mLoadServersThreads);
+	MainWindowWriteConsole("Aborting.");
 	
 	g_vAllServers.clear();
 }
@@ -2363,10 +2365,16 @@ BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 		int index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM)g_vSavedServers[i].sHostname.c_str());
 		SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, i);
 	}
-	if (g_hLoadServersThread != INVALID_HANDLE_VALUE)
-		g_hLoadServersThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) &LoadServersToListbox, GetDlgItem(hwnd, IDC_DM_LISTLEFT), 0, NULL);
-	else
-		MainWindowWriteConsole("!!!ERROR!!!: g_hLoadServersThreadwas not ended properly before.");
+	
+	LOADSERVERSARGS * lpArgumentsStruct = new LOADSERVERSARGS;
+	
+	lpArgumentsStruct->iKey = iGetFirstUnusedMapIntKey(&g_mLoadServersThreads);
+	lpArgumentsStruct->hwnd = GetDlgItem(hwnd, IDC_DM_LISTLEFT);
+	
+	g_mLoadServersThreads.insert(std::pair<int, HANDLE>(lpArgumentsStruct->iKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
+	
+	HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) &LoadServersToListbox, lpArgumentsStruct, 0, NULL);
+	CloseHandle(hThread);
 	
 	return TRUE;
 }
@@ -3238,7 +3246,7 @@ void AutoReloadThreadFunction(void)
 			int * piKey;
 			HANDLE hThread;
 			
-			MainWindowSignalAllRefreshThreads();
+			SignalAllThreads(&g_mRefreshThreads);
 			
 			piKey = new int; //will be deleted as first operation in thread
 			*piKey = iGetFirstUnusedMapIntKey(&g_mRefreshThreads);
