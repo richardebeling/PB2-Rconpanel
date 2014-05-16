@@ -182,33 +182,33 @@ STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VIS
 CAPTION "Common Rcon Commands"
 FONT 8, "Ms Shell Dlg"
 {
-    LTEXT           "sv (Prefix) - lets you use most of the in-game commands, including admin commands\r\n\
-					Examples:\r\n\r\n\
-					sv addip\r\n\
-					sv expert X\r\n\
-					sv listip\r\n\
-					sv listuserip\r\n\
-					sv maplist\r\n\
-					sv newmap\r\n\
-					sv players\r\n\
-					sv removeip\r\n\
-					sv rotation add\r\n\
-					sv rotation delete\r\n\
-					sv rotation load\r\n\
-					sv rotation save\r\n\
-					sv tban\r\n\
-					sv writeip\r\n\r\n\
-					VARNAME VALUE - sets the specified variable to the value\r\n\
-					status - gives you an overview of all players and the current map\r\n\
-					kick NUMBER - kicks a player by his number\r\n\
-					map NAME - instantly restarts the server and loads a map. Crashes server if the mapname is not valid\r\n\
-					say TEXT - says text as server\r\n\
-					quit - closes the server\r\n\
-					exit - closes the server\r\n\
-					exec PATH - executes a config file\r\n\
-					set VARNAME CONTENT TYPE - sets the content of a variable. The type is optional\r\n\
-					unset VARNAME - unsets a variable",
-					IDC_STATIC, 7, 7, 318, 224, SS_LEFT
+    LTEXT   "sv (Prefix) - lets you use most of the in-game commands, including admin commands\r\n\
+Examples:\r\n\r\n\
+sv addip\r\n\
+sv expert X\r\n\
+sv listip\r\n\
+sv listuserip\r\n\
+sv maplist\r\n\
+sv newmap\r\n\
+sv players\r\n\
+sv removeip\r\n\
+sv rotation add\r\n\
+sv rotation delete\r\n\
+sv rotation load\r\n\
+sv rotation save\r\n\
+sv tban\r\n\
+sv writeip\r\n\r\n\
+VARNAME VALUE - sets the specified variable to the value\r\n\
+status - gives you an overview of all players and the current map\r\n\
+kick NUMBER - kicks a player by his number\r\n\
+map NAME - instantly restarts the server and loads a map. Crashes server if the mapname is not valid\r\n\
+say TEXT - says text as server\r\n\
+quit - closes the server\r\n\
+exit - closes the server\r\n\
+exec PATH - executes a config file\r\n\
+set VARNAME CONTENT TYPE - sets the content of a variable. The type is optional\r\n\
+unset VARNAME - unsets a variable",
+			IDC_STATIC, 7, 7, 318, 224, SS_LEFT
 }
 
 IDD_SETPING DIALOG 0, 0, 151, 47
