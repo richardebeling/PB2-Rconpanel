@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2013 Richard Ebeling
+	Copyright (C) 2014 Richard Ebeling
 
 	This file is part of "DP:PB2 Rconpanel".
 	"DP:PB2 Rconpanel" is free software: you can redistribute it and/or modify
@@ -234,10 +234,11 @@ VS_VERSION_INFO VERSIONINFO
 	{
 		BLOCK "040904E4"
 		{
-			VALUE "Build", YEAR "-" MONTH "-" DATE
-			VALUE "FileVersion", FULLVERSION_STRING
-			VALUE "LegalCopyright", "Copyright (C) " YEAR " 'Richard'\0"
-			VALUE "ProductVersion", FULLVERSION_STRING
+			//VALUE "Build", YEAR "-" MONTH "-" DATE //TODO(#9#): uncomment when Autoversioning is working with defines again.
+			//VALUE "FileVersion", FULLVERSION_STRING
+			//VALUE "LegalCopyright", "Copyright (C) " YEAR " 'Richard'\0"
+			VALUE "LegalCopyright", "Copyright (C) 2014 'Richard'\0"
+			//VALUE "ProductVersion", FULLVERSION_STRING
 			VALUE "OriginalFilename", "Rconpanel.exe\0"
 		}
 	}

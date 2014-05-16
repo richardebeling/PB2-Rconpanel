@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2013 Richard Ebeling
+	Copyright (C) 2014 Richard Ebeling
 
 	This file is part of "DP:PB2 Rconpanel".
 	"DP:PB2 Rconpanel" is free software: you can redistribute it and/or modify
@@ -16,6 +16,7 @@
 	along with this program (Filename: COPYING).
 	If not, see <http://www.gnu.org/licenses/>.
 */
+
 #ifndef __MAIN_H_INCLUDED
 #define __MAIN_H_INCLUDED
 
@@ -23,10 +24,17 @@
 
 #define BANTYPE_ID 0
 #define BANTYPE_NAME 1
+
 struct BAN
 {
     int iType; //0 = ID, 1 = Name
     std::string sText;
+};
+
+struct LOADSERVERSARGS
+{
+	int iKey;
+	HWND hwnd;
 };
 
 int iGetFirstUnusedMapIntKey (std::map<int, HANDLE> * m);
@@ -44,12 +52,12 @@ void MainWindowRefreshThread(LPVOID lpArgument);
 inline bool MainWindowRefreshThreadExitIfSignaled(int iUID, SOCKET hSocket);
 int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent);
 int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent);
-inline void MainWindowSignalAllRefreshThreads(void);
+inline void SignalAllThreads(std::map<int, HANDLE> * m);
 void MainWindowWriteConsole(std::string);
 void ListView_SetImage(HWND hListview, std::string sImagePath);
 void LoadBannedIPsToListbox(HWND hListBox);
 void LoadRotationToListbox(HWND hListBox);
-void LoadServersToListbox(HWND hWnd);
+void LoadServersToListbox(LPVOID lpArgumentStruct);
 void ShowAboutDialog(void);
 void ShowPlayerInfo(void);
 void SplitIpAddressToBytes(char * szIp, BYTE * pb0, BYTE * pb1, BYTE * pb2, BYTE * pb3);
@@ -63,6 +71,7 @@ BOOL CALLBACK MainWindowEnumChildProc(HWND hwnd, LPARAM lParam);
 void OnMainWindowBanID(void);
 void OnMainWindowBanIP(void);
 void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
+BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct);
 void OnMainWindowDestroy(HWND hwnd);
 void OnMainWindowForcejoin(void);
 HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type);
