@@ -17,7 +17,7 @@
 	If not, see <http://www.gnu.org/licenses/>.
 */
 
-struct SUBITEMS
+namespace SUBITEMS
 {
 	static const int iNumber = 0;
 	static const int iName = 1;
@@ -27,22 +27,22 @@ struct SUBITEMS
 	static const int iIp = 5;
 	static const int iScore = 6;
 	static const int iPing = 7;
-};
+}
 
-struct DEFAULTSETTINGS
+namespace DEFAULTSETTINGS
 {
 	static const     bool  bRunAutoReloadThread   = false;
 	static const     bool  bRunBanThread          = false;
 	static const     bool  bLimitConsoleLineCount = true;
-	static constexpr float fTimeoutSecs           = 0.5f;
-	static constexpr float fAllServersTimeoutSecs = 1.0f;
+	static const     float fTimeoutSecs           = 0.5f;
+	static const     float fAllServersTimeoutSecs = 1.0f;
 	static const     int   iBanCheckDelaySecs     = 60;
 	static const     int   iMaxConsoleLineCount   = 500;
 	static const     int   iMaxPingMsecs          = 0;
 	static const     bool  bColorPings            = false;
 	static const     bool  bColorPlayers          = true;
 	static const     int   iAutoReloadDelaySecs   = 60;
-};
+}
 
 struct SETTINGS
 {
