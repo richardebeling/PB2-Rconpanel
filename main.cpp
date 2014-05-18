@@ -18,9 +18,9 @@
 */
 
 //TODO (#1#): Add: Search Player function (I dont think that this is needed because its implemented in the serverbrowser)
-//TODO (#1#): Add: Modifiable messages that will be said as console before players are kicked.
-//TODO (#1#): Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server (IDD_MANAGECVARS is the current placeholder)
-//TODO (#8#): Change: Use better way to display mapshot (with scaling)
+//TODO (#8#): Add: Modifiable messages that will be said as console before players are kicked.
+//TODO (#7#): Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server (IDD_MANAGECVARS is the current placeholder)
+//TODO (#9#): Change: Use better way to display mapshot (with scaling)
 //TODO (#8#): Fix ip addresses not being shown sometimes (because assignment of information to the player fails?)
 
 #ifdef __GNUC__
@@ -33,42 +33,15 @@
 #define strcasecmp _stricmp
 #endif
 
-
 #include "rconfunctions.h"
 #include "resource.h"
 #include "main.h"
 #include "version.h"
-#include "defaultsettings.h"
+#include "settings.h"
 
-#define WIN32_LEAN_AND_MEAN
-#include <windowsx.h>
-
-#if _WIN32_IE < 0x400
-	#define _WIN32_IE 0x401 //needed for commctrl.h so it includes InitCommonControls (0x300) and the ability to color subitems differently (0x400)
-#endif
-#include <commctrl.h>
-
-#include <shellapi.h>
-#include <wininet.h>
-
-#include <ctime>
-#include <vector>
-#include <map>
-#include <boost/algorithm/string.hpp>
-#include <boost/regex.hpp>
-
-#define SUBITEM_NUMBER 0
-#define SUBITEM_NAME 1
-#define SUBITEM_BUILD 2
-#define SUBITEM_ID 3
-#define SUBITEM_OP 4
-#define SUBITEM_IP 5
-#define SUBITEM_SCORE 6
-#define SUBITEM_PING 7
-
-std::vector <SERVER> g_vSavedServers (0);	//used to store servers in the combobox
-std::vector <SERVER> g_vAllServers (0);		//used to fill serverlist in the "Manage servers" dialogue
-std::vector <PLAYER> g_vPlayers (0);		//used to fill the listview in the main window
+std::vector <SERVER> g_vSavedServers (0);	//used to store servers in the combo box
+std::vector <SERVER> g_vAllServers (0);		//used to fill server list in the "Manage servers" dialog
+std::vector <PLAYER> g_vPlayers (0);		//used to fill the list view in the main window
 std::vector <BAN> 	 g_vBannedPlayers (0);	//stores either ID or name of a banned player as string
 
 SOCKET g_hUdpSocket         = 0;
@@ -82,39 +55,16 @@ HANDLE g_hSendRconThread    = 0;
 std::map <int, HANDLE> g_mRefreshThreads; //contains UID and ExitEvent for every reload thread
 std::map <int, HANDLE> g_mLoadServersThreads; //contains UID and ExitEvent for every reload thread
 
-int g_iDontWriteConfig      = 0;
-int g_iAutoReloadThreadTimeWaited;
-
-//These will be loaded from config later, values that are set here are values that will be reset when there is no configuration file
-//TODO (#8#): Store settings in struct
-bool  g_bRunAutoReloadThread   = DEFAULT_RUNAUTORELOADTHREAD;   //signals for threads to exit.
-bool  g_bRunBanThread          = DEFAULT_RUNBANTHREAD;
-bool  g_bLimitConsoleLineCount = DEFAULT_LIMITCONSOLELINECOUNT;
-float g_fTimeout               = DEFAULT_TIMEOUT;               //timeout used for servers you have rcon access  to
-float g_fAllServersTimeout     = DEFAULT_TIMEOUTALLSERVERS;     //timeout used for servers that you  don't have rcon access to (maybe higher ping because on other continent?)
-int   g_iBanCheckDelay         = DEFAULT_BANCHECKDELAY;         //delay between checking the servers for banned players in seconds
-int   g_iMaxConsoleLineCount   = DEFAULT_MAXCONSOLELINECOUNT;   //maximum lines in the console edit
-int   g_iMaxPing               = DEFAULT_MAXPING;               //maximum ping in ms, 0 = unlimited
-bool  g_bColorPings            = DEFAULT_COLORPINGS;            //
-bool  g_bColorPlayers          = DEFAULT_COLORPLAYERS;          //
-int   g_iAutoReloadDelay       = DEFAULT_AUTORELOADDELAY;       //delay for auto-reloading;
+bool g_bDontWriteConfig = false;
+int g_iAutoReloadThreadTimeWaitedMsecs; // global so it can be reset when the list is manually reset
 
 UINT WM_RELOADCONTENT; //custom message that is sent to child windows to make them reload their content
-
-//TODO: store handles in struct
-HWND g_hWinMain, g_hComboServer, g_hListPlayers, g_hButtonKick, g_hButtonBanID, g_hButtonBanIP,
-	g_hButtonReload, g_hButtonDPLoginProfile, g_hButtonUtrace, g_hButtonForcejoin, g_hEditConsole,
-	g_hComboRcon, g_hButtonSend, g_hButtonJoin, g_hStaticServerInfo;
 
 const HBRUSH g_hConsoleBackgroundBrush = (HBRUSH) CreateSolidBrush(RGB(255, 255, 255));
 HFONT g_hFont, g_hConsoleFont;
 
-const DWORD g_dwRed    = RGB(255, 100, 60);
-const DWORD g_dwBlue   = RGB(100, 150, 255);
-const DWORD g_dwPurple = RGB(225, 0,   225);
-const DWORD g_dwYellow = RGB(240, 240, 0);
-const DWORD g_dwWhite  = RGB(255, 255, 255);
-
+WINDOWHANDLES gWindows; // stores all window handles
+SETTINGS gSettings;     // stores all program settings
 
 //--------------------------------------------------------------------------------------------------
 // Program Entry Point                                                                             |
@@ -154,19 +104,19 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 
 	if (!RegisterClassEx (&wincl))
 	{
-		MessageBox(NULL, "Could not register window class", NULL, MB_OK | MB_ICONERROR);
+		MessageBox(NULL, "Could not register window class. Will now exit.", NULL, MB_OK | MB_ICONERROR);
 		exit(-1);
 	}
 	
 	int retVal = InitializeWinsock();
 	if (retVal != 0)
 	{
-		MessageBox(NULL, "Could not initialize winsock 2", NULL, MB_OK | MB_ICONERROR);
+		MessageBox(NULL, "Could not initialize WinSock 2. Will now exit.", NULL, MB_OK | MB_ICONERROR);
 		exit(-1);
 	}
 
 	DWORD dwBaseUnits = GetDialogBaseUnits();
-	g_hWinMain = CreateWindowEx (0,
+	gWindows.hWinMain = CreateWindowEx (0,
 						szClassName, "DP:PB2 Rconpanel\0",
 						WS_OVERLAPPEDWINDOW,
 						CW_USEDEFAULT, CW_USEDEFAULT,
@@ -176,7 +126,7 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 						LoadMenu (hThisInstance, MAKEINTRESOURCE(IDM)),
 						hThisInstance, NULL);
 	
-	ShowWindow(g_hWinMain, nCmdShow);
+	ShowWindow(gWindows.hWinMain, nCmdShow);
 						
 	//All other windows will be created in OnMainWindowCreate
 
@@ -192,17 +142,17 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 // Main Window Functions                                                                           |
 //{-------------------------------------------------------------------------------------------------
 
-void ShowPlayerInfo(void)
+void ShowPlayerInfo(HWND hwnd)
 {
-	SetWindowText(g_hWinMain, "DP:PB2 Rconpanel - Retrieving Information...");
+	SetWindowText(hwnd, "DP:PB2 Rconpanel - Retrieving Information...");
 	
 	std::string sBoxContent = "Information about player ";
-	int iSelectedColumn = SendMessage(g_hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
+	int iSelectedColumn = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
 	if (iSelectedColumn == -1)
 		return;
 
 	LVITEM LvItem; //get Name of selected player
-	LvItem.iSubItem = SUBITEM_NAME;
+	LvItem.iSubItem = SUBITEMS::iName;
 	LvItem.pszText = NULL;
 
 	int iRet;
@@ -212,20 +162,20 @@ void ShowPlayerInfo(void)
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 
 	sBoxContent.append(LvItem.pszText);
 	sBoxContent.append("\r\n\r\n");
 
-	LvItem.iSubItem = SUBITEM_ID;
+	LvItem.iSubItem = SUBITEMS::iId;
 	iSize = 8;
 	do {
 		iSize *= 2;
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 
 	if (strcmp(LvItem.pszText, "0") != 0)
@@ -303,14 +253,14 @@ void ShowPlayerInfo(void)
 		sBoxContent.append("\r\n");
 	}
 
-	LvItem.iSubItem = SUBITEM_IP;
+	LvItem.iSubItem = SUBITEMS::iIp;
 	iSize = 8;
 	do {
 		iSize *= 2;
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 
 	if (strcmp(LvItem.pszText, "0.0.0.0") != 0)
@@ -369,16 +319,16 @@ void ShowPlayerInfo(void)
 	}
 	free(LvItem.pszText);
 
-	SetWindowText(g_hWinMain, "DP:PB2 Rconpanel");
-	MessageBox(g_hWinMain, sBoxContent.c_str(), "Information about player", MB_ICONINFORMATION | MB_OK);
+	SetWindowText(hwnd, "DP:PB2 Rconpanel");
+	MessageBox(hwnd, sBoxContent.c_str(), "Information about player", MB_ICONINFORMATION | MB_OK);
 }
 
-void ShowAboutDialog(void)
+void ShowAboutDialog(HWND hwnd)
 {
 	std::string sTitle = "About - DP:PB2 Rconpanel V" + std::to_string(AutoVersion::MAJOR)
 						+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 
-	MessageBox(g_hWinMain, std::string("This is a program that simplifies communication between you and "
+	MessageBox(hwnd, std::string("This is a program that simplifies communication between you and "
 					"your Digital Paint: Paintball 2 server. It's released under GPL, "
 					"the source code should come with the file. Also, you can find it here:\r\n"
 					"http://sourceforge.net/p/pb2rconpanel/code/\r\n"
@@ -393,7 +343,7 @@ int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 {
 	//"map: , password: , sv_login:, elim: , timelimit: , maxclients: \0"
 	//TODO (#2#): Get available space and leave more space between entries if possible
-	//Is a pain, neded steps:
+	//Is a pain, needed steps:
 	//Get static size
 	//Get Text size
 	//Get size of one space
@@ -402,7 +352,7 @@ int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 	
 	//TODO (#1#): Do not send 5 packets.
 	
-	int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
 		return -3;
 	
@@ -412,29 +362,29 @@ int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 	if (hSocket == INVALID_SOCKET)
 		return -1;
 
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "mapname", &sAnswer, hSocket, g_fTimeout);
+	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "mapname", &sAnswer, hSocket, gSettings.fTimeoutSecs);
 	sContent.append((sAnswer.size() > 0) ? sAnswer : "err");
 	sContent.append("  |  pw: ");
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "password", &sAnswer, hSocket, g_fTimeout);
+	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "password", &sAnswer, hSocket, gSettings.fTimeoutSecs);
 	sContent.append((sAnswer.size() > 0) ? sAnswer : "none");
 	sContent.append("  |  elim: ");
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "elim", &sAnswer, hSocket, g_fTimeout);
+	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "elim", &sAnswer, hSocket, gSettings.fTimeoutSecs);
 	sContent.append((sAnswer.size() > 0) ? sAnswer : "err");
 	sContent.append("  |  timelimit: ");
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "timelimit", &sAnswer, hSocket, g_fTimeout);
+	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "timelimit", &sAnswer, hSocket, gSettings.fTimeoutSecs);
 	sContent.append((sAnswer.size() > 0) ? sAnswer : "err");
 	sContent.append("  |  maxclients: ");
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "maxclients", &sAnswer, hSocket, g_fTimeout);
+	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "maxclients", &sAnswer, hSocket, gSettings.fTimeoutSecs);
 	sContent.append((sAnswer.size() > 0) ? sAnswer : "err");
 	
 	if (WaitForSingleObject(hExitEvent, 0) == WAIT_OBJECT_0)
 		return -2;
 	
-	SetWindowText(g_hStaticServerInfo, sContent.c_str());
+	SetWindowText(gWindows.hStaticServerInfo, sContent.c_str());
 
 	HRGN hRegion = CreateRectRgn(0,0,0,0);
-	GetWindowRgn(g_hStaticServerInfo, hRegion);
-	RedrawWindow(g_hWinMain, NULL, hRegion, RDW_ERASE | RDW_INVALIDATE);
+	GetWindowRgn(gWindows.hStaticServerInfo, hRegion);
+	RedrawWindow(gWindows.hWinMain, NULL, hRegion, RDW_ERASE | RDW_INVALIDATE);
 	DeleteObject(hRegion);
 	return 1;
 }
@@ -446,7 +396,7 @@ void MainWindowRefreshThread(LPVOID lpKey)
 	
 	SOCKET hSocket;
 	HANDLE hExitEvent = g_mRefreshThreads.at(iKey);
-	g_iAutoReloadThreadTimeWaited = 0;
+	g_iAutoReloadThreadTimeWaitedMsecs = 0;
 	
 	if (g_vSavedServers.size() == 0)
 	{
@@ -501,9 +451,9 @@ inline void SignalAllThreads(std::map<int, HANDLE> * m)
 
 int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
 {
-	ListView_DeleteAllItems(g_hListPlayers);
+	ListView_DeleteAllItems(gWindows.hListPlayers);
 	
-	int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
 		return -3;
 
@@ -511,7 +461,7 @@ int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
 		return -1;
 	
 	int iRetVal = iPlayerStructVectorFromAddress (g_vSavedServers[i].sIp, g_vSavedServers[i].iPort,
-										g_vSavedServers[i].sRconPassword, &g_vPlayers, hSocket, g_fTimeout);
+										g_vSavedServers[i].sRconPassword, &g_vPlayers, hSocket, gSettings.fTimeoutSecs);
 
 	if (iRetVal > 0) //add players to the listview
 	{
@@ -521,35 +471,35 @@ int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
 		{
 			LvItem.mask = LVIF_TEXT | LVIF_PARAM;
 			LvItem.iItem = y;
-			LvItem.iSubItem = SUBITEM_NUMBER;
+			LvItem.iSubItem = SUBITEMS::iNumber;
 			LvItem.lParam = y;
 			sItemText.assign(std::to_string(g_vPlayers[y].iNumber));
 			LvItem.pszText = (LPSTR) sItemText.c_str();
-			SendMessage(g_hListPlayers, LVM_INSERTITEM, 0, (LPARAM) &LvItem);
+			SendMessage(gWindows.hListPlayers, LVM_INSERTITEM, 0, (LPARAM) &LvItem);
 
 			for (int x = 1; x < 8; x++)
 			{
 				switch(x)
 				{
-				case SUBITEM_NAME:
+				case SUBITEMS::iName:
 					sItemText.assign(g_vPlayers[y].sName.c_str());
 					break;
-				case SUBITEM_BUILD:
+				case SUBITEMS::iBuild:
 					sItemText.assign(std::to_string(g_vPlayers[y].iBuild));
 					break;
-				case SUBITEM_ID:
+				case SUBITEMS::iId:
 					sItemText.assign(std::to_string(g_vPlayers[y].iId));
 					break;
-				case SUBITEM_OP:
+				case SUBITEMS::iOp:
 					sItemText.assign(std::to_string(g_vPlayers[y].iOp));
 					break;
-				case SUBITEM_IP:
+				case SUBITEMS::iIp:
 					sItemText.assign(g_vPlayers[y].sIp);
 					break;
-				case SUBITEM_PING:
+				case SUBITEMS::iPing:
 					sItemText.assign(std::to_string(g_vPlayers[y].iPing));
 					break;
-				case SUBITEM_SCORE:
+				case SUBITEMS::iScore:
 					sItemText.assign(std::to_string(g_vPlayers[y].iScore));
 					break;
 				}
@@ -560,16 +510,16 @@ int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
 				if (WaitForSingleObject(hExitEvent, 0) == WAIT_OBJECT_0)
 					return -2;
 				
-				SendMessage(g_hListPlayers, LVM_SETITEM, 0, (LPARAM) &LvItem);
+				SendMessage(gWindows.hListPlayers, LVM_SETITEM, 0, (LPARAM) &LvItem);
 			}
 		}
 	}
-	ListView_SortItems (g_hListPlayers, OnMainWindowListViewSort, 0);
-	ListView_SetColumnWidth(g_hListPlayers, 7, LVSCW_AUTOSIZE_USEHEADER);
+	ListView_SortItems (gWindows.hListPlayers, OnMainWindowListViewSort, 0);
+	ListView_SetColumnWidth(gWindows.hListPlayers, 7, LVSCW_AUTOSIZE_USEHEADER);
 	return 1;
 }
 
-void MainWindowWriteConsole(std::string str) // prints text to g_hEditConsole, adds timestamp and linebreak
+void MainWindowWriteConsole(std::string str) // prints text to gWindows.hEditConsole, adds timestamp and linebreak
 {
 	time_t rawtime;
 	struct tm * timeinfo;
@@ -592,20 +542,20 @@ void MainWindowWriteConsole(std::string str) // prints text to g_hEditConsole, a
 
 	boost::replace_all(sFinalString, "\r\n", "\r\n---------> "); //indent text after line ending
 
-	//add linebreak (if its not the first line) and the the text to the end of g_hEditConsole
-	SendMessage(g_hEditConsole, EM_SETSEL, -2, -2);
-	SendMessage(g_hEditConsole, EM_GETSEL, (WPARAM) &start, (LPARAM)&end);
+	//add linebreak (if its not the first line) and the the text to the end of gWindows.hEditConsole
+	SendMessage(gWindows.hEditConsole, EM_SETSEL, -2, -2);
+	SendMessage(gWindows.hEditConsole, EM_GETSEL, (WPARAM) &start, (LPARAM)&end);
 	if (start != 0)
-		SendMessage(g_hEditConsole, EM_REPLACESEL, 0,(LPARAM) "\r\n");
+		SendMessage(gWindows.hEditConsole, EM_REPLACESEL, 0,(LPARAM) "\r\n");
 
 	//Add new text
-	SendMessage(g_hEditConsole, EM_REPLACESEL, 0,(LPARAM) sFinalString.c_str());
+	SendMessage(gWindows.hEditConsole, EM_REPLACESEL, 0,(LPARAM) sFinalString.c_str());
 
-	//remove first line until linecount is equal to g_iMaxConsoleLineCount
-	if (g_bLimitConsoleLineCount) Edit_ReduceLines(g_hEditConsole, g_iMaxConsoleLineCount);
+	//remove first line until linecount is equal to gSettings.iMaxConsoleLineCount
+	if (gSettings.bLimitConsoleLineCount) Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
 
-	//Scroll to the bottom of g_hEditConsole so the user directly sees what has just been added
-	Edit_ScrollToEnd(g_hEditConsole);
+	//Scroll to the bottom of gWindows.hEditConsole so the user directly sees what has just been added
+	Edit_ScrollToEnd(gWindows.hEditConsole);
 }
 
 //}-------------------------------------------------------------------------------------------------
@@ -628,45 +578,45 @@ static LRESULT OnPlayerListCustomDraw (LPARAM lParam)
 	case CDDS_ITEMPREPAINT | CDDS_SUBITEM:		
 		switch(lplvcd->iSubItem)
 		{
-		case SUBITEM_NUMBER:
-		case SUBITEM_NAME:
-		case SUBITEM_BUILD:
-		case SUBITEM_ID:
-		case SUBITEM_OP:
-		case SUBITEM_IP:
-		case SUBITEM_SCORE:
-			if (!g_bColorPlayers)
+		case SUBITEMS::iNumber:
+		case SUBITEMS::iName:
+		case SUBITEMS::iBuild:
+		case SUBITEMS::iId:
+		case SUBITEMS::iOp:
+		case SUBITEMS::iIp:
+		case SUBITEMS::iScore:
+			if (!gSettings.bColorPlayers)
 			{
-				lplvcd->clrTextBk = g_dwWhite;
+				lplvcd->clrTextBk = COLORS::dwWhite;
 				return CDRF_NEWFONT;
 			}
 			
 			switch (g_vPlayers.at(lplvcd->nmcd.lItemlParam).cColor)
 			{
 			case 'r':
-				lplvcd->clrTextBk = g_dwRed;
+				lplvcd->clrTextBk = COLORS::dwRed;
 				break;
 			case 'b':
-				lplvcd->clrTextBk = g_dwBlue;
+				lplvcd->clrTextBk = COLORS::dwBlue;
 				break;
 			case 'p':
-				lplvcd->clrTextBk = g_dwPurple;
+				lplvcd->clrTextBk = COLORS::dwPurple;
 				break;
 			case 'y':
-				lplvcd->clrTextBk = g_dwYellow;
+				lplvcd->clrTextBk = COLORS::dwYellow;
 				break;
 			default:
-				lplvcd->clrTextBk = g_dwWhite;
+				lplvcd->clrTextBk = COLORS::dwWhite;
 				break;
 			}
 			return CDRF_NEWFONT;
 		
-		case SUBITEM_PING:			
-			if (g_bColorPings)
+		case SUBITEMS::iPing:			
+			if (gSettings.bColorPings)
 			{
 				if (g_vPlayers.at(lplvcd->nmcd.lItemlParam).iPing == 0) //99,9% bot
 				{
-					lplvcd->clrTextBk = g_dwWhite;
+					lplvcd->clrTextBk = COLORS::dwWhite;
 					return CDRF_NEWFONT; 
 				}
 				
@@ -687,31 +637,31 @@ static LRESULT OnPlayerListCustomDraw (LPARAM lParam)
 				lplvcd->clrTextBk = RGB((int)fRed, (int)fGreen, 0);
 				return CDRF_NEWFONT;
 			}
-			else if (g_bColorPlayers)
+			else if (gSettings.bColorPlayers)
 			{				
 				switch (g_vPlayers.at(lplvcd->nmcd.lItemlParam).cColor)
 				{
 				case 'r':
-					lplvcd->clrTextBk = g_dwRed;
+					lplvcd->clrTextBk = COLORS::dwRed;
 					break;
 				case 'b':
-					lplvcd->clrTextBk = g_dwBlue;
+					lplvcd->clrTextBk = COLORS::dwBlue;
 					break;
 				case 'p':
-					lplvcd->clrTextBk = g_dwPurple;
+					lplvcd->clrTextBk = COLORS::dwPurple;
 					break;
 				case 'y':
-					lplvcd->clrTextBk = g_dwYellow;
+					lplvcd->clrTextBk = COLORS::dwYellow;
 					break;
 				default:
-					lplvcd->clrTextBk = g_dwWhite;
+					lplvcd->clrTextBk = COLORS::dwWhite;
 					break;
 				}
 				return CDRF_NEWFONT;
 			}
 			
 		default:
-			lplvcd->clrTextBk = g_dwWhite;
+			lplvcd->clrTextBk = COLORS::dwWhite;
 			return CDRF_NEWFONT;
 		}
 	}
@@ -728,21 +678,21 @@ int CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lPa
 {
 	switch(lParamSort)
 	{
-	case SUBITEM_NUMBER:
+	case SUBITEMS::iNumber:
 		return g_vPlayers[lParam1].iNumber - g_vPlayers[lParam2].iNumber;
-	case SUBITEM_NAME:
+	case SUBITEMS::iName:
 		return strcasecmp(g_vPlayers[lParam1].sName.c_str(), g_vPlayers[lParam2].sName.c_str());
-	case SUBITEM_BUILD:
+	case SUBITEMS::iBuild:
 		return g_vPlayers[lParam1].iBuild - g_vPlayers[lParam2].iBuild;
-	case SUBITEM_ID:
+	case SUBITEMS::iId:
 		return g_vPlayers[lParam1].iId - g_vPlayers[lParam2].iId;
-	case SUBITEM_OP:
+	case SUBITEMS::iOp:
 		return g_vPlayers[lParam1].iOp - g_vPlayers[lParam2].iOp;
-	case SUBITEM_IP:
+	case SUBITEMS::iIp:
 		return strcasecmp(g_vPlayers[lParam1].sIp.c_str(), g_vPlayers[lParam2].sIp.c_str());
-	case SUBITEM_PING:
+	case SUBITEMS::iPing:
 		return g_vPlayers[lParam1].iPing - g_vPlayers[lParam2].iPing;
-	case SUBITEM_SCORE:
+	case SUBITEMS::iScore:
 		return g_vPlayers[lParam1].iScore - g_vPlayers[lParam2].iScore;
 	}
 	return 0;
@@ -762,52 +712,52 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						hwnd, NULL, NULL, NULL);
 
 	//The following controls will be resized when the window is shown and HandleResize is called.
-	g_hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX\0", "\0",
+	gWindows.hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX\0", "\0",
 						CBS_DROPDOWNLIST | CBS_SORT | WS_CHILD | WS_VISIBLE,
 						0, 0, 0, CW_USEDEFAULT,	//automatically adapt to content
 						hwnd, NULL, NULL, NULL);
 
-	g_hStaticServerInfo = CreateWindowEx(0, WC_STATIC, "\0",
+	gWindows.hStaticServerInfo = CreateWindowEx(0, WC_STATIC, "\0",
 						SS_LEFTNOWORDWRAP | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hListPlayers = CreateWindowEx(WS_EX_CLIENTEDGE | WS_EX_RIGHTSCROLLBAR, WC_LISTVIEW, "\0",
+	gWindows.hListPlayers = CreateWindowEx(WS_EX_CLIENTEDGE | WS_EX_RIGHTSCROLLBAR, WC_LISTVIEW, "\0",
 						LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hButtonJoin = CreateWindowEx(0, WC_BUTTON, "&Join\0", WS_CHILD | WS_VISIBLE , 0, 0, 0, 0,
+	gWindows.hButtonJoin = CreateWindowEx(0, WC_BUTTON, "&Join\0", WS_CHILD | WS_VISIBLE , 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hButtonReload = CreateWindowEx(0, WC_BUTTON, "&Reload\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonReload = CreateWindowEx(0, WC_BUTTON, "&Reload\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hButtonKick = CreateWindowEx(0, WC_BUTTON, "&Kick\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonKick = CreateWindowEx(0, WC_BUTTON, "&Kick\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hButtonBanID = CreateWindowEx(0, WC_BUTTON, "Ban I&D / Name\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonBanID = CreateWindowEx(0, WC_BUTTON, "Ban I&D / Name\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hButtonBanIP = CreateWindowEx(0, WC_BUTTON, "Ban I&P\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonBanIP = CreateWindowEx(0, WC_BUTTON, "Ban I&P\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "&DPLogin Profile\0", WS_CHILD | WS_VISIBLE,
+	gWindows.hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "&DPLogin Profile\0", WS_CHILD | WS_VISIBLE,
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hButtonUtrace = CreateWindowEx(0, WC_BUTTON, "&uTrace\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonUtrace = CreateWindowEx(0, WC_BUTTON, "&uTrace\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hButtonForcejoin = CreateWindowEx(0, WC_BUTTON, "&Forcejoin\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonForcejoin = CreateWindowEx(0, WC_BUTTON, "&Forcejoin\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hComboRcon = CreateWindowEx(WS_EX_CLIENTEDGE, WC_COMBOBOX, "\0",
+	gWindows.hComboRcon = CreateWindowEx(WS_EX_CLIENTEDGE, WC_COMBOBOX, "\0",
 						CBS_AUTOHSCROLL | CBS_SIMPLE | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hButtonSend = CreateWindowEx(0, WC_BUTTON, "&Send Rcon\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonSend = CreateWindowEx(0, WC_BUTTON, "&Send Rcon\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	g_hEditConsole = CreateWindowEx(WS_EX_CLIENTEDGE, WC_EDIT, "\0",
+	gWindows.hEditConsole = CreateWindowEx(WS_EX_CLIENTEDGE, WC_EDIT, "\0",
 						WS_VSCROLL | ES_AUTOVSCROLL | ES_MULTILINE | ES_READONLY | WS_CHILD | WS_VISIBLE,
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
@@ -821,22 +771,22 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	g_hConsoleFont = CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "Courier New\0");
 
 	SendMessage(hStaticServer			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hStaticServerInfo 	, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hComboServer			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hListPlayers			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonJoin			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonKick			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonBanID			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonBanIP			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonReload			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonDPLoginProfile , WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonUtrace			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonForcejoin		, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hComboRcon			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hButtonSend			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(g_hEditConsole			, WM_SETFONT, WPARAM(g_hConsoleFont), true);
+	SendMessage(gWindows.hStaticServerInfo 	, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hComboServer			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hListPlayers			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonJoin			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonKick			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonBanID			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonBanIP			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonReload			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonDPLoginProfile , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonUtrace			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonForcejoin		, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hComboRcon			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonSend			, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hEditConsole			, WM_SETFONT, WPARAM(g_hConsoleFont), true);
 	
-	SendMessage(g_hEditConsole			, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
+	SendMessage(gWindows.hEditConsole			, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
 
 	LVCOLUMN lvc;
 	char szText[32]; //maximum: "Build\0"
@@ -848,18 +798,18 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 		lvc.fmt = LVCFMT_RIGHT;
 		switch (i)
 		{
-			case SUBITEM_NUMBER: strcpy(szText, "Num\0");   break;
-			case SUBITEM_NAME:   strcpy(szText, "Name\0");  lvc.fmt = LVCFMT_LEFT; break;
-			case SUBITEM_BUILD:  strcpy(szText, "Build\0"); break;
-			case SUBITEM_ID:     strcpy(szText, "ID\0");    break;
-			case SUBITEM_OP:     strcpy(szText, "OP\0");    break;
-			case SUBITEM_IP:     strcpy(szText, "IP\0");    lvc.fmt = LVCFMT_LEFT; break;
-			case SUBITEM_PING:   strcpy(szText, "Ping\0");  break;
-			case SUBITEM_SCORE:  strcpy(szText, "Score\0"); break;
+			case SUBITEMS::iNumber: strcpy(szText, "Num\0");   break;
+			case SUBITEMS::iName:   strcpy(szText, "Name\0");  lvc.fmt = LVCFMT_LEFT; break;
+			case SUBITEMS::iBuild:  strcpy(szText, "Build\0"); break;
+			case SUBITEMS::iId:     strcpy(szText, "ID\0");    break;
+			case SUBITEMS::iOp:     strcpy(szText, "OP\0");    break;
+			case SUBITEMS::iIp:     strcpy(szText, "IP\0");    lvc.fmt = LVCFMT_LEFT; break;
+			case SUBITEMS::iPing:   strcpy(szText, "Ping\0");  break;
+			case SUBITEMS::iScore:  strcpy(szText, "Score\0"); break;
 		}
-		ListView_InsertColumn(g_hListPlayers, i, &lvc);
+		ListView_InsertColumn(gWindows.hListPlayers, i, &lvc);
 	}
-	SendMessage(g_hListPlayers, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+	SendMessage(gWindows.hListPlayers, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
 	MainWindowWriteConsole("DP:PB2 Rconpanel started, console initialized");
 	MainWindowWriteConsole("Loading configuration file...");
@@ -896,7 +846,7 @@ void OnMainWindowForcejoin(void)
 	std::string sOldNumber;
 	int iSelectedColumn;
 	int iRet;
-	iSelectedColumn = SendMessage(g_hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
+	iSelectedColumn = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
 
 	if (iSelectedColumn == -1)
 	{
@@ -905,7 +855,7 @@ void OnMainWindowForcejoin(void)
 	}
 
 	LVITEM LvItem = {0};
-	LvItem.iSubItem = SUBITEM_NAME; //Get Old Name
+	LvItem.iSubItem = SUBITEMS::iName; //Get Old Name
 	LvItem.pszText = NULL;
 	int iSize = 8;
 	do {
@@ -913,26 +863,25 @@ void OnMainWindowForcejoin(void)
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 	sOldName.assign(LvItem.pszText);
 	free (LvItem.pszText);
 
-	LvItem.iSubItem = SUBITEM_NUMBER; //Get Old Number
+	LvItem.iSubItem = SUBITEMS::iNumber; //Get Old Number
 	LvItem.pszText = NULL;
 	iSize = 4;
-	iRet;
 	do {
 		iSize *= 2;
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 	sOldNumber.assign(LvItem.pszText);
 	free (LvItem.pszText);
 
-	iRet = DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_FORCEJOIN), g_hWinMain, (DLGPROC) ForcejoinDlgProc);
+	iRet = DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_FORCEJOIN), gWindows.hWinMain, (DLGPROC) ForcejoinDlgProc);
 	if (iRet == -1)
 		return;
 	
@@ -952,7 +901,7 @@ void OnMainWindowForcejoin(void)
 		{
             if (strcmp(sOldName.c_str(), g_vPlayers[i].sName.c_str()) == 0) //player with that number has the same name as before
 			{
-				int x = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+				int x = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 				if (x == CB_ERR) return;
 				std::string sMsgBuffer = "sv forcejoin " + std::to_string(g_vPlayers[i].iNumber) + " " + (char) iRet; //send the forcejoin command
 				std::string sAnswer;
@@ -963,7 +912,7 @@ void OnMainWindowForcejoin(void)
 				iRet = iSendMessageToServer(g_vSavedServers[x].sIp, g_vSavedServers[x].iPort,
 									sMsgBuffer, &sAnswer,
 									g_vSavedServers[x].sRconPassword, g_hUdpSocket,
-									g_fTimeout);
+									gSettings.fTimeoutSecs);
 				closesocket(g_hUdpSocket);
 				g_hUdpSocket = INVALID_SOCKET;
 
@@ -992,11 +941,11 @@ int OnMainWindowSendRcon(void) //according to msdn functions used for threads sh
 		return 0;
 	}
 	std::string sAnswer;
-	int iBufferSize = GetWindowTextLength(g_hComboRcon) + 1;
+	int iBufferSize = GetWindowTextLength(gWindows.hComboRcon) + 1;
 	char * szCommand = new char [iBufferSize];
-	GetWindowText(g_hComboRcon, szCommand, iBufferSize);
+	GetWindowText(gWindows.hComboRcon, szCommand, iBufferSize);
 
-	int ServerNum = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	int ServerNum = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (ServerNum == CB_ERR)
 	{
 		delete[] szCommand;
@@ -1006,9 +955,9 @@ int OnMainWindowSendRcon(void) //according to msdn functions used for threads sh
 	if (g_hSendRconSocket == INVALID_SOCKET)
 		g_hSendRconSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	
-	//send the content of g_hComboRcon to the server and receive the answer
+	//send the content of gWindows.hComboRcon to the server and receive the answer
 	if (iSendMessageToServer(g_vSavedServers[ServerNum].sIp, g_vSavedServers[ServerNum].iPort,
-		szCommand, &sAnswer, g_vSavedServers[ServerNum].sRconPassword, g_hSendRconSocket, g_fTimeout) > 0)
+		szCommand, &sAnswer, g_vSavedServers[ServerNum].sRconPassword, g_hSendRconSocket, gSettings.fTimeoutSecs) > 0)
 	{
 		MainWindowWriteConsole("Got answer from Server:\r\n" + sAnswer); //print the answer to the console
 	}
@@ -1031,7 +980,7 @@ void OnMainWindowJoinServer(void)
 		return;
 	}
 
-	int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
 		return;
 
@@ -1059,7 +1008,7 @@ void OnMainWindowJoinServer(void)
 void OnMainWindowOpenUtrace(void)
 {
 	int iSelectedColumn;
-	iSelectedColumn = SendMessage(g_hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
+	iSelectedColumn = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
 	if (iSelectedColumn == -1)
 	{
 		MainWindowWriteConsole("You first have to select a player.");
@@ -1067,7 +1016,7 @@ void OnMainWindowOpenUtrace(void)
 	}
 
 	LVITEM LvItem;
-	LvItem.iSubItem = SUBITEM_IP; //Get IP
+	LvItem.iSubItem = SUBITEMS::iIp; //Get IP
 	LvItem.pszText = NULL;
 	int iSize = 8;
 	int iRet;
@@ -1076,7 +1025,7 @@ void OnMainWindowOpenUtrace(void)
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 	std::string sUrl = "http://www.utrace.de/?query=";
 	sUrl.append(LvItem.pszText);
@@ -1088,14 +1037,14 @@ void OnMainWindowOpenDPLogin(void)
 {
 	std::string sUrl;
 	int iSelectedColumn;
-	iSelectedColumn = SendMessage(g_hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
+	iSelectedColumn = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
 	if (iSelectedColumn == -1)
 	{
 		MainWindowWriteConsole("You first have to select a player.");
 		return;
 	}
 	LVITEM LvItem;
-	LvItem.iSubItem = SUBITEM_ID; //Get ID
+	LvItem.iSubItem = SUBITEMS::iId; //Get ID
 	LvItem.pszText = NULL;
 	int iSize = 4;
 	int iRet;
@@ -1104,19 +1053,19 @@ void OnMainWindowOpenDPLogin(void)
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 
 	if (strcmp(LvItem.pszText, "0") == 0) //if player has no ID
 	{
-		LvItem.iSubItem = SUBITEM_NAME; //Get Name
+		LvItem.iSubItem = SUBITEMS::iName; //Get Name
 		iSize = 4;
 		do {
 			iSize *= 2;
 			free(LvItem.pszText);
 			LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 			LvItem.cchTextMax = iSize;
-			iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+			iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 		} while (iRet >= iSize - 1);
 		sUrl = "http://dplogin.com/index.php?action=displaymembers&search=";
 		sUrl.append(LvItem.pszText);
@@ -1134,7 +1083,7 @@ void OnMainWindowOpenDPLogin(void)
 void OnMainWindowKickPlayer(void)
 {
 	int iSelectedColumn;
-	iSelectedColumn = SendMessage(g_hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
+	iSelectedColumn = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
 
 	if (iSelectedColumn == -1)
 	{
@@ -1142,7 +1091,7 @@ void OnMainWindowKickPlayer(void)
 		return;
 	}
 	LVITEM LvItem;
-	LvItem.iSubItem = SUBITEM_NAME; //Get name
+	LvItem.iSubItem = SUBITEMS::iName; //Get name
 	LvItem.pszText = NULL;
 	int iSize = 8;
 	int iRet;
@@ -1151,19 +1100,18 @@ void OnMainWindowKickPlayer(void)
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 	std::string sOldName = LvItem.pszText;
 
-	LvItem.iSubItem = SUBITEM_NUMBER; //Get number
+	LvItem.iSubItem = SUBITEMS::iNumber; //Get number
 	iSize = 4;
-	iRet;
 	do {
 		iSize *= 2;
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 	std::string sOldNumber = LvItem.pszText;
 	free(LvItem.pszText);
@@ -1184,7 +1132,7 @@ void OnMainWindowKickPlayer(void)
 		{
             if (strcmp(sOldName.c_str(), g_vPlayers[i].sName.c_str()) == 0)
 			{
-				int x = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+				int x = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 				if (x == CB_ERR) return;
 				std::string sMsg = "kick " + std::to_string(g_vPlayers[i].iNumber);
 				std::string sAnswer;
@@ -1195,7 +1143,7 @@ void OnMainWindowKickPlayer(void)
 				int iRetVal = iSendMessageToServer(g_vSavedServers[x].sIp, g_vSavedServers[x].iPort,
 									sMsg, &sAnswer,
 									g_vSavedServers[x].sRconPassword, g_hUdpSocket,
-									g_fTimeout);
+									gSettings.fTimeoutSecs);
 				closesocket(g_hUdpSocket);
 				g_hUdpSocket = INVALID_SOCKET;
 
@@ -1225,7 +1173,7 @@ void OnMainWindowKickPlayer(void)
 void OnMainWindowBanIP(void)
 {
 	int iSelectedColumn;
-	iSelectedColumn = SendMessage(g_hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
+	iSelectedColumn = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
 
 	if (iSelectedColumn == -1)
 	{
@@ -1233,12 +1181,12 @@ void OnMainWindowBanIP(void)
 		return;
 	}
 
-	int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
 		return;
 
 	LVITEM LvItem;
-	LvItem.iSubItem = SUBITEM_IP;
+	LvItem.iSubItem = SUBITEMS::iIp;
 	LvItem.pszText = NULL;
 	int iSize = 8;
 	int iRet;
@@ -1247,7 +1195,7 @@ void OnMainWindowBanIP(void)
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 	std::string sIp = LvItem.pszText;
 	free(LvItem.pszText);
@@ -1258,7 +1206,7 @@ void OnMainWindowBanIP(void)
 		g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 		
 	int iRetVal = iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg, &sAnswer,
-						g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+						g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 	
 	closesocket(g_hUdpSocket);
 	g_hUdpSocket = INVALID_SOCKET;
@@ -1274,7 +1222,7 @@ void OnMainWindowBanIP(void)
 void OnMainWindowBanID(void)
 {
 	int iSelectedColumn;
-	iSelectedColumn = SendMessage(g_hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
+	iSelectedColumn = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
 
 	if (iSelectedColumn == -1)
 	{
@@ -1287,26 +1235,26 @@ void OnMainWindowBanID(void)
 	BAN ban;
 	LVITEM LvItem = {0};
 
-	LvItem.iSubItem = SUBITEM_ID;
+	LvItem.iSubItem = SUBITEMS::iId;
 	LvItem.pszText = NULL;
 	do {
 		iSize *= 2;
 		free(LvItem.pszText);
 		LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 		LvItem.cchTextMax = iSize;
-		iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 	} while (iRet >= iSize - 1);
 
 	if (strcmp (LvItem.pszText, "0\0")==0)
 	{
-		LvItem.iSubItem = SUBITEM_NAME; //Get Name
+		LvItem.iSubItem = SUBITEMS::iName; //Get Name
 		iSize = 8;
 		do {
 			iSize *= 2;
 			free(LvItem.pszText);
 			LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 			LvItem.cchTextMax = iSize;
-			iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
+			iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedColumn, (LPARAM) &LvItem);
 		} while (iRet >= iSize - 1);
 
 		ban.sText.assign(LvItem.pszText);
@@ -1328,11 +1276,11 @@ void OnMainWindowBanID(void)
 
 void OnMainWindowDestroy(HWND hwnd)
 {
-	if (!g_iDontWriteConfig) //save configuration first so change of variables if possible afterwards
+	if (!g_bDontWriteConfig) //save configuration first so change of variables if possible afterwards
 		SaveConfig();
 	
-	g_bRunAutoReloadThread = 0;
-	g_bRunBanThread = 0;
+	gSettings.bRunAutoReloadThread = 0;
+	gSettings.bRunBanThread = 0;
 	
 	HANDLE rHandles[3] = {g_hBanThread, g_hAutoReloadThread, g_hSendRconThread};
 	WaitForMultipleObjects(3, rHandles, TRUE, 10000);
@@ -1376,7 +1324,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	{
 		case BN_CLICKED:
 		{
-			if (hwndCtl == g_hButtonSend)
+			if (hwndCtl == gWindows.hButtonSend)
 			{
 				if (WaitForSingleObject(g_hSendRconThread, 0) != WAIT_TIMEOUT)
 				{
@@ -1386,7 +1334,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				else
 					MainWindowWriteConsole ("Please wait for the server to answer to your last request");
 			}
-			if (hwndCtl == g_hButtonReload)
+			if (hwndCtl == gWindows.hButtonReload)
 			{
 				int * piKey;
 				HANDLE hThread;
@@ -1401,19 +1349,19 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
 				CloseHandle(hThread);
 			}
-			if (hwndCtl == g_hButtonKick) OnMainWindowKickPlayer();
-			if (hwndCtl == g_hButtonBanID) OnMainWindowBanID();
-			if (hwndCtl == g_hButtonBanIP) OnMainWindowBanIP();
-			if (hwndCtl == g_hButtonDPLoginProfile) OnMainWindowOpenDPLogin();
-			if (hwndCtl == g_hButtonUtrace) OnMainWindowOpenUtrace();
-			if (hwndCtl == g_hButtonForcejoin) OnMainWindowForcejoin();
-			if (hwndCtl == g_hButtonJoin) OnMainWindowJoinServer();
+			if (hwndCtl == gWindows.hButtonKick) OnMainWindowKickPlayer();
+			if (hwndCtl == gWindows.hButtonBanID) OnMainWindowBanID();
+			if (hwndCtl == gWindows.hButtonBanIP) OnMainWindowBanIP();
+			if (hwndCtl == gWindows.hButtonDPLoginProfile) OnMainWindowOpenDPLogin();
+			if (hwndCtl == gWindows.hButtonUtrace) OnMainWindowOpenUtrace();
+			if (hwndCtl == gWindows.hButtonForcejoin) OnMainWindowForcejoin();
+			if (hwndCtl == gWindows.hButtonJoin) OnMainWindowJoinServer();
 			break;
 		}
 	
 		case CBN_SELENDOK:
 		{
-			if (hwndCtl == g_hComboRcon)
+			if (hwndCtl == gWindows.hComboRcon)
 			{
 				if (WaitForSingleObject(g_hSendRconThread, 0) != WAIT_TIMEOUT)
 				{
@@ -1424,7 +1372,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 					MainWindowWriteConsole ("Please wait for the server to answer to your last request");
 			}
 			
-			else if (hwndCtl == g_hComboServer)
+			else if (hwndCtl == gWindows.hComboServer)
 			{
 				int * piKey;
 				HANDLE hThread;
@@ -1450,27 +1398,27 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			SendMessage(hwnd, WM_CLOSE, 0, 0);
 			break;
 		case IDM_FILE_SETTINGS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_PROGRAMSETTINGS), g_hWinMain, (DLGPROC) ProgramSettingsDlgProc);
+			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_PROGRAMSETTINGS), hwnd, (DLGPROC) ProgramSettingsDlgProc);
 			break;
 		case IDM_FILE_REMOVECONFIG:
 			DeleteConfig();
 			break;
 		case IDM_SERVER_MANAGE:
-			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), g_hWinMain, (DLGPROC) ManageServersDlgProc);
+			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, (DLGPROC) ManageServersDlgProc);
 			break;
 		case IDM_SERVER_ROTATION:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), g_hWinMain, (DLGPROC) ManageRotationDlgProc);
+			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, (DLGPROC) ManageRotationDlgProc);
 			break;
 		/*case IDM_SERVER_CVARS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGECVARS), g_hWinMain, (DLGPROC)ManageCvarsDlgProc);
+			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGECVARS), hwnd, (DLGPROC)ManageCvarsDlgProc);
 			break;*/
 		case IDM_BANS_ENABLE:
 		{
 			if (GetMenuState(GetMenu(hwnd), IDM_BANS_ENABLE, MF_BYCOMMAND) == SW_SHOWNA) {
-				g_bRunBanThread = 0;
+				gSettings.bRunBanThread = 0;
 				CheckMenuItem(GetMenu(hwnd), IDM_BANS_ENABLE, MF_UNCHECKED);
 			} else {
-				g_bRunBanThread = 1;
+				gSettings.bRunBanThread = 1;
 				CheckMenuItem(GetMenu(hwnd), IDM_BANS_ENABLE, MF_CHECKED);
 	
 				if (WaitForSingleObject(g_hBanThread, 0) != WAIT_TIMEOUT) {
@@ -1481,24 +1429,24 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			break;
 		}
 		case IDM_BANS_SETPING:
-			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SETPING), g_hWinMain, (DLGPROC) SetPingDlgProc);
+			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SETPING), hwnd, (DLGPROC) SetPingDlgProc);
 			break;
 		case IDM_BANS_MANAGEIDS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIDS), g_hWinMain, (DLGPROC) ManageIDsDlgProc);
+			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIDS), hwnd, (DLGPROC) ManageIDsDlgProc);
 			break;
 		case IDM_BANS_MANAGEIPS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIPS), g_hWinMain, (DLGPROC) ManageIPsDlgProc);
+			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, (DLGPROC) ManageIPsDlgProc);
 			break;
 		case IDM_HELP_DPLOGIN:
 			ShellExecute(NULL, "open", "http://www.DPLogin.com\0", NULL, NULL, SW_SHOWNORMAL);
 			break;
 		case IDM_HELP_RCONCOMMANDS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_RCONCOMMANDS), g_hWinMain, (DLGPROC) RCONCommandsDlgProc);
+			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_RCONCOMMANDS), hwnd, (DLGPROC) RCONCommandsDlgProc);
 			break;
 		case IDM_HELP_SERVERBROWSER:
 			StartServerbrowser(); break;
 		case IDM_HELP_ABOUT:
-			ShowAboutDialog(); break;
+			ShowAboutDialog(hwnd); break;
 	}
 
 	FORWARD_WM_COMMAND(hwnd, id, hwndCtl, codeNotify, DefWindowProc);
@@ -1506,71 +1454,71 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
 {
-    if (nmh->hwndFrom == g_hListPlayers)
+    if (nmh->hwndFrom == gWindows.hListPlayers)
 	{
 		switch (nmh->code)
 		{
 			case NM_CLICK:
 			{
-				int iSelectedItem = SendMessage(g_hListPlayers, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+				int iSelectedItem = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
 				int iSize = 8;
 				int iRet = 0;
 				LVITEM LvItem = {0};
-				LvItem.iSubItem = SUBITEM_ID;
+				LvItem.iSubItem = SUBITEMS::iId;
 				LvItem.pszText = NULL;
 				do {
 					iSize *= 2;
 					free(LvItem.pszText);
 					LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 					LvItem.cchTextMax = iSize;
-					iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedItem, (LPARAM) &LvItem);
+					iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedItem, (LPARAM) &LvItem);
 				} while (iRet >= iSize - 1);
 	
 				if (strcmp(LvItem.pszText, "0") == 0)
-					SetWindowText(g_hButtonBanID, "Ban Name");
+					SetWindowText(gWindows.hButtonBanID, "Ban Name");
 				else
-					SetWindowText(g_hButtonBanID, "Ban ID");
+					SetWindowText(gWindows.hButtonBanID, "Ban ID");
 				free(LvItem.pszText);
 				break;
 			}
 			
 			case NM_DBLCLK:
 			{
-				ShowPlayerInfo();
+				ShowPlayerInfo(hwnd);
 				break;
 			}
 			
 			case LVN_COLUMNCLICK:
 			{
 				NMLISTVIEW* pNmListview = (NMLISTVIEW*)nmh;
-				ListView_SortItems (g_hListPlayers, OnMainWindowListViewSort, pNmListview->iSubItem);
+				ListView_SortItems (gWindows.hListPlayers, OnMainWindowListViewSort, pNmListview->iSubItem);
 				FORWARD_WM_NOTIFY(hwnd, id, nmh, DefWindowProc);
 				break;
 			}
 			
 			case NM_RCLICK:
 			{
-				int iSelectedItem = SendMessage(g_hListPlayers, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+				int iSelectedItem = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
 				if (iSelectedItem == -1)
 					break;
 				
 				int iSize = 16; //"255.255.255.255\0" -> 16 is enough, still, for copatibility to ipv6 etc.
 				int iRet = 0;
 				LVITEM LvItem = {0};
-				LvItem.iSubItem = SUBITEM_IP;
+				LvItem.iSubItem = SUBITEMS::iIp;
 				LvItem.pszText = NULL;
 				do {
 					iSize *= 2;
 					free(LvItem.pszText);
 					LvItem.pszText = (LPTSTR)calloc(iSize, sizeof(TCHAR));
 					LvItem.cchTextMax = iSize;
-					iRet = SendMessage(g_hListPlayers, LVM_GETITEMTEXT, iSelectedItem, (LPARAM) &LvItem);
+					iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iSelectedItem, (LPARAM) &LvItem);
 				} while (iRet >= iSize - 1);
 				
 				HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, iSize);
 				memcpy(GlobalLock(hMem), LvItem.pszText, iRet + 1);
 				GlobalUnlock(hMem);
-				OpenClipboard(g_hWinMain);
+				OpenClipboard(gWindows.hWinMain);
 				EmptyClipboard();
 				SetClipboardData(CF_TEXT, hMem);
 				CloseClipboard();				
@@ -1605,44 +1553,44 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
     //printf ("Player : left: %d; top: %d; right: %d; bottom: %d\n", rcPlayers.left, rcPlayers.top, rcPlayers.right, rcPlayers.bottom);
     //printf ("Console: left: %d; top: %d; right: %d; bottom: %d\n", rcConsole.left, rcConsole.top, rcConsole.right, rcConsole.bottom);
 
-	MoveWindow(g_hComboServer		, 24*iMW, 3  *iMH, cx - 71*iMW, 8*iMH		, FALSE);
-	MoveWindow(g_hStaticServerInfo	, 24*iMW, 15 *iMH, cx - 71*iMW, 8*iMH		, FALSE);
+	MoveWindow(gWindows.hComboServer		, 24*iMW, 3  *iMH, cx - 71*iMW, 8*iMH		, FALSE);
+	MoveWindow(gWindows.hStaticServerInfo	, 24*iMW, 15 *iMH, cx - 71*iMW, 8*iMH		, FALSE);
 
 	if (cy > 244*iMH) //if window is big enough
 	{
-		MoveWindow(g_hListPlayers, 3 *iMW	 , 25 *iMH	  , cx - 50*iMW, cy/2-20*iMH	, FALSE); //resize listview and console
-		MoveWindow(g_hComboRcon  , 3 *iMW	 , cy/2+10*iMH , cx - 50*iMW, 10*iMH			, FALSE);
-		MoveWindow(g_hButtonSend , cx - 45*iMW, cy/2+9*iMH , 43*iMW	   , 12*iMH			, FALSE);
-		MoveWindow(g_hEditConsole, 3 *iMW	 , cy/2+23*iMH, cx - 6 *iMW, cy/2-26*iMH	, FALSE);
+		MoveWindow(gWindows.hListPlayers, 3 *iMW	 , 25 *iMH	  , cx - 50*iMW, cy/2-20*iMH	, FALSE); //resize listview and console
+		MoveWindow(gWindows.hComboRcon  , 3 *iMW	 , cy/2+10*iMH , cx - 50*iMW, 10*iMH			, FALSE);
+		MoveWindow(gWindows.hButtonSend , cx - 45*iMW, cy/2+9*iMH , 43*iMW	   , 12*iMH			, FALSE);
+		MoveWindow(gWindows.hEditConsole, 3 *iMW	 , cy/2+23*iMH, cx - 6 *iMW, cy/2-26*iMH	, FALSE);
 	}
 	else
 	{
-		MoveWindow(g_hListPlayers, 		3 *iMW, 25 *iMH, cx - 50*iMW, 102*iMH   , FALSE); //only resize console, keep listview's min size
-		MoveWindow(g_hComboRcon  , 		3 *iMW, 132*iMH, cx - 50*iMW, 10*iMH	, FALSE);
-		MoveWindow(g_hButtonSend , cx - 45*iMW, 131*iMH, 	  43*iMW, 12*iMH	, FALSE);
-		MoveWindow(g_hEditConsole, 		3 *iMW, 145*iMH, cx - 6 *iMW, cy-148*iMH, FALSE);
+		MoveWindow(gWindows.hListPlayers, 		3 *iMW, 25 *iMH, cx - 50*iMW, 102*iMH   , FALSE); //only resize console, keep listview's min size
+		MoveWindow(gWindows.hComboRcon  , 		3 *iMW, 132*iMH, cx - 50*iMW, 10*iMH	, FALSE);
+		MoveWindow(gWindows.hButtonSend , cx - 45*iMW, 131*iMH, 	  43*iMW, 12*iMH	, FALSE);
+		MoveWindow(gWindows.hEditConsole, 		3 *iMW, 145*iMH, cx - 6 *iMW, cy-148*iMH, FALSE);
 	}
 
-	MoveWindow(g_hButtonBanID		  , cx - 45*iMW, 54 *iMH	, 43*iMW, 12*iMH, FALSE); //Move all buttons to left / right
-	MoveWindow(g_hButtonBanIP		  , cx - 45*iMW, 67 *iMH	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(g_hButtonDPLoginProfile, cx - 45*iMW, 83 *iMH	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(g_hButtonForcejoin	  , cx - 45*iMW, 115*iMH  	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(g_hButtonJoin		  , cx - 45*iMW, 2  *iMH + 1, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(g_hButtonKick		  , cx - 45*iMW, 41 *iMH	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(g_hButtonReload		  , cx - 45*iMW, 25 *iMH	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(g_hButtonUtrace		  , cx - 45*iMW, 96 *iMH    , 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonBanID		  , cx - 45*iMW, 54 *iMH	, 43*iMW, 12*iMH, FALSE); //Move all buttons to left / right
+	MoveWindow(gWindows.hButtonBanIP		  , cx - 45*iMW, 67 *iMH	, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonDPLoginProfile, cx - 45*iMW, 83 *iMH	, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonForcejoin	  , cx - 45*iMW, 115*iMH  	, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonJoin		  , cx - 45*iMW, 2  *iMH + 1, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonKick		  , cx - 45*iMW, 41 *iMH	, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonReload		  , cx - 45*iMW, 25 *iMH	, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonUtrace		  , cx - 45*iMW, 96 *iMH    , 43*iMW, 12*iMH, FALSE);
 
-	ListView_SetColumnWidth(g_hListPlayers, SUBITEM_NUMBER, 17*iMW); //num
-	ListView_SetColumnWidth(g_hListPlayers, SUBITEM_NAME, cx - 220*iMW); //name
-	ListView_SetColumnWidth(g_hListPlayers, SUBITEM_BUILD, 18*iMW);	//build
-	ListView_SetColumnWidth(g_hListPlayers, SUBITEM_ID, 25*iMW);	//ID
-	ListView_SetColumnWidth(g_hListPlayers, SUBITEM_OP, 15*iMW);	//OP
-	ListView_SetColumnWidth(g_hListPlayers, SUBITEM_IP, 47*iMW);	//IP
-	ListView_SetColumnWidth(g_hListPlayers, SUBITEM_PING, 17*iMW);	//Ping
-	ListView_SetColumnWidth(g_hListPlayers, SUBITEM_SCORE, 20*iMW); //Score
-	ListView_SetColumnWidth(g_hListPlayers, 7, LVSCW_AUTOSIZE_USEHEADER);
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iNumber, 17*iMW);                   //num
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iName,   cx - 220*iMW);             //name
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iBuild,  18*iMW);                   //build
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iId,     25*iMW);                   //ID
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iOp,     15*iMW);                   //OP
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iIp,     47*iMW);                   //IP
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iPing,   17*iMW);                   //Ping
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iScore,  20*iMW);                   //Score
+	ListView_SetColumnWidth(gWindows.hListPlayers, 7,                 LVSCW_AUTOSIZE_USEHEADER);
 
-	RedrawWindow(g_hWinMain, NULL, NULL, RDW_ERASE | RDW_INVALIDATE);
+	RedrawWindow(gWindows.hWinMain, NULL, NULL, RDW_ERASE | RDW_INVALIDATE);
 	
 	FORWARD_WM_SIZE(hwnd, state, cx, cy, DefWindowProc);
 }
@@ -1657,7 +1605,7 @@ void OnMainWindowGetMinMaxInfo(HWND hwnd, LPMINMAXINFO lpMinMaxInfo)
 
 HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type)
 {
-	if (hwndChild == g_hEditConsole) //paint the background of the console white
+	if (hwndChild == gWindows.hEditConsole) //paint the background of the console white
 	{
 		SetTextColor(hdc, RGB(0, 0, 0) );
 		SetBkColor  (hdc, RGB(255, 255, 255) );
@@ -1689,7 +1637,7 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
 BOOL OnSetPingInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
-	std::string sMaxPing = std::to_string(g_iMaxPing);
+	std::string sMaxPing = std::to_string(gSettings.iMaxPingMsecs);
 	SetDlgItemText(hwnd, IDC_SP_EDIT, sMaxPing.c_str());
 	return TRUE;
 }
@@ -1708,13 +1656,13 @@ void OnSetPingCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_SP_EDIT)) + 1;
 			char * szMaxPingBuffer = new char[iBufferSize];
 			GetDlgItemText(hwnd, IDC_SP_EDIT, szMaxPingBuffer, iBufferSize);
-			g_iMaxPing = atoi(szMaxPingBuffer);
+			gSettings.iMaxPingMsecs = atoi(szMaxPingBuffer);
 			delete[] szMaxPingBuffer;
 			
-			if (g_iMaxPing == 0)
-				CheckMenuItem(GetMenu(g_hWinMain), IDM_BANS_SETPING, MF_UNCHECKED);
+			if (gSettings.iMaxPingMsecs == 0)
+				CheckMenuItem(GetMenu(gWindows.hWinMain), IDM_BANS_SETPING, MF_UNCHECKED);
 			else
-				CheckMenuItem(GetMenu(g_hWinMain), IDM_BANS_SETPING, MF_CHECKED);
+				CheckMenuItem(GetMenu(gWindows.hWinMain), IDM_BANS_SETPING, MF_CHECKED);
 
 			EndDialog(hwnd, 1);
 			return;
@@ -1753,35 +1701,35 @@ BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 	SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_SETTICFREQ, 1000, 0);
 	SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_SETTICFREQ, 100, 0);
 	
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_SETPOS, TRUE, (int) (g_fTimeout * 20));
-	sprintf (szBuffer, "%.2f s", g_fTimeout);
+	SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_SETPOS, TRUE, (int) (gSettings.fTimeoutSecs * 20));
+	sprintf (szBuffer, "%.2f s", gSettings.fTimeoutSecs);
 	SetDlgItemText(hwnd, IDC_PS_STATICOWNSERVERS, szBuffer);
 	
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_SETPOS, TRUE, (int) (g_fAllServersTimeout * 20));
-	sprintf (szBuffer, "%.2f s", g_fAllServersTimeout);
+	SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_SETPOS, TRUE, (int) (gSettings.fAllServersTimeoutSecs * 20));
+	sprintf (szBuffer, "%.2f s", gSettings.fAllServersTimeoutSecs);
 	SetDlgItemText(hwnd, IDC_PS_STATICOTHERSERVERS, szBuffer);
 	
-	sBuffer.assign(std::to_string(g_iBanCheckDelay));
+	sBuffer.assign(std::to_string(gSettings.iBanCheckDelaySecs));
 	SetDlgItemText(hwnd, IDC_PS_EDITBANINTERVAL, sBuffer.c_str());
 	
-	sBuffer.assign(std::to_string(g_iAutoReloadDelay));
+	sBuffer.assign(std::to_string(gSettings.iAutoReloadDelaySecs));
 	SetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, sBuffer.c_str());
-	if (g_bRunAutoReloadThread)
+	if (gSettings.bRunAutoReloadThread)
 		CheckDlgButton(hwnd, IDC_PS_CHECKAUTORELOAD, BST_CHECKED);
 	else
 		EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITAUTORELOAD), FALSE);
 
-	sBuffer.assign(std::to_string(g_iMaxConsoleLineCount));
+	sBuffer.assign(std::to_string(gSettings.iMaxConsoleLineCount));
 	SetDlgItemText(hwnd, IDC_PS_EDITLINECOUNT, sBuffer.c_str());
-	if (g_bLimitConsoleLineCount)
+	if (gSettings.bLimitConsoleLineCount)
 		CheckDlgButton(hwnd, IDC_PS_CHECKLINECOUNT, BST_CHECKED);
 	else
 		EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT), FALSE);
 	
-	if (g_bColorPlayers)
+	if (gSettings.bColorPlayers)
 		CheckDlgButton(hwnd, IDC_PS_CHECKCOLORPLAYERS, BST_CHECKED);
 	
-	if (g_bColorPings)
+	if (gSettings.bColorPings)
 		CheckDlgButton(hwnd, IDC_PS_CHECKCOLORPINGS, BST_CHECKED);
 	
 	return TRUE;
@@ -1846,10 +1794,10 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			char * szBuffer;
 			
 			pos = SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_GETPOS, 0, 0);
-			g_fTimeout = (float)pos/(float)20;
+			gSettings.fTimeoutSecs = (float)pos/(float)20;
 			
 			pos = SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_GETPOS, 0, 0);
-			g_fAllServersTimeout = (float)pos/(float)20;
+			gSettings.fAllServersTimeoutSecs = (float)pos/(float)20;
 			
 			iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITBANINTERVAL)) + 1;
 			iBufferSizeNew = GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITAUTORELOAD)) + 1;
@@ -1860,14 +1808,14 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			szBuffer = new char[iBufferSize];
 			
 			GetDlgItemText(hwnd, IDC_PS_EDITBANINTERVAL, szBuffer, iBufferSize);
-			g_iBanCheckDelay = atoi (szBuffer);
+			gSettings.iBanCheckDelaySecs = atoi (szBuffer);
 			
 			GetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, szBuffer, iBufferSize);
-			g_iAutoReloadDelay = atoi (szBuffer);
+			gSettings.iAutoReloadDelaySecs = atoi (szBuffer);
 				
 			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKAUTORELOAD) == BST_CHECKED)
 			{
-				g_bRunAutoReloadThread = 1;
+				gSettings.bRunAutoReloadThread = 1;
 				
 				if (WaitForSingleObject(g_hAutoReloadThread, 0) != WAIT_TIMEOUT)
 				{
@@ -1877,36 +1825,36 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			}
 			else
 			{
-				g_bRunAutoReloadThread = 0;
+				gSettings.bRunAutoReloadThread = 0;
 				CloseHandle(g_hAutoReloadThread);
 				g_hAutoReloadThread = INVALID_HANDLE_VALUE;
 			}
 			
 			
 			GetDlgItemText(hwnd, IDC_PS_EDITLINECOUNT, szBuffer, iBufferSize);
-			g_iMaxConsoleLineCount = atoi (szBuffer);
+			gSettings.iMaxConsoleLineCount = atoi (szBuffer);
 			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKLINECOUNT) == BST_CHECKED)
 			{
-				g_bLimitConsoleLineCount = 1;
-				Edit_ReduceLines(g_hEditConsole, g_iMaxConsoleLineCount);
-				Edit_ScrollToEnd(g_hEditConsole);
+				gSettings.bLimitConsoleLineCount = 1;
+				Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
+				Edit_ScrollToEnd(gWindows.hEditConsole);
 			}
 			else
 			{
-				g_bLimitConsoleLineCount = 0;
+				gSettings.bLimitConsoleLineCount = 0;
 			}
 			
 			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKCOLORPLAYERS) == BST_CHECKED)
-				g_bColorPlayers = true;
+				gSettings.bColorPlayers = true;
 			else
-				g_bColorPlayers = false;
+				gSettings.bColorPlayers = false;
 				
 			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKCOLORPINGS) == BST_CHECKED)
-				g_bColorPings = true;
+				gSettings.bColorPings = true;
 			else
-				g_bColorPings = false;
+				gSettings.bColorPings = false;
 			
-			RedrawWindow(g_hWinMain, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_UPDATENOW);
+			RedrawWindow(gWindows.hWinMain, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_UPDATENOW);
 			
 			
 			delete[] szBuffer;			
@@ -1941,7 +1889,7 @@ LRESULT CALLBACK ProgramSettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, 
 void LoadRotationToListbox(HWND hListBox)
 {
 	SendMessage(hListBox, LB_RESETCONTENT, 0, 0);
-	int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
 		return;
 
@@ -1950,7 +1898,7 @@ void LoadRotationToListbox(HWND hListBox)
 		g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	
 	iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, "sv maplist", &sAnswer,
-							g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+							g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 	closesocket(g_hUdpSocket);
 	g_hUdpSocket = INVALID_SOCKET;
 
@@ -1969,7 +1917,7 @@ void LoadRotationToListbox(HWND hListBox)
 BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 {
 	std::string sAnswer;
-	int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 
 	LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
 
@@ -1980,7 +1928,7 @@ BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 		g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	
 	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword,
-						"rot_file", &sAnswer, g_hUdpSocket, g_fTimeout);
+						"rot_file", &sAnswer, g_hUdpSocket, gSettings.fTimeoutSecs);
 	closesocket(g_hUdpSocket);
 	g_hUdpSocket = INVALID_SOCKET;
 
@@ -2013,7 +1961,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			std::string sMsg("sv rotation add ");
 			std::string sAnswer;
 	
-			i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+			i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 			if (i == CB_ERR)
 				return;
 	
@@ -2027,7 +1975,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (g_hUdpSocket == INVALID_SOCKET)
 				g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 			
-			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg, &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg, &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 			
 			closesocket(g_hUdpSocket);
 			g_hUdpSocket = INVALID_SOCKET;
@@ -2043,7 +1991,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			std::string sMsg("sv rotation remove ");
 			std::string sAnswer;
 	
-			i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+			i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 			if (i == CB_ERR)
 				return;
 	
@@ -2056,7 +2004,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (g_hUdpSocket == INVALID_SOCKET)
 				g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 				
-			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg, &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg, &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 			
 			closesocket(g_hUdpSocket);
 			g_hUdpSocket = INVALID_SOCKET;
@@ -2067,7 +2015,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	
 		case IDC_MROT_BUTTONCLEAR:
 		{
-			int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+			int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 			if (i == CB_ERR)
 				return;
 	
@@ -2075,7 +2023,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (g_hUdpSocket == 0)
 				g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 			
-			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, "sv rotation clear\0", &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, "sv rotation clear\0", &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 			closesocket(g_hUdpSocket);
 			g_hUdpSocket = INVALID_SOCKET;
 			
@@ -2090,7 +2038,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			std::string sMsg("sv rotation save ");
 			std::string sAnswer;
 	
-			i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+			i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 			if (i == CB_ERR)
 				return;
 	
@@ -2103,7 +2051,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (g_hUdpSocket == INVALID_SOCKET)
 				g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 				
-			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg, &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg, &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 			closesocket(g_hUdpSocket);
 			g_hUdpSocket = INVALID_SOCKET;
 			
@@ -2126,7 +2074,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			std::string sMsg("sv rotation load ");
 			std::string sAnswer;
 	
-			i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+			i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 			if (i == CB_ERR)
 				return;
 	
@@ -2139,7 +2087,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (g_hUdpSocket == INVALID_SOCKET)
 				g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 				
-			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg, &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg, &sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 			closesocket(g_hUdpSocket);
 			g_hUdpSocket = INVALID_SOCKET;
 			
@@ -2206,14 +2154,14 @@ void OnManageRotationReloadContent(HWND hwnd)
 
 	LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
 
-	i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
 		return;
 
 	if (g_hUdpSocket == INVALID_SOCKET)
 		g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 		
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "rot_file", &sRotationFile, g_hUdpSocket, g_fTimeout);
+	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "rot_file", &sRotationFile, g_hUdpSocket, gSettings.fTimeoutSecs);
 	closesocket(g_hUdpSocket);
 	g_hUdpSocket = INVALID_SOCKET;
 	
@@ -2307,7 +2255,7 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 		start = MatchResults[0].second;
 
 		SERVER tempserver;
-		iServerStructFromAddress(sIP, atoi(sPort.c_str()), &tempserver, hSocket, g_fAllServersTimeout);
+		iServerStructFromAddress(sIP, atoi(sPort.c_str()), &tempserver, hSocket, gSettings.fAllServersTimeoutSecs);
 		
 		try
 		{
@@ -2345,13 +2293,13 @@ void OnManageServersClose(HWND hwnd)
 
 void OnManageServersDestroy(HWND hwnd)
 {
-	SendMessage(g_hComboServer, CB_RESETCONTENT, 0, 0); //reload g_hComboServer
+	SendMessage(gWindows.hComboServer, CB_RESETCONTENT, 0, 0); //reload gWindows.hComboServer
 	for (unsigned int i = 0; i < g_vSavedServers.size(); i++)
 	{
-		int index = SendMessage(g_hComboServer, CB_ADDSTRING, 0, (LPARAM) g_vSavedServers[i].sHostname.c_str());
-		SendMessage (g_hComboServer, CB_SETITEMDATA, index, i);
+		int index = SendMessage(gWindows.hComboServer, CB_ADDSTRING, 0, (LPARAM) g_vSavedServers[i].sHostname.c_str());
+		SendMessage (gWindows.hComboServer, CB_SETITEMDATA, index, i);
 	}
-	SendMessage(g_hComboServer, CB_SETCURSEL, 0, 0);
+	SendMessage(gWindows.hComboServer, CB_SETCURSEL, 0, 0);
 	
 	SignalAllThreads(&g_mLoadServersThreads);
 	MainWindowWriteConsole("Aborting.");
@@ -2417,7 +2365,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (g_hUdpSocket == INVALID_SOCKET)
 				g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 				
-			iServerStructFromAddress(tempserver.sIp, tempserver.iPort, &tempserver, g_hUdpSocket, g_fAllServersTimeout);
+			iServerStructFromAddress(tempserver.sIp, tempserver.iPort, &tempserver, g_hUdpSocket, gSettings.fAllServersTimeoutSecs);
 			closesocket(g_hUdpSocket);
 			g_hUdpSocket = INVALID_SOCKET;
 	
@@ -2484,7 +2432,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (g_hUdpSocket == INVALID_SOCKET)
 				g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 				
-			iServerStructFromAddress(g_vSavedServers[iRet].sIp, g_vSavedServers[iRet].iPort, &g_vSavedServers[iRet], g_hUdpSocket, g_fAllServersTimeout);
+			iServerStructFromAddress(g_vSavedServers[iRet].sIp, g_vSavedServers[iRet].iPort, &g_vSavedServers[iRet], g_hUdpSocket, gSettings.fAllServersTimeoutSecs);
 			closesocket(g_hUdpSocket);
 			g_hUdpSocket = INVALID_SOCKET;
 
@@ -2683,7 +2631,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				sprintf(szCompareBuffer, "%d", atoi(szBuffer)); //check if it's a valid ID
 				
 				if (strcmp (szBuffer, szCompareBuffer) != 0) {
-					MessageBox(g_hWinMain, "The ID you have entered is not valid.", "Error: Invalid ID", MB_OK | MB_ICONERROR);
+					MessageBox(gWindows.hWinMain, "The ID you have entered is not valid.", "Error: Invalid ID", MB_OK | MB_ICONERROR);
 					delete[] szCompareBuffer;
 					delete[] szBuffer;
 					return ;
@@ -2749,7 +2697,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				char * szCompareBuffer = new char[iBufferSize];
 				sprintf(szCompareBuffer, "%d", atoi(szBuffer)); //check if it's a valid ID
 				if (strcmp (szBuffer, szCompareBuffer) != 0) {
-					MessageBoxA(g_hWinMain, "The ID you have entered is not valid.", "Error: Invalid ID", MB_OK | MB_ICONERROR);
+					MessageBoxA(gWindows.hWinMain, "The ID you have entered is not valid.", "Error: Invalid ID", MB_OK | MB_ICONERROR);
 					delete[] szCompareBuffer;
 					delete[] szBuffer;
 					return;
@@ -2815,7 +2763,7 @@ LRESULT CALLBACK ManageIDsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 void LoadBannedIPsToListbox(HWND hListBox)
 {
 	SendMessage(hListBox, LB_RESETCONTENT, 0, 0);
-	int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
 		return;
 
@@ -2824,7 +2772,7 @@ void LoadBannedIPsToListbox(HWND hListBox)
 		g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 		
 	iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, "sv listip", &sAnswer,
-							g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+							g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 	closesocket(g_hUdpSocket);
 	g_hUdpSocket = INVALID_SOCKET;
 
@@ -2857,7 +2805,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	{
 		case IDC_MIPS_BUTTONADD:
 		{
-			int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+			int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 			if (i == CB_ERR)
 				return;
 	
@@ -2872,7 +2820,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 			
 			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg,
-									&sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+									&sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 			closesocket(g_hUdpSocket);
 			g_hUdpSocket = INVALID_SOCKET;
 			LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
@@ -2881,7 +2829,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	
 		case IDC_MIPS_BUTTONREMOVE:
 		{
-			int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+			int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 			if (i == CB_ERR)
 				return;
 	
@@ -2897,7 +2845,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 			
 			iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, sMsg,
-									&sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+									&sAnswer, g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 			closesocket(g_hUdpSocket);
 			g_hUdpSocket = INVALID_SOCKET;
 			LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
@@ -2957,7 +2905,7 @@ LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 /*int LoadCvarsToListview(HWND hListView)
 {
 	SendMessage(hListView, LVM_DELETEALLITEMS, 0, 0);
-	int i = SendMessage(g_hComboServer, CB_GETITEMDATA, SendMessage(g_hComboServer, CB_GETCURSEL, 0, 0), 0);
+	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
 		return TRUE;
 
@@ -2966,7 +2914,7 @@ LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 		g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 		
 	iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, "cvarlist", &sAnswer,
-						g_vSavedServers[i].sRconPassword, g_hUdpSocket, g_fTimeout);
+						g_vSavedServers[i].sRconPassword, g_hUdpSocket, gSettings.fTimeoutSecs);
 	closesocket(g_hUdpSocket);
 	g_hUdpSocket = INVALID_SOCKET;
 	
@@ -2982,11 +2930,11 @@ LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 		std::string sCvar (MatchResults[1]);
 		std::string sValue (MatchResults[2]);
 
-		LvItem.iSubItem = SUBITEM_NUMBER;
+		LvItem.iSubItem = SUBITEMS::iNumber;
 		LvItem.pszText = (LPSTR)sCvar.c_str();
 		SendMessage(hListView, LVM_INSERTITEM, 0, (LPARAM)&LvItem);
 
-		LvItem.iSubItem = SUBITEM_NAME;
+		LvItem.iSubItem = SUBITEMS::iName;
 		LvItem.pszText = (LPSTR)sValue.c_str();
 		SendMessage(hListView, LVM_SETITEM, 0, (LPARAM)&LvItem);
 
@@ -3140,7 +3088,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 
 	while (true)
 	{
-		if (!g_bRunBanThread)
+		if (!gSettings.bRunBanThread)
 		{
             closesocket(g_hBanSocket);
             g_hBanSocket = INVALID_SOCKET;
@@ -3157,13 +3105,13 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 				g_hBanSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 			
             iPlayerStructVectorFromAddress(ServerVector[server].sIp, ServerVector[server].iPort,
-										ServerVector[server].sRconPassword, &PlayerVector, g_hBanSocket, g_fTimeout);
+										ServerVector[server].sRconPassword, &PlayerVector, g_hBanSocket, gSettings.fTimeoutSecs);
 			closesocket(g_hBanSocket);
 			g_hBanSocket = INVALID_SOCKET;
 			
             for (unsigned int player = 0; player < PlayerVector.size(); player++)
 			{
-				if (g_iMaxPing != 0 && PlayerVector[player].iPing > g_iMaxPing)
+				if (gSettings.iMaxPingMsecs != 0 && PlayerVector[player].iPing > gSettings.iMaxPingMsecs)
 				{
 					sMsgBuffer.assign("kick ");
 					sMsgBuffer.append(std::to_string(PlayerVector[player].iNumber));
@@ -3172,7 +3120,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 						
 					iSendMessageToServer(ServerVector[server].sIp, ServerVector[server].iPort,
 										sMsgBuffer, &sReturnBuffer,
-										ServerVector[server].sRconPassword, g_hBanSocket, g_fTimeout);
+										ServerVector[server].sRconPassword, g_hBanSocket, gSettings.fTimeoutSecs);
 					closesocket(g_hBanSocket);
 					g_hBanSocket = INVALID_SOCKET;
 					
@@ -3198,7 +3146,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 							
 						iSendMessageToServer(ServerVector[server].sIp, ServerVector[server].iPort,
 											sMsgBuffer, &sReturnBuffer,
-											ServerVector[server].sRconPassword, g_hBanSocket, g_fTimeout);
+											ServerVector[server].sRconPassword, g_hBanSocket, gSettings.fTimeoutSecs);
 						closesocket(g_hBanSocket);
 						g_hBanSocket = INVALID_SOCKET;
 						
@@ -3214,10 +3162,10 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 		MainWindowWriteConsole("Checked servers for banned players.");
 		
 		int iBanThreadTimeWaited = 0;
-		while (iBanThreadTimeWaited <= g_iBanCheckDelay  * 1000)
+		while (iBanThreadTimeWaited <= gSettings.iBanCheckDelaySecs  * 1000)
 		{
 			Sleep(100);
-			if (!g_bRunBanThread)
+			if (!gSettings.bRunBanThread)
 			{
 				closesocket(g_hBanSocket);
 				g_hBanSocket = INVALID_SOCKET;
@@ -3232,16 +3180,16 @@ void AutoReloadThreadFunction(void)
 {
 	while (true)
 	{
-		if (!g_bRunAutoReloadThread)
+		if (!gSettings.bRunAutoReloadThread)
 		{
 			g_hAutoReloadThread = INVALID_HANDLE_VALUE;
 			return;
 		}
 			
 		Sleep(100);
-		g_iAutoReloadThreadTimeWaited += 100;
+		g_iAutoReloadThreadTimeWaitedMsecs += 100;
 		
-		if (g_iAutoReloadThreadTimeWaited >= g_iAutoReloadDelay * 1000)
+		if (g_iAutoReloadThreadTimeWaitedMsecs >= gSettings.iAutoReloadDelaySecs * 1000)
 		{	
 			int * piKey;
 			HANDLE hThread;
@@ -3258,9 +3206,9 @@ void AutoReloadThreadFunction(void)
 	}
 }
 
-void DeleteConfig() // deletes the config file, prints result to console, sets g_iDontWriteConfig to 1
+void DeleteConfig() // deletes the config file, prints result to console, sets g_bDontWriteConfig to 1
 {
-	g_iDontWriteConfig = 1;
+	g_bDontWriteConfig = true;
 	char szCfgFileName[MAX_PATH] = {'\0'}; //get path of config file
 	GetModuleFileName(GetModuleHandle(NULL), szCfgFileName, MAX_PATH);
 	szCfgFileName[strlen(szCfgFileName) - 3] = '\0';
@@ -3290,49 +3238,49 @@ int LoadConfig() // loads the servers and settings from the config file
 	szCfgFileName[strlen(szCfgFileName) - 3] = '\0';
 	strcat(szCfgFileName, "ini");
 
-	GetPrivateProfileString("general", "timeout", std::to_string(DEFAULT_TIMEOUT).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName); //load general settings
-	g_fTimeout 				= (float) atof(szReadBuffer);
+	GetPrivateProfileString("general", "timeout", std::to_string(DEFAULTSETTINGS::fTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName); //load general settings
+	gSettings.fTimeoutSecs 				= (float) atof(szReadBuffer);
 	
-	GetPrivateProfileString("general", "timeoutForNonRconServers", std::to_string(DEFAULT_TIMEOUTALLSERVERS).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_fAllServersTimeout 	= (float) atof(szReadBuffer);
+	GetPrivateProfileString("general", "timeoutForNonRconServers", std::to_string(DEFAULTSETTINGS::fAllServersTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.fAllServersTimeoutSecs 	= (float) atof(szReadBuffer);
 	
-	GetPrivateProfileString("general", "maxConsoleLineCount", std::to_string(DEFAULT_MAXCONSOLELINECOUNT).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_iMaxConsoleLineCount  = atoi(szReadBuffer);
+	GetPrivateProfileString("general", "maxConsoleLineCount", std::to_string(DEFAULTSETTINGS::iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.iMaxConsoleLineCount  = atoi(szReadBuffer);
 	
-	GetPrivateProfileString("general", "limitConsoleLineCount", std::to_string(DEFAULT_MAXCONSOLELINECOUNT).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_bLimitConsoleLineCount  = (atoi(szReadBuffer)) ? true : false;
+	GetPrivateProfileString("general", "limitConsoleLineCount", std::to_string(DEFAULTSETTINGS::iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.bLimitConsoleLineCount  = (atoi(szReadBuffer)) ? true : false;
 	
-	GetPrivateProfileString("general", "colorPlayers", std::to_string(DEFAULT_COLORPLAYERS).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_bColorPlayers  = (atoi(szReadBuffer)) ? true : false;
+	GetPrivateProfileString("general", "colorPlayers", std::to_string(DEFAULTSETTINGS::bColorPlayers).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.bColorPlayers  = (atoi(szReadBuffer)) ? true : false;
 	
-	GetPrivateProfileString("general", "colorPings", std::to_string(DEFAULT_COLORPINGS).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_bColorPings  = (atoi(szReadBuffer)) ? true : false;
+	GetPrivateProfileString("general", "colorPings", std::to_string(DEFAULTSETTINGS::bColorPings).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.bColorPings  = (atoi(szReadBuffer)) ? true : false;
 	
-	GetPrivateProfileString("general", "autoReloadDelay", std::to_string(DEFAULT_AUTORELOADDELAY).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_iAutoReloadDelay  = atoi(szReadBuffer);
+	GetPrivateProfileString("general", "autoReloadDelay", std::to_string(DEFAULTSETTINGS::iAutoReloadDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.iAutoReloadDelaySecs  = atoi(szReadBuffer);
 	
-	GetPrivateProfileString("general", "runAutoReloadThread", std::to_string(DEFAULT_RUNAUTORELOADTHREAD).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_bRunAutoReloadThread  = (atoi(szReadBuffer)) ? true : false;
+	GetPrivateProfileString("general", "runAutoReloadThread", std::to_string(DEFAULTSETTINGS::bRunAutoReloadThread).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.bRunAutoReloadThread  = (atoi(szReadBuffer)) ? true : false;
 	
-	if (g_bRunAutoReloadThread && WaitForSingleObject(g_hAutoReloadThread, 0) != WAIT_TIMEOUT)
+	if (gSettings.bRunAutoReloadThread && WaitForSingleObject(g_hAutoReloadThread, 0) != WAIT_TIMEOUT)
 	{
 		CloseHandle(g_hAutoReloadThread);
 		g_hAutoReloadThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) AutoReloadThreadFunction, NULL, 0, NULL);
 	}
 	
-	GetPrivateProfileString("bans", "runBanThread", std::to_string(DEFAULT_RUNBANTHREAD).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_bRunBanThread  = (atoi(szReadBuffer)) ? true : false;
-	if (g_bRunBanThread)
+	GetPrivateProfileString("bans", "runBanThread", std::to_string(DEFAULTSETTINGS::bRunBanThread).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.bRunBanThread  = (atoi(szReadBuffer)) ? true : false;
+	if (gSettings.bRunBanThread)
 	{
-		CheckMenuItem(GetMenu(g_hWinMain), IDM_BANS_ENABLE, MF_CHECKED);
+		CheckMenuItem(GetMenu(gWindows.hWinMain), IDM_BANS_ENABLE, MF_CHECKED);
 		if (WaitForSingleObject(g_hBanThread, 0) != WAIT_TIMEOUT)
 		{
 			CloseHandle(g_hBanThread);
 			g_hBanThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) BanThreadFunction, NULL, 0, NULL);
 		}
 	}
-	GetPrivateProfileString("bans", "delay", std::to_string(DEFAULT_BANCHECKDELAY).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	g_iBanCheckDelay        = atoi(szReadBuffer);
+	GetPrivateProfileString("bans", "delay", std::to_string(DEFAULTSETTINGS::iBanCheckDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.iBanCheckDelaySecs        = atoi(szReadBuffer);
 	
 
 	GetPrivateProfileString("server", "count", "-1\0", szCount, sizeof(szCount), szCfgFileName);
@@ -3347,17 +3295,17 @@ int LoadConfig() // loads the servers and settings from the config file
 		if (g_hUdpSocket == INVALID_SOCKET)
 			g_hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 			
-		iServerStructFromAddress(szReadBuffer, atoi(szPortBuffer), &tempServer, g_hUdpSocket, g_fTimeout);
+		iServerStructFromAddress(szReadBuffer, atoi(szPortBuffer), &tempServer, g_hUdpSocket, gSettings.fTimeoutSecs);
 		closesocket(g_hUdpSocket);
 		g_hUdpSocket = INVALID_SOCKET;
 
 		GetPrivateProfileString("pw", szKeyBuffer, "\0", szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
 		tempServer.sRconPassword.assign(szReadBuffer);
 		g_vSavedServers.push_back(tempServer);
-		int index = SendMessage(g_hComboServer, CB_ADDSTRING, 0, (LPARAM)tempServer.sHostname.c_str());
-		SendMessage (g_hComboServer, CB_SETITEMDATA, index, g_vSavedServers.size() - 1);
+		int index = SendMessage(gWindows.hComboServer, CB_ADDSTRING, 0, (LPARAM)tempServer.sHostname.c_str());
+		SendMessage (gWindows.hComboServer, CB_SETITEMDATA, index, g_vSavedServers.size() - 1);
 	}
-	SendMessage(g_hComboServer, CB_SETCURSEL, 0, 0);
+	SendMessage(gWindows.hComboServer, CB_SETCURSEL, 0, 0);
 
 	GetPrivateProfileString("bans", "count", "0\0", szCount, sizeof(szCount), szCfgFileName);
 	for (int i = 0; i < atoi(szCount); i++) //load bans
@@ -3407,26 +3355,26 @@ void SaveConfig() // Saves all servers and settings in the config file
 		WritePrivateProfileString("port", sKeyBuffer.c_str(), sPortBuffer.c_str(), szCfgFileName);
 	}
 
-	sWriteBuffer = std::to_string(g_fTimeout);
+	sWriteBuffer = std::to_string(gSettings.fTimeoutSecs);
 	WritePrivateProfileString("general\0", "timeout\0", sWriteBuffer.c_str(), szCfgFileName);
-	sWriteBuffer = std::to_string(g_fAllServersTimeout);
+	sWriteBuffer = std::to_string(gSettings.fAllServersTimeoutSecs);
 	WritePrivateProfileString("general\0", "timeoutForNonRconServers\0", sWriteBuffer.c_str(), szCfgFileName);
-	sWriteBuffer = std::to_string(g_iMaxConsoleLineCount);
+	sWriteBuffer = std::to_string(gSettings.iMaxConsoleLineCount);
 	WritePrivateProfileString("general\0", "maxConsoleLineCount\0", sWriteBuffer.c_str(), szCfgFileName);
-	sWriteBuffer = std::to_string(g_bLimitConsoleLineCount);
+	sWriteBuffer = std::to_string(gSettings.bLimitConsoleLineCount);
 	WritePrivateProfileString("general\0", "limitConsoleLineCount\0", sWriteBuffer.c_str(), szCfgFileName);
-	sWriteBuffer = std::to_string(g_bRunAutoReloadThread);
+	sWriteBuffer = std::to_string(gSettings.bRunAutoReloadThread);
 	WritePrivateProfileString("general\0", "runAutoReloadThread\0", sWriteBuffer.c_str(), szCfgFileName);
-	sWriteBuffer = std::to_string(g_iAutoReloadDelay);
+	sWriteBuffer = std::to_string(gSettings.iAutoReloadDelaySecs);
 	WritePrivateProfileString("general\0", "autoReloadDelay\0", sWriteBuffer.c_str(), szCfgFileName);
-	sWriteBuffer = std::to_string(g_bColorPlayers);
+	sWriteBuffer = std::to_string(gSettings.bColorPlayers);
 	WritePrivateProfileString("general\0", "colorPlayers\0", sWriteBuffer.c_str(), szCfgFileName);
-	sWriteBuffer = std::to_string(g_bColorPings);
+	sWriteBuffer = std::to_string(gSettings.bColorPings);
 	WritePrivateProfileString("general\0", "colorPings\0", sWriteBuffer.c_str(), szCfgFileName);
 	
-	sWriteBuffer = std::to_string(g_bRunBanThread);
+	sWriteBuffer = std::to_string(gSettings.bRunBanThread);
 	WritePrivateProfileString("bans\0", "runBanThread\0", sWriteBuffer.c_str(), szCfgFileName);
-	sWriteBuffer = std::to_string(g_iBanCheckDelay);
+	sWriteBuffer = std::to_string(gSettings.iBanCheckDelaySecs);
 	WritePrivateProfileString("bans\0", "delay\0", sWriteBuffer.c_str(), szCfgFileName);
 
 	sKeyBuffer = std::to_string(g_vBannedPlayers.size());

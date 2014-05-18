@@ -20,7 +20,50 @@
 #ifndef __MAIN_H_INCLUDED
 #define __MAIN_H_INCLUDED
 
+#define WIN32_LEAN_AND_MEAN
+#include <windowsx.h>
+
+#if _WIN32_IE < 0x401
+	#define _WIN32_IE 0x401 //needed for commctrl.h so it includes InitCommonControls (0x300) and the ability to color subitems differently (0x400)
+#endif
+#include <commctrl.h>
+
+#include <shellapi.h>
+#include <wininet.h>
+
+#include <ctime>
+#include <vector>
 #include <map>
+#include <boost/algorithm/string.hpp>
+#include <boost/regex.hpp>
+
+struct WINDOWHANDLES
+{
+	HWND hWinMain;
+	HWND hComboServer;
+	HWND hListPlayers;
+	HWND hButtonKick;
+	HWND hButtonBanID;
+	HWND hButtonBanIP;
+	HWND hButtonReload;
+	HWND hButtonDPLoginProfile;
+	HWND hButtonUtrace;
+	HWND hButtonForcejoin;
+	HWND hEditConsole;
+	HWND hComboRcon;
+	HWND hButtonSend;
+	HWND hButtonJoin;
+	HWND hStaticServerInfo;
+};
+
+struct COLORS
+{
+	static const DWORD dwRed    = RGB(255, 100, 60);
+	static const DWORD dwBlue   = RGB(100, 150, 255);
+	static const DWORD dwPurple = RGB(225, 0,   225);
+	static const DWORD dwYellow = RGB(240, 240, 0);
+	static const DWORD dwWhite  = RGB(255, 255, 255);
+};
 
 #define BANTYPE_ID 0
 #define BANTYPE_NAME 1
@@ -58,8 +101,8 @@ void ListView_SetImage(HWND hListview, std::string sImagePath);
 void LoadBannedIPsToListbox(HWND hListBox);
 void LoadRotationToListbox(HWND hListBox);
 void LoadServersToListbox(LPVOID lpArgumentStruct);
-void ShowAboutDialog(void);
-void ShowPlayerInfo(void);
+void ShowAboutDialog(HWND hwnd);
+void ShowPlayerInfo(HWND hwnd);
 void SplitIpAddressToBytes(char * szIp, BYTE * pb0, BYTE * pb1, BYTE * pb2, BYTE * pb3);
 void StartServerbrowser(void);
 
