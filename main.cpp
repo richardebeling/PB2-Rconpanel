@@ -341,7 +341,7 @@ void ShowAboutDialog(HWND hwnd)
 
 int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 {
-	//"map: , password: , sv_login:, elim: , timelimit: , maxclients: \0"
+	//"map: | password: | sv_login: | elim: | timelimit: | maxclients: \0"
 	//TODO (#2#): Get available space and leave more space between entries if possible
 	//Is a pain, needed steps:
 	//Get static size
@@ -349,6 +349,7 @@ int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 	//Get size of one space
 	//calculate how many spaces would fit additionally to the text
 	//concatenate the string with right count of spaces.
+	//Even better: Draw text manually "DrawText()" when painting window, only set  variable names and content here and store them (in a global vector of pair<string, string>?)
 	
 	//TODO (#1#): Do not send 5 packets.
 	
