@@ -22,6 +22,8 @@
 //TODO (#7#): Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server (IDD_MANAGECVARS is the current placeholder)
 //TODO (#9#): Change: Use better way to display mapshot (with scaling)
 //TODO (#8#): Fix ip addresses not being shown sometimes (because assignment of information to the player fails?)
+//TODO: Option to draw nothing instead of a 0 in the listview when no information is given.
+//TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin and utrace?)
 
 #ifdef __GNUC__
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
@@ -351,7 +353,7 @@ int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 	//concatenate the string with right count of spaces.
 	//Even better: Draw text manually "DrawText()" when painting window, only set  variable names and content here and store them (in a global vector of pair<string, string>?)
 	
-	//TODO (#1#): Do not send 5 packets.
+	//TODO (#9#): Do not send 5 packets or make them non blocking; this extremely slows the program when the ping to the server is high because each packet is blocking.
 	
 	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
@@ -1402,8 +1404,16 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_PROGRAMSETTINGS), hwnd, (DLGPROC) ProgramSettingsDlgProc);
 			break;
 		case IDM_FILE_REMOVECONFIG:
-			DeleteConfig();
-			break;
+			{
+				int iResult = MessageBoxA(gWindows.hWinMain, "This will delete every information "
+										"stored in this program, including server IPs, ports and "
+										"passwords as well as ID bans.\n"
+										"Are you sure you want to continue?",
+										"Are you sure?",
+										MB_ICONQUESTION | MB_YESNO);
+				if (iResult == IDYES) DeleteConfig();
+				break;
+			}
 		case IDM_SERVER_MANAGE:
 			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, (DLGPROC) ManageServersDlgProc);
 			break;
@@ -2224,7 +2234,7 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 	std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(AutoVersion::MAJOR)
 						+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 	HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-	HINTERNET hFile = InternetOpenUrl(hInternet, "http://www.dplogin.com/serverlist.php", NULL, 0, INTERNET_FLAG_RELOAD, 0);
+	HINTERNET hFile = InternetOpenUrl(hInternet, gSettings.sServerlistAddress.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
 	char szBuffer[MTU] = {0};
 	long unsigned int iBytesRead = 0;
 	bool bSuccessful = true;
@@ -3263,6 +3273,9 @@ int LoadConfig() // loads the servers and settings from the config file
 	GetPrivateProfileString("general", "runAutoReloadThread", std::to_string(DEFAULTSETTINGS::bRunAutoReloadThread).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
 	gSettings.bRunAutoReloadThread  = (atoi(szReadBuffer)) ? true : false;
 	
+	GetPrivateProfileString("general", "serverlistAddress", DEFAULTSETTINGS::sServerlistAddress.c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.sServerlistAddress = szReadBuffer;
+	
 	if (gSettings.bRunAutoReloadThread && WaitForSingleObject(g_hAutoReloadThread, 0) != WAIT_TIMEOUT)
 	{
 		CloseHandle(g_hAutoReloadThread);
@@ -3343,6 +3356,12 @@ void SaveConfig() // Saves all servers and settings in the config file
 	szCfgFileName[strlen(szCfgFileName) - 3] = '\0';
 	strcat(szCfgFileName, "ini");
 
+	//clear old config so servers & bans that are not used anymore are not occupying any disk space:
+	WritePrivateProfileString("ip\0", NULL, NULL, szCfgFileName);
+	WritePrivateProfileString("pw\0", NULL, NULL, szCfgFileName);
+	WritePrivateProfileString("port\0", NULL, NULL, szCfgFileName);
+	WritePrivateProfileString("bans\0", NULL, NULL, szCfgFileName);
+	
 	sWriteBuffer = std::to_string(g_vSavedServers.size());
 	if (!WritePrivateProfileString("server\0", "count\0", sWriteBuffer.c_str(), szCfgFileName))
 		return;
@@ -3372,6 +3391,8 @@ void SaveConfig() // Saves all servers and settings in the config file
 	WritePrivateProfileString("general\0", "colorPlayers\0", sWriteBuffer.c_str(), szCfgFileName);
 	sWriteBuffer = std::to_string(gSettings.bColorPings);
 	WritePrivateProfileString("general\0", "colorPings\0", sWriteBuffer.c_str(), szCfgFileName);
+	
+	WritePrivateProfileString("general\0", "serverlistAddress\0", gSettings.sServerlistAddress.c_str(), szCfgFileName);
 	
 	sWriteBuffer = std::to_string(gSettings.bRunBanThread);
 	WritePrivateProfileString("bans\0", "runBanThread\0", sWriteBuffer.c_str(), szCfgFileName);

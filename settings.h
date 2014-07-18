@@ -42,6 +42,7 @@ namespace DEFAULTSETTINGS
 	static const     bool  bColorPings            = false;
 	static const     bool  bColorPlayers          = true;
 	static const     int   iAutoReloadDelaySecs   = 60;
+	static const std::string sServerlistAddress	  = "http://www.dplogin.com/serverlist.php";
 }
 
 struct SETTINGS
@@ -57,4 +58,5 @@ struct SETTINGS
 	bool  bColorPings;            //
 	bool  bColorPlayers;          //
 	int   iAutoReloadDelaySecs;   // delay for auto-reloading;
+	std::string sServerlistAddress;	  // address where the server list can be gotten in case it changes.
 };
