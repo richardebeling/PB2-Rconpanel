@@ -143,7 +143,7 @@ FONT 8, "Ms Shell Dlg"
     PUSHBUTTON      "Save", IDC_MROT_BUTTONWRITE, 178, 215, 82, 14
     PUSHBUTTON      "Load", IDC_MROT_BUTTONREAD, 264, 215, 82, 14
     GROUPBOX        "Mapshot", IDC_STATIC, 172, 7, 181, 173
-    CONTROL         "", IDC_MROT_LISTVIEWMAPSHOT, WC_LISTVIEW, LVS_ALIGNLEFT | LVS_ICON, 178, 18, 171, 156
+    LTEXT           "", IDC_MROT_MAPSHOT, 178, 18, 170, 156, 0, SS_WHITERECT
 }
 
 IDD_PROGRAMSETTINGS DIALOG 0, 0, 280, 203
@@ -235,11 +235,7 @@ VS_VERSION_INFO VERSIONINFO
 	{
 		BLOCK "040904E4"
 		{
-			//VALUE "Build", YEAR "-" MONTH "-" DATE //TODO(#9#): uncomment when Autoversioning is working with defines again.
-			//VALUE "FileVersion", FULLVERSION_STRING
-			//VALUE "LegalCopyright", "Copyright (C) " YEAR " 'Richard'\0"
 			VALUE "LegalCopyright", "Copyright (C) 2014 'Richard'\0"
-			//VALUE "ProductVersion", FULLVERSION_STRING
 			VALUE "OriginalFilename", "Rconpanel.exe\0"
 		}
 	}

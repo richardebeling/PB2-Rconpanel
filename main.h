@@ -35,7 +35,9 @@
 #include <vector>
 #include <map>
 #include <boost/algorithm/string.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/regex.hpp>
+#include <Gdiplus.h>
 
 struct WINDOWHANDLES
 {
@@ -80,6 +82,7 @@ struct LOADSERVERSARGS
 	HWND hwnd;
 };
 
+Gdiplus::Bitmap* CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int width, unsigned int height);
 int iGetFirstUnusedMapIntKey (std::map<int, HANDLE> * m);
 
 int  LoadConfig(void);
@@ -90,11 +93,11 @@ void AutoReloadThreadFunction(void);
 void BanThreadFunction(void);
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
-int GetPb2InstallPath(std::string * sPath);
+int  GetPb2InstallPath(std::string * sPath);
 void MainWindowRefreshThread(LPVOID lpArgument);
 inline bool MainWindowRefreshThreadExitIfSignaled(int iUID, SOCKET hSocket);
-int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent);
-int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent);
+int  MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent);
+int  MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent);
 inline void SignalAllThreads(std::map<int, HANDLE> * m);
 void MainWindowWriteConsole(std::string);
 void ListView_SetImage(HWND hListview, std::string sImagePath);
@@ -121,11 +124,11 @@ HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type);
 void OnMainWindowGetMinMaxInfo(HWND hwnd, LPMINMAXINFO lpMinMaxInfo);
 void OnMainWindowJoinServer(void);
 void OnMainWindowKickPlayer(void);
-int CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort);
+int  CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort);
 int  OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh);
 void OnMainWindowOpenDPLogin(void);
 void OnMainWindowOpenUtrace(void);
-int OnMainWindowSendRcon(void); //according to msdn functions used for threads should return sth.
+int  OnMainWindowSendRcon(void); //according to msdn functions used for threads should return sth.
 void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy);
 
 //--------------------------------------------------------------------------------------------------
@@ -161,6 +164,7 @@ LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, L
 void OnManageRotationClose(HWND hwnd);
 void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
+void OnManageRotationPaint(HWND hwnd);
 void OnManageRotationReloadContent(HWND hwnd);
 
 //--------------------------------------------------------------------------------------------------

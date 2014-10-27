@@ -20,10 +20,11 @@
 //TODO (#1#): Add: Search Player function (I dont think that this is needed because its implemented in the serverbrowser)
 //TODO (#8#): Add: Modifiable messages that will be said as console before players are kicked.
 //TODO (#7#): Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server (IDD_MANAGECVARS is the current placeholder)
-//TODO (#9#): Change: Use better way to display mapshot (with scaling)
 //TODO (#8#): Fix ip addresses not being shown sometimes (because assignment of information to the player fails?)
 //TODO: Option to draw nothing instead of a 0 in the listview when no information is given.
 //TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin and utrace?)
+//TODO: Disable "Ban IP" button when the IP was not loaded correctly
+
 
 #ifdef __GNUC__
 #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
@@ -68,6 +69,10 @@ HFONT g_hFont, g_hConsoleFont;
 WINDOWHANDLES gWindows; // stores all window handles
 SETTINGS gSettings;     // stores all program settings
 
+ULONG_PTR g_gdiplusStartupToken;
+Gdiplus::Bitmap *g_pMapshotBitmap = NULL;
+Gdiplus::Bitmap *g_pMapshotBitmapResized = NULL;
+
 //--------------------------------------------------------------------------------------------------
 // Program Entry Point                                                                             |
 //{-------------------------------------------------------------------------------------------------
@@ -90,6 +95,9 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 	InitCommonControlsEx(&icex);
 	
 	OleInitialize(NULL);
+	
+	Gdiplus::GdiplusStartupInput gsi;
+	Gdiplus::GdiplusStartup(&g_gdiplusStartupToken, &gsi, NULL);
 
 	wincl.hInstance = hThisInstance;
 	wincl.lpszClassName = szClassName;
@@ -353,32 +361,52 @@ int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 	//concatenate the string with right count of spaces.
 	//Even better: Draw text manually "DrawText()" when painting window, only set  variable names and content here and store them (in a global vector of pair<string, string>?)
 	
-	//TODO (#9#): Do not send 5 packets or make them non blocking; this extremely slows the program when the ping to the server is high because each packet is blocking.
-	
 	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
 		return -3;
 	
 	std::string sAnswer;
-	std::string sContent = "map: ";
+	std::string sContent;
 	
 	if (hSocket == INVALID_SOCKET)
 		return -1;
-
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "mapname", &sAnswer, hSocket, gSettings.fTimeoutSecs);
-	sContent.append((sAnswer.size() > 0) ? sAnswer : "err");
-	sContent.append("  |  pw: ");
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "password", &sAnswer, hSocket, gSettings.fTimeoutSecs);
-	sContent.append((sAnswer.size() > 0) ? sAnswer : "none");
-	sContent.append("  |  elim: ");
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "elim", &sAnswer, hSocket, gSettings.fTimeoutSecs);
-	sContent.append((sAnswer.size() > 0) ? sAnswer : "err");
-	sContent.append("  |  timelimit: ");
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "timelimit", &sAnswer, hSocket, gSettings.fTimeoutSecs);
-	sContent.append((sAnswer.size() > 0) ? sAnswer : "err");
-	sContent.append("  |  maxclients: ");
-	iVarContentFromName(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort, g_vSavedServers[i].sRconPassword, "maxclients", &sAnswer, hSocket, gSettings.fTimeoutSecs);
-	sContent.append((sAnswer.size() > 0) ? sAnswer : "err");
+	
+	iSendMessageToServer(g_vSavedServers[i].sIp, g_vSavedServers[i].iPort,
+						"echo $mapname;$password;$elim;$timelimit;$maxclients",
+						&sAnswer, g_vSavedServers[i].sRconPassword, hSocket, gSettings.fTimeoutSecs);
+	
+	sAnswer = sAnswer.substr(6, std::string::npos);
+	
+	boost::char_separator<char> sep(";", "", boost::keep_empty_tokens);
+	boost::tokenizer<boost::char_separator<char> > tok (sAnswer, sep);
+	int iteration = 0;
+	for (auto tok_iter = tok.begin(); tok_iter != tok.end(); tok_iter++, iteration++)
+	{
+		std::string current(*tok_iter);
+		switch(iteration)
+		{
+		case 0:
+			sContent.assign("map: ");
+			sContent.append((current.size() > 0) ? current : "err");
+			break;
+		case 1:
+			sContent.append("  |  pw: ");
+			sContent.append((current.size() > 0) ? current : "none");
+			break;
+		case 2:
+			sContent.append("  |  elim: ");
+			sContent.append((current.size() > 0) ? current : "err");
+			break;
+		case 3:
+			sContent.append("  |  timelimit: ");
+			sContent.append((current.size() > 0) ? current : "err");
+			break;
+		case 4:
+			sContent.append("  |  maxclients: ");
+			sContent.append((current.size() > 0) ? current : "err");
+			break;
+		}
+	}
 	
 	if (WaitForSingleObject(hExitEvent, 0) == WAIT_OBJECT_0)
 		return -2;
@@ -458,10 +486,14 @@ int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
 	
 	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
+	{
 		return -3;
+	}
 
 	if (hSocket == INVALID_SOCKET)
+	{
 		return -1;
+	}
 	
 	int iRetVal = iPlayerStructVectorFromAddress (g_vSavedServers[i].sIp, g_vSavedServers[i].iPort,
 										g_vSavedServers[i].sRconPassword, &g_vPlayers, hSocket, gSettings.fTimeoutSecs);
@@ -511,7 +543,9 @@ int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
 				LvItem.pszText = (LPSTR) sItemText.c_str();
 				
 				if (WaitForSingleObject(hExitEvent, 0) == WAIT_OBJECT_0)
+				{
 					return -2;
+				}
 				
 				SendMessage(gWindows.hListPlayers, LVM_SETITEM, 0, (LPARAM) &LvItem);
 			}
@@ -1318,6 +1352,8 @@ void OnMainWindowDestroy(HWND hwnd)
 
 	OleUninitialize();
 	
+	Gdiplus::GdiplusShutdown(g_gdiplusStartupToken);
+	
 	PostQuitMessage(0);
 }
 
@@ -1418,7 +1454,9 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, (DLGPROC) ManageServersDlgProc);
 			break;
 		case IDM_SERVER_ROTATION:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, (DLGPROC) ManageRotationDlgProc);
+			//Must be dialog box because it uses two global variables which does not work when the dialog is open two times.
+			//g_pMapshotBitmap and g_pMapshotBitmapResized
+			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, (DLGPROC) ManageRotationDlgProc);
 			break;
 		/*case IDM_SERVER_CVARS:
 			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGECVARS), hwnd, (DLGPROC)ManageCvarsDlgProc);
@@ -1944,20 +1982,64 @@ BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 	g_hUdpSocket = INVALID_SOCKET;
 
 	SetDlgItemText(hwnd, IDC_MROT_EDITFILE, sAnswer.c_str());
-	
-	ListView_SetTextBkColor(GetDlgItem(hwnd, IDC_MROT_LISTVIEWMAPSHOT), CLR_NONE);
-	ListView_SetBkColor(GetDlgItem(hwnd, IDC_MROT_LISTVIEWMAPSHOT), CLR_NONE);
 
-	std::string sPb2Path;
-	GetPb2InstallPath(&sPb2Path);
-	sPb2Path.append("\\pball\\pics\\mapshots\\-no-preview-.jpg");
-	ListView_SetImage(GetDlgItem(hwnd, IDC_MROT_LISTVIEWMAPSHOT), sPb2Path);
+	std::string sMapshot;
+	std::wstring sWideMapshot;
+	RECT rc;
+	
+	if (not GetPb2InstallPath(&sMapshot))
+		return TRUE;
+	
+	GetClientRect(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &rc);
+	
+	sMapshot.append("\\pball\\pics\\mapshots\\-no-preview-.jpg");
+	sWideMapshot = std::wstring(sMapshot.begin(), sMapshot.end());
+	
+	if (g_pMapshotBitmap) delete g_pMapshotBitmap;
+	if (g_pMapshotBitmapResized) delete g_pMapshotBitmapResized;
+	
+	g_pMapshotBitmap = new Gdiplus::Bitmap(sWideMapshot.c_str());
+	g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap,
+								rc.right - rc.left, rc.bottom - rc.top);
 
 	return TRUE;
 }
 
+
+void OnManageRotationPaint(HWND hwnd)
+{
+	HDC hdc;
+	PAINTSTRUCT ps;
+	
+	hdc = BeginPaint(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &ps);
+	
+	FillRect(hdc, &ps.rcPaint, (HBRUSH) (COLOR_WINDOW+1));
+	
+	if (g_pMapshotBitmapResized)
+	{
+		Gdiplus::Graphics graphics(hdc);
+		graphics.DrawImage(g_pMapshotBitmapResized, 0, 0);
+	}
+	
+	EndPaint(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &ps);
+	DeleteDC(hdc);
+}
+
+
 void OnManageRotationClose(HWND hwnd)
 {
+	if (g_pMapshotBitmap)
+	{
+		delete g_pMapshotBitmap;
+		g_pMapshotBitmap = NULL;
+	}
+	
+	if (g_pMapshotBitmapResized)
+	{
+		delete g_pMapshotBitmapResized;
+		g_pMapshotBitmapResized = NULL;
+	}
+	
 	EndDialog(hwnd, 0);
 }
 
@@ -2131,27 +2213,51 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		{
 			if (codeNotify == EN_CHANGE)
 			{
-				std::string sPb2Path;
-				GetPb2InstallPath(&sPb2Path);
+				RECT rc;
+				std::string sMapshot;
+				std::wstring sWideMapshot;
 				
-				std::string sMapshotPath (sPb2Path);
-				sMapshotPath.append("\\pball\\pics\\mapshots\\");
+				if (not GetPb2InstallPath(&sMapshot))
+					return;
+				
+				GetClientRect(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &rc);
+				
+				sMapshot.append("\\pball\\pics\\mapshots\\");
 				int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_MROT_EDITMAP)) + 1;
 				char * szMap = new char[iBufferSize];
 				GetDlgItemText(hwnd, IDC_MROT_EDITMAP, szMap, iBufferSize);
-				sMapshotPath.append(szMap);
+				sMapshot.append(szMap);
 				delete[] szMap;
-				sMapshotPath.append(".jpg");
+				sMapshot.append(".jpg");
 				
-				DWORD dwAttributes = GetFileAttributes(sMapshotPath.c_str());
+				DWORD dwAttributes = GetFileAttributes(sMapshot.c_str());
 				if (dwAttributes != INVALID_FILE_ATTRIBUTES && !(dwAttributes & FILE_ATTRIBUTE_DIRECTORY))
 				{
-					ListView_SetImage(GetDlgItem(hwnd, IDC_MROT_LISTVIEWMAPSHOT), sMapshotPath);
+					sWideMapshot = std::wstring(sMapshot.begin(), sMapshot.end());
+					
+					if (g_pMapshotBitmap) delete g_pMapshotBitmap;
+					if (g_pMapshotBitmapResized) delete g_pMapshotBitmapResized;
+					
+					g_pMapshotBitmap = new Gdiplus::Bitmap(sWideMapshot.c_str());
+					g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap,
+												rc.right - rc.left, rc.bottom - rc.top);
+												
+					RedrawWindow(hwnd, NULL, NULL, RDW_UPDATENOW | RDW_INVALIDATE);
 				}
 				else
 				{
-					sPb2Path.append("\\pball\\pics\\mapshots\\-no-preview-.jpg");
-					ListView_SetImage(GetDlgItem(hwnd, IDC_MROT_LISTVIEWMAPSHOT), sPb2Path);
+					GetPb2InstallPath(&sMapshot);
+					sMapshot.append("\\pball\\pics\\mapshots\\-no-preview-.jpg");
+					sWideMapshot = std::wstring(sMapshot.begin(), sMapshot.end());
+					
+					if (g_pMapshotBitmap) delete g_pMapshotBitmap;
+					if (g_pMapshotBitmapResized) delete g_pMapshotBitmapResized;
+					
+					g_pMapshotBitmap = new Gdiplus::Bitmap(sWideMapshot.c_str());
+					g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap,
+												rc.right - rc.left, rc.bottom - rc.top);
+					
+					RedrawWindow(hwnd, NULL, NULL, RDW_UPDATENOW | RDW_INVALIDATE);
 				}
 			}
 		}
@@ -2187,6 +2293,7 @@ LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, L
     	HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageRotationInitDialog);
     	HANDLE_MSG(hWndDlg, WM_CLOSE,      OnManageRotationClose);
     	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageRotationCommand);
+    	HANDLE_MSG(hWndDlg, WM_PAINT,      OnManageRotationPaint);
     }
     
     if (Msg == WM_RELOADCONTENT) //WM_RELOADCONTENT is not static --> has to be checked with "if".
@@ -3021,7 +3128,7 @@ void SplitIpAddressToBytes(char * szIp, BYTE * pb0, BYTE * pb1, BYTE * pb2, BYTE
 int GetPb2InstallPath(std::string * sPath)
 {
 	HKEY key;
-	char szPbPath[MAX_PATH]; //Get PB2 path from registry
+	char szPbPath[MAX_PATH];
 	long unsigned int iPathSize = sizeof(szPbPath);
 
 	if (RegOpenKeyEx(HKEY_CURRENT_USER, "SOFTWARE\\Digital Paint\\Paintball2", 0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS)
@@ -3426,4 +3533,24 @@ int iGetFirstUnusedMapIntKey (std::map<int, HANDLE> * m)
 			return iKey;
 	}
 	return iKey;
+}
+
+Gdiplus::Bitmap* CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int width, unsigned int height)
+{
+    unsigned int originalHeight = bmp->GetHeight();
+    unsigned int originalWidth = bmp->GetWidth();
+    unsigned int newWidth = width;
+    unsigned int newHeight = height;
+    
+    double ratio = (static_cast<double>(originalWidth)) / (static_cast<double>(originalHeight));
+    if (originalWidth > originalHeight) {
+	    newHeight = static_cast<unsigned int>((static_cast<double>(newWidth)) / ratio);
+    } else {
+	    newWidth = static_cast<unsigned int>(newHeight * ratio);
+    }
+    
+    Gdiplus::Bitmap* newBitmap = new Gdiplus::Bitmap(newWidth, newHeight, bmp->GetPixelFormat());
+    Gdiplus::Graphics graphics(newBitmap);
+    graphics.DrawImage(bmp, 0, 0, newWidth, newHeight);
+    return newBitmap;
 }
