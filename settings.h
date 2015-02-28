@@ -41,6 +41,7 @@ namespace DEFAULTSETTINGS
 	static const     int   iMaxPingMsecs          = 0;
 	static const     bool  bColorPings            = false;
 	static const     bool  bColorPlayers          = true;
+	static const	 bool  bDisableConsole		  = false;
 	static const     int   iAutoReloadDelaySecs   = 60;
 	static const std::string sServerlistAddress	  = "http://www.dplogin.com/serverlist.php";
 }
@@ -55,8 +56,9 @@ struct SETTINGS
 	int   iBanCheckDelaySecs;     // delay between checking the servers for banned players in seconds
 	int   iMaxConsoleLineCount;   // maximum lines in the console edit
 	int   iMaxPingMsecs;          // maximum ping in ms, 0 = unlimited
-	bool  bColorPings;            //
-	bool  bColorPlayers;          //
+	bool  bColorPings;            // in the listview, the background color of the pings will vary from green to red
+	bool  bColorPlayers;          // in the listview, players will get their teamcolor as background
+	bool  bDisableConsole;		  // the lower part of the GUI (manual RCON communication) will not be shown.
 	int   iAutoReloadDelaySecs;   // delay for auto-reloading;
 	std::string sServerlistAddress;	  // address where the server list can be gotten in case it changes.
 };

@@ -814,23 +814,23 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	g_hFont = CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "MS Shell Dlg\0");
 	g_hConsoleFont = CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "Courier New\0");
 
-	SendMessage(hStaticServer			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hStaticServerInfo 	, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hComboServer			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hListPlayers			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonJoin			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonKick			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonBanID			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonBanIP			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonReload			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonDPLoginProfile , WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonUtrace			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonForcejoin		, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hComboRcon			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonSend			, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hEditConsole			, WM_SETFONT, WPARAM(g_hConsoleFont), true);
+	SendMessage(hStaticServer				  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hStaticServerInfo	  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hComboServer		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hListPlayers		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonJoin		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonKick		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonBanID		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonBanIP		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonReload		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonDPLoginProfile, WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonUtrace		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonForcejoin	  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hComboRcon			  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonSend		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hEditConsole		  , WM_SETFONT, WPARAM(g_hConsoleFont), true);
 	
-	SendMessage(gWindows.hEditConsole			, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
+	SendMessage(gWindows.hEditConsole		  , EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
 
 	LVCOLUMN lvc;
 	char szText[32]; //maximum: "Build\0"
@@ -1625,32 +1625,46 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
     //printf ("Player : left: %d; top: %d; right: %d; bottom: %d\n", rcPlayers.left, rcPlayers.top, rcPlayers.right, rcPlayers.bottom);
     //printf ("Console: left: %d; top: %d; right: %d; bottom: %d\n", rcConsole.left, rcConsole.top, rcConsole.right, rcConsole.bottom);
 
-	MoveWindow(gWindows.hComboServer		, 24*iMW, 3  *iMH, cx - 71*iMW, 8*iMH		, FALSE);
-	MoveWindow(gWindows.hStaticServerInfo	, 24*iMW, 15 *iMH, cx - 71*iMW, 8*iMH		, FALSE);
-
-	if (cy > 244*iMH) //if window is big enough
+	MoveWindow(gWindows.hComboServer	 , 24*iMW, 3  *iMH, cx - 71*iMW, 8*iMH, FALSE);
+	MoveWindow(gWindows.hStaticServerInfo, 24*iMW, 15 *iMH, cx - 71*iMW, 8*iMH, FALSE);
+	
+	if (gSettings.bDisableConsole)
 	{
-		MoveWindow(gWindows.hListPlayers, 3 *iMW	 , 25 *iMH	  , cx - 50*iMW, cy/2-20*iMH	, FALSE); //resize listview and console
-		MoveWindow(gWindows.hComboRcon  , 3 *iMW	 , cy/2+10*iMH , cx - 50*iMW, 10*iMH			, FALSE);
-		MoveWindow(gWindows.hButtonSend , cx - 45*iMW, cy/2+9*iMH , 43*iMW	   , 12*iMH			, FALSE);
-		MoveWindow(gWindows.hEditConsole, 3 *iMW	 , cy/2+23*iMH, cx - 6 *iMW, cy/2-26*iMH	, FALSE);
+		ShowWindow(gWindows.hComboRcon,   SW_HIDE);
+		ShowWindow(gWindows.hButtonSend,  SW_HIDE);
+		ShowWindow(gWindows.hEditConsole, SW_HIDE);
+		
+		MoveWindow(gWindows.hListPlayers, 3*iMW, 25*iMH, cx - 50*iMW, cy - 28*iMH, FALSE);
 	}
 	else
 	{
-		MoveWindow(gWindows.hListPlayers, 		3 *iMW, 25 *iMH, cx - 50*iMW, 102*iMH   , FALSE); //only resize console, keep listview's min size
-		MoveWindow(gWindows.hComboRcon  , 		3 *iMW, 132*iMH, cx - 50*iMW, 10*iMH	, FALSE);
-		MoveWindow(gWindows.hButtonSend , cx - 45*iMW, 131*iMH, 	  43*iMW, 12*iMH	, FALSE);
-		MoveWindow(gWindows.hEditConsole, 		3 *iMW, 145*iMH, cx - 6 *iMW, cy-148*iMH, FALSE);
+		if (cy > 244*iMH) //if window is big enough
+		{
+			MoveWindow(gWindows.hListPlayers, 3 *iMW	 , 25 *iMH	  , cx - 50*iMW, cy/2-20*iMH, FALSE); //resize listview and console
+			MoveWindow(gWindows.hComboRcon  , 3 *iMW	 , cy/2+10*iMH, cx - 50*iMW, 10*iMH	    , FALSE);
+			MoveWindow(gWindows.hButtonSend , cx - 45*iMW, cy/2+9*iMH , 43*iMW	   , 12*iMH		, FALSE);
+			MoveWindow(gWindows.hEditConsole, 3 *iMW	 , cy/2+23*iMH, cx - 6 *iMW, cy/2-26*iMH, FALSE);
+		}
+		else
+		{
+			MoveWindow(gWindows.hListPlayers, 3 *iMW, 25 *iMH     , cx - 50*iMW, 102*iMH   , FALSE); //only resize console, keep listview's min size
+			MoveWindow(gWindows.hComboRcon  , 3 *iMW, 132*iMH     , cx - 50*iMW, 10*iMH	   , FALSE);
+			MoveWindow(gWindows.hButtonSend , cx - 45*iMW, 131*iMH,      43*iMW, 12*iMH	   , FALSE);
+			MoveWindow(gWindows.hEditConsole, 3 *iMW, 145*iMH     , cx - 6 *iMW, cy-148*iMH, FALSE);
+		}
+		ShowWindow(gWindows.hComboRcon,   SW_SHOW);
+		ShowWindow(gWindows.hButtonSend,  SW_SHOW);
+		ShowWindow(gWindows.hEditConsole, SW_SHOW);
 	}
 
-	MoveWindow(gWindows.hButtonBanID		  , cx - 45*iMW, 54 *iMH	, 43*iMW, 12*iMH, FALSE); //Move all buttons to left / right
-	MoveWindow(gWindows.hButtonBanIP		  , cx - 45*iMW, 67 *iMH	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonDPLoginProfile, cx - 45*iMW, 83 *iMH	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonForcejoin	  , cx - 45*iMW, 115*iMH  	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonJoin		  , cx - 45*iMW, 2  *iMH + 1, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonKick		  , cx - 45*iMW, 41 *iMH	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonReload		  , cx - 45*iMW, 25 *iMH	, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonUtrace		  , cx - 45*iMW, 96 *iMH    , 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonBanID		 , cx - 45*iMW, 54 *iMH, 43*iMW, 12*iMH, FALSE); //Move all buttons to left / right
+	MoveWindow(gWindows.hButtonBanIP		 , cx - 45*iMW, 67 *iMH, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonDPLoginProfile, cx - 45*iMW, 83 *iMH, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonForcejoin	 , cx - 45*iMW, 115*iMH, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonJoin		     , cx - 45*iMW, 2  *iMH + 1, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonKick		     , cx - 45*iMW, 41 *iMH, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonReload		 , cx - 45*iMW, 25 *iMH, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonUtrace		 , cx - 45*iMW, 96 *iMH, 43*iMW, 12*iMH, FALSE);
 
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iNumber, 17*iMW);                   //num
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iName,   cx - 220*iMW);             //name
@@ -1670,8 +1684,16 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
 void OnMainWindowGetMinMaxInfo(HWND hwnd, LPMINMAXINFO lpMinMaxInfo)
 {
 	DWORD dwBaseUnits = GetDialogBaseUnits();
-	lpMinMaxInfo->ptMinTrackSize.x = MulDiv(230, LOWORD(dwBaseUnits), 4);
-	lpMinMaxInfo->ptMinTrackSize.y = MulDiv(203, HIWORD(dwBaseUnits), 8);
+	if (gSettings.bDisableConsole)
+	{
+		lpMinMaxInfo->ptMinTrackSize.x = MulDiv(230, LOWORD(dwBaseUnits), 4);
+		lpMinMaxInfo->ptMinTrackSize.y = MulDiv(159, HIWORD(dwBaseUnits), 8);	
+	}
+	else
+	{
+		lpMinMaxInfo->ptMinTrackSize.x = MulDiv(230, LOWORD(dwBaseUnits), 4);
+		lpMinMaxInfo->ptMinTrackSize.y = MulDiv(203, HIWORD(dwBaseUnits), 8);	
+	}
 	FORWARD_WM_GETMINMAXINFO(hwnd, lpMinMaxInfo, DefWindowProc);
 }
 
@@ -1804,6 +1826,9 @@ BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 	if (gSettings.bColorPings)
 		CheckDlgButton(hwnd, IDC_PS_CHECKCOLORPINGS, BST_CHECKED);
 	
+	if (gSettings.bDisableConsole)
+		CheckDlgButton(hwnd, IDC_PS_CHECKDISABLECONSOLE, BST_CHECKED);
+	
 	return TRUE;
 }
 
@@ -1844,7 +1869,7 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				else
 					EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITAUTORELOAD), false);
 			}					
-		break;
+			break;
 		}
 				
 	case IDC_PS_CHECKLINECOUNT:
@@ -1856,7 +1881,7 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				else
 					EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT), false);
 			}					
-		break;
+			break;
 		}
 		
 	case IDC_PS_BUTTONOK:
@@ -1927,17 +1952,23 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			else
 				gSettings.bColorPings = false;
 			
-			RedrawWindow(gWindows.hWinMain, NULL, NULL, RDW_ERASE | RDW_INVALIDATE | RDW_UPDATENOW);
+			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKDISABLECONSOLE) == BST_CHECKED)
+				gSettings.bDisableConsole = true;
+			else
+				gSettings.bDisableConsole = false;
 			
+			RECT rc;
+			GetClientRect(gWindows.hWinMain, &rc);
+			OnMainWindowSize(gWindows.hWinMain, SIZE_RESTORED, rc.right, rc.bottom); // Redraw
 			
 			delete[] szBuffer;			
-			EndDialog(hwnd, 1); //close the dialog
+			SendMessage(hwnd, WM_CLOSE, 0, 0); //Make sure to clear the handle so a new one is opened next time
 			return;
 		}
 		
 	case IDC_PS_BUTTONCANCEL:
 		{
-			EndDialog(hwnd, 0); //just close the dialog
+			SendMessage(hwnd, WM_CLOSE, 0, 0); //Make sure to clear the handle so a new one is opened next time
 			return;
 		}
 	}
@@ -2216,7 +2247,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	
 		case IDC_MROT_BUTTONOK:
 		{
-			EndDialog(hwnd, 1);
+			SendMessage(hwnd, WM_CLOSE, 0, 0); //make sure we clear the global handle so a new one is opened next time.
 			break;
 		}
 		
@@ -2804,7 +2835,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		
 		case IDC_MIDS_BUTTONOK:
 		{
-			EndDialog(hwnd, 1);
+			SendMessage(hwnd, WM_CLOSE, 0, 0); //Make sure to clear the handle so a new one is opened next time
 			return;
 		}
 
@@ -3001,7 +3032,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	
 		case IDC_MIPS_BUTTONOK:
 		{
-			EndDialog(hwnd, 1);
+			SendMessage(hwnd, WM_CLOSE, 0, 0); //Make sure to clear the handle so a new one is opened next time
 			return;
 		}
 		
@@ -3386,28 +3417,31 @@ int LoadConfig() // loads the servers and settings from the config file
 	strcat(szCfgFileName, "ini");
 
 	GetPrivateProfileString("general", "timeout", std::to_string(DEFAULTSETTINGS::fTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName); //load general settings
-	gSettings.fTimeoutSecs 				= (float) atof(szReadBuffer);
+	gSettings.fTimeoutSecs = (float) atof(szReadBuffer);
 	
 	GetPrivateProfileString("general", "timeoutForNonRconServers", std::to_string(DEFAULTSETTINGS::fAllServersTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	gSettings.fAllServersTimeoutSecs 	= (float) atof(szReadBuffer);
+	gSettings.fAllServersTimeoutSecs = (float) atof(szReadBuffer);
 	
 	GetPrivateProfileString("general", "maxConsoleLineCount", std::to_string(DEFAULTSETTINGS::iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	gSettings.iMaxConsoleLineCount  = atoi(szReadBuffer);
+	gSettings.iMaxConsoleLineCount = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "limitConsoleLineCount", std::to_string(DEFAULTSETTINGS::iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	gSettings.bLimitConsoleLineCount  = (atoi(szReadBuffer)) ? true : false;
+	gSettings.bLimitConsoleLineCount = (atoi(szReadBuffer)) ? true : false;
 	
 	GetPrivateProfileString("general", "colorPlayers", std::to_string(DEFAULTSETTINGS::bColorPlayers).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	gSettings.bColorPlayers  = (atoi(szReadBuffer)) ? true : false;
+	gSettings.bColorPlayers = (atoi(szReadBuffer)) ? true : false;
 	
 	GetPrivateProfileString("general", "colorPings", std::to_string(DEFAULTSETTINGS::bColorPings).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	gSettings.bColorPings  = (atoi(szReadBuffer)) ? true : false;
+	gSettings.bColorPings = (atoi(szReadBuffer)) ? true : false;
+	
+	GetPrivateProfileString("general", "disableConsole", std::to_string(DEFAULTSETTINGS::bDisableConsole).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
+	gSettings.bDisableConsole = (atoi(szReadBuffer)) ? true : false;
 	
 	GetPrivateProfileString("general", "autoReloadDelay", std::to_string(DEFAULTSETTINGS::iAutoReloadDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	gSettings.iAutoReloadDelaySecs  = atoi(szReadBuffer);
+	gSettings.iAutoReloadDelaySecs = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "runAutoReloadThread", std::to_string(DEFAULTSETTINGS::bRunAutoReloadThread).c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
-	gSettings.bRunAutoReloadThread  = (atoi(szReadBuffer)) ? true : false;
+	gSettings.bRunAutoReloadThread = (atoi(szReadBuffer)) ? true : false;
 	
 	GetPrivateProfileString("general", "serverlistAddress", DEFAULTSETTINGS::sServerlistAddress.c_str(), szReadBuffer, sizeof(szReadBuffer), szCfgFileName);
 	gSettings.sServerlistAddress = szReadBuffer;
@@ -3527,6 +3561,8 @@ void SaveConfig() // Saves all servers and settings in the config file
 	WritePrivateProfileString("general\0", "colorPlayers\0", sWriteBuffer.c_str(), szCfgFileName);
 	sWriteBuffer = std::to_string(gSettings.bColorPings);
 	WritePrivateProfileString("general\0", "colorPings\0", sWriteBuffer.c_str(), szCfgFileName);
+	sWriteBuffer = std::to_string(gSettings.bDisableConsole);
+	WritePrivateProfileString("general\0", "disableConsole\0", sWriteBuffer.c_str(), szCfgFileName);
 	
 	WritePrivateProfileString("general\0", "serverlistAddress\0", gSettings.sServerlistAddress.c_str(), szCfgFileName);
 	
