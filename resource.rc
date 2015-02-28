@@ -39,14 +39,14 @@ IDM MENU
 	}
 	POPUP "&Server"
 	{
-		MENUITEM "Manage S&ervers...", IDM_SERVER_MANAGE
+		MENUITEM "Manage &Servers...", IDM_SERVER_MANAGE
 		MENUITEM "Manage &Rotation...", IDM_SERVER_ROTATION
 		//MENUITEM "&Change serversettings", IDM_SERVER_CVARS
 	}
 	POPUP "&Ban / Kick Management"
 	{
 		MENUITEM "&Enable Automated Kicks", IDM_BANS_ENABLE
-		MENUITEM "Set Maximum Ping...", IDM_BANS_SETPING
+		MENUITEM "&Set Maximum Ping...", IDM_BANS_SETPING
 		MENUITEM "Manage Banned I&Ds...", IDM_BANS_MANAGEIDS
 		MENUITEM "Manage Banned I&Ps...", IDM_BANS_MANAGEIPS
 	}

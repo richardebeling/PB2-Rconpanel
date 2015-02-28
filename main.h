@@ -41,6 +41,11 @@
 
 struct WINDOWHANDLES
 {
+	HWND hDlgManageRotation;
+	HWND hDlgManageIds;
+	HWND hDlgManageIps;
+	HWND hDlgSettings;
+	HWND hDlgRconCommands;
 	HWND hWinMain;
 	HWND hComboServer;
 	HWND hListPlayers;
