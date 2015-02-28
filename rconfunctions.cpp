@@ -383,7 +383,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			}
 			catch (const std::out_of_range& oor)
 			{
-				//May be that another player connected until now and there is no playervector->at(iNum), so if this occurs just ignore it.
+				//Maybe another player connected until now and there is no playervector->at(iNum), so if this occurs just ignore it.
 				break;
 			}
 			szFound = strtok(NULL, "!");	
