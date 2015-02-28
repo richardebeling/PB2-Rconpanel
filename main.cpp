@@ -136,6 +136,12 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 						LoadMenu (hThisInstance, MAKEINTRESOURCE(IDM)),
 						hThisInstance, NULL);
 	
+	gWindows.hDlgManageRotation = NULL;
+	gWindows.hDlgManageIds = NULL;
+	gWindows.hDlgManageIps = NULL;
+	gWindows.hDlgSettings = NULL;
+	gWindows.hDlgRconCommands = NULL;
+	
 	ShowWindow(gWindows.hWinMain, nCmdShow);
 						
 	//All other windows will be created in OnMainWindowCreate
@@ -359,7 +365,8 @@ int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 	//Get size of one space
 	//calculate how many spaces would fit additionally to the text
 	//concatenate the string with right count of spaces.
-	//Even better: Draw text manually "DrawText()" when painting window, only set  variable names and content here and store them (in a global vector of pair<string, string>?)
+	//Even better: Draw text manually "DrawText()" when painting window, only set  variable names
+	//and content here and store them (in a global vector of pair<string, string>?)
 	
 	int i = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (i == CB_ERR)
@@ -1437,7 +1444,10 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			SendMessage(hwnd, WM_CLOSE, 0, 0);
 			break;
 		case IDM_FILE_SETTINGS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_PROGRAMSETTINGS), hwnd, (DLGPROC) ProgramSettingsDlgProc);
+			if (!gWindows.hDlgSettings)
+				gWindows.hDlgSettings = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_PROGRAMSETTINGS), hwnd, (DLGPROC) ProgramSettingsDlgProc);
+			else
+				SetForegroundWindow(gWindows.hDlgSettings);
 			break;
 		case IDM_FILE_REMOVECONFIG:
 			{
@@ -1454,9 +1464,13 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, (DLGPROC) ManageServersDlgProc);
 			break;
 		case IDM_SERVER_ROTATION:
-			//Must be dialog box because it uses two global variables which does not work when the dialog is open two times.
+			//Must be forced to only be open one time because it uses two global variables which does not work when the dialog is open two times.
 			//g_pMapshotBitmap and g_pMapshotBitmapResized
-			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, (DLGPROC) ManageRotationDlgProc);
+			if (!gWindows.hDlgManageRotation)
+				gWindows.hDlgManageRotation = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, (DLGPROC) ManageRotationDlgProc);
+			else
+				SetForegroundWindow(gWindows.hDlgManageRotation);
+			
 			break;
 		/*case IDM_SERVER_CVARS:
 			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGECVARS), hwnd, (DLGPROC)ManageCvarsDlgProc);
@@ -1481,16 +1495,25 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SETPING), hwnd, (DLGPROC) SetPingDlgProc);
 			break;
 		case IDM_BANS_MANAGEIDS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIDS), hwnd, (DLGPROC) ManageIDsDlgProc);
+			if (!gWindows.hDlgManageIds)
+				gWindows.hDlgManageIds = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIDS), hwnd, (DLGPROC) ManageIDsDlgProc);
+			else
+				SetForegroundWindow(gWindows.hDlgManageIds);
 			break;
 		case IDM_BANS_MANAGEIPS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, (DLGPROC) ManageIPsDlgProc);
+			if (!gWindows.hDlgManageIps)
+				gWindows.hDlgManageIps = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, (DLGPROC) ManageIPsDlgProc);
+			else
+				SetForegroundWindow(gWindows.hDlgManageIps);
 			break;
 		case IDM_HELP_DPLOGIN:
 			ShellExecute(NULL, "open", "http://www.DPLogin.com\0", NULL, NULL, SW_SHOWNORMAL);
 			break;
 		case IDM_HELP_RCONCOMMANDS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_RCONCOMMANDS), hwnd, (DLGPROC) RCONCommandsDlgProc);
+			if (!gWindows.hDlgRconCommands)
+				gWindows.hDlgRconCommands = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_RCONCOMMANDS), hwnd, (DLGPROC) RCONCommandsDlgProc);
+			else
+				SetForegroundWindow(gWindows.hDlgRconCommands);
 			break;
 		case IDM_HELP_SERVERBROWSER:
 			StartServerbrowser(); break;
@@ -1804,6 +1827,7 @@ void OnProgramSettingsHScroll(HWND hwnd, HWND hwndCtl, UINT code, int pos)
 
 void OnProgramSettingsClose(HWND hwnd)
 {
+	gWindows.hDlgSettings = NULL;
 	EndDialog(hwnd, 0);
 }
 
@@ -2039,6 +2063,8 @@ void OnManageRotationClose(HWND hwnd)
 		delete g_pMapshotBitmapResized;
 		g_pMapshotBitmapResized = NULL;
 	}
+	
+	gWindows.hDlgManageRotation = NULL;
 	
 	EndDialog(hwnd, 0);
 }
@@ -2311,6 +2337,7 @@ LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, L
 
 void OnRCONCommandsClose(HWND hwnd)
 {
+	gWindows.hDlgRconCommands = NULL;
 	EndDialog(hwnd, 1);
 }
 
@@ -2727,6 +2754,7 @@ BOOL OnManageIDsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 
 void OnManageIDsClose(HWND hwnd)
 {
+	gWindows.hDlgManageIds = NULL;
 	EndDialog(hwnd, 1);
 }
 
@@ -2914,6 +2942,7 @@ BOOL OnManageIPsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 
 void OnManageIPsClose(HWND hwnd)
 {
+	gWindows.hDlgManageIps = NULL;
 	EndDialog(hwnd, 1);
 }
 
