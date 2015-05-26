@@ -204,8 +204,8 @@ sv writeip\r\n\r\n\
 VARNAME VALUE - sets the specified variable to the value\r\n\
 status - gives you an overview of all players and the current map\r\n\
 kick NUMBER - kicks a player by his number\r\n\
-map NAME - instantly restarts the server and loads a map. Crashes server if the mapname is not valid\r\n\
-say TEXT - says text as server\r\n\
+map NAME - instantly restarts the server and loads a map.\r\n\
+say TEXT - says the text as server\r\n\
 quit - closes the server\r\n\
 exit - closes the server\r\n\
 exec PATH - executes a config file\r\n\
