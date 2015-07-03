@@ -1372,7 +1372,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		{
 			if (hwndCtl == gWindows.hButtonSend)
 			{
-				if (WaitForSingleObject(g_hSendRconThread, 0) != WAIT_TIMEOUT)
+				if (g_hSendRconThread == INVALID_HANDLE_VALUE || WaitForSingleObject(g_hSendRconThread, 0) != WAIT_TIMEOUT)
 				{
 					CloseHandle(g_hSendRconThread);
 					g_hSendRconThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) OnMainWindowSendRcon, NULL, 0, NULL);
@@ -1409,7 +1409,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		{
 			if (hwndCtl == gWindows.hComboRcon)
 			{
-				if (WaitForSingleObject(g_hSendRconThread, 0) != WAIT_TIMEOUT)
+				if (g_hSendRconThread == INVALID_HANDLE_VALUE || WaitForSingleObject(g_hSendRconThread, 0) != WAIT_TIMEOUT)
 				{
 					CloseHandle(g_hSendRconThread);
 					g_hSendRconThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) OnMainWindowSendRcon, NULL, 0, NULL);
@@ -1484,7 +1484,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				gSettings.bRunBanThread = 1;
 				CheckMenuItem(GetMenu(hwnd), IDM_BANS_ENABLE, MF_CHECKED);
 	
-				if (WaitForSingleObject(g_hBanThread, 0) != WAIT_TIMEOUT) {
+				if (g_hBanThread == INVALID_HANDLE_VALUE || WaitForSingleObject(g_hBanThread, 0) != WAIT_TIMEOUT) {
 					CloseHandle(g_hBanThread);
 					g_hBanThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) BanThreadFunction, NULL, 0, NULL);
 				}
@@ -1915,7 +1915,7 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			{
 				gSettings.bRunAutoReloadThread = 1;
 				
-				if (WaitForSingleObject(g_hAutoReloadThread, 0) != WAIT_TIMEOUT)
+				if (g_hAutoReloadThread == INVALID_HANDLE_VALUE || WaitForSingleObject(g_hAutoReloadThread, 0) != WAIT_TIMEOUT)
 				{
 					CloseHandle(g_hAutoReloadThread);
 					g_hAutoReloadThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) AutoReloadThreadFunction, NULL, 0, NULL);
@@ -3343,6 +3343,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 		while (iBanThreadTimeWaited <= gSettings.iBanCheckDelaySecs  * 1000)
 		{
 			Sleep(100);
+			iBanThreadTimeWaited += 100;
 			if (!gSettings.bRunBanThread)
 			{
 				closesocket(g_hBanSocket);
