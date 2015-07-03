@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2014 Richard Ebeling
+	Copyright (C) 2015 Richard Ebeling
 
 	This file is part of "DP:PB2 Rconpanel".
 	"DP:PB2 Rconpanel" is free software: you can redistribute it and/or modify
