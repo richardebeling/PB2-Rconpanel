@@ -17,9 +17,9 @@
 	If not, see <http://www.gnu.org/licenses/>.
 */
 
-//TODO (#8#): Add: Modifiable messages that will be said as console before players are kicked.
-//TODO (#7#): Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server (IDD_MANAGECVARS is the current placeholder)
-//TODO (#8#): Fix ip addresses not being shown sometimes (because assignment of information to the player fails?)
+//TODO: Add: Modifiable messages that will be said as console before players are kicked.
+//TODO: Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server (IDD_MANAGECVARS is the current placeholder)
+//TODO: Fix ip addresses not being shown sometimes (because assignment of information to the player fails?)
 //TODO: Option to draw nothing instead of a 0 in the listview when no information is given.
 //TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin and utrace?)
 //TODO: Disable "Ban IP" button when the IP was not loaded correctly
@@ -1394,9 +1394,11 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
 {
 	DWORD dwBaseUnits = GetDialogBaseUnits();
     int iMW = LOWORD(dwBaseUnits) / 4; //Multiplier width for base units -> pixels
-    int iMH = HIWORD(dwBaseUnits) / 8; //Multiplier height for base units -> pixels
+	int iMH = HIWORD(dwBaseUnits) / 8; //Multiplier height for base units -> pixels
 
-    // TODO (#1#): Add: calculate it all from a few, for humans readable areas (Server, Player, Console) so editing is easier.
+	// TODO: Fix clipping with DPI scaling enabled
+
+    // TODO: Add: calculate it all from a few, for humans readable areas (Server, Player, Console) so editing is easier.
     //RECT rcServer =  {3*iMW, 3*iMH                   , cx - 3*iMW, 23*iMH};
     //RECT rcPlayers = {3*iMW, rcServer.bottom + 2*iMH , cx - 3*iMW, ((cy > 244*iMH) ? cy/2-20*iMH : 102*iMH) + 25*iMH};
     //RECT rcConsole = {3*iMW, rcPlayers.bottom + 2*iMH, cx - 3*iMW, cy - 3*iMH};
@@ -2987,7 +2989,7 @@ void DeleteConfig() // deletes the config file, prints result to console, sets g
 
 int LoadConfig() // loads the servers and settings from the config file
 {
-	char szReadBuffer[4096]; //TODO (#6#): Add: Determine needed buffer size
+	char szReadBuffer[4096];
 	auto path = ConfigLocation();
 
 	GetPrivateProfileString("general", "timeout", std::to_string(DEFAULTSETTINGS::fTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
@@ -3000,22 +3002,22 @@ int LoadConfig() // loads the servers and settings from the config file
 	gSettings.iMaxConsoleLineCount = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "limitConsoleLineCount", std::to_string(DEFAULTSETTINGS::iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bLimitConsoleLineCount = (atoi(szReadBuffer)) ? true : false;
+	gSettings.bLimitConsoleLineCount = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "colorPlayers", std::to_string(DEFAULTSETTINGS::bColorPlayers).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bColorPlayers = (atoi(szReadBuffer)) ? true : false;
+	gSettings.bColorPlayers = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "colorPings", std::to_string(DEFAULTSETTINGS::bColorPings).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bColorPings = (atoi(szReadBuffer)) ? true : false;
+	gSettings.bColorPings = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "disableConsole", std::to_string(DEFAULTSETTINGS::bDisableConsole).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bDisableConsole = (atoi(szReadBuffer)) ? true : false;
+	gSettings.bDisableConsole = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "autoReloadDelay", std::to_string(DEFAULTSETTINGS::iAutoReloadDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.iAutoReloadDelaySecs = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "runAutoReloadThread", std::to_string(DEFAULTSETTINGS::bRunAutoReloadThread).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bRunAutoReloadThread = (atoi(szReadBuffer)) ? true : false;
+	gSettings.bRunAutoReloadThread = atoi(szReadBuffer);
 	
 	GetPrivateProfileString("general", "serverlistAddress", DEFAULTSETTINGS::sServerlistAddress.c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.sServerlistAddress = szReadBuffer;
@@ -3039,12 +3041,11 @@ int LoadConfig() // loads the servers and settings from the config file
 	}
 	GetPrivateProfileString("bans", "delay", std::to_string(DEFAULTSETTINGS::iBanCheckDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.iBanCheckDelaySecs = atoi(szReadBuffer);
-	
 
 	char szCount[10];
 	GetPrivateProfileString("server", "count", "-1\0", szCount, sizeof(szCount), path.c_str());
 	if (strcmp (szCount, "-1") == 0 && GetLastError() == 0x2) return -1; //File not Found
-	for (int i = 0; i< atoi(szCount); i++) //load servers
+	for (int i = 0; i < atoi(szCount); i++) //load servers
 	{
 		char szKeyBuffer[512] = { 0 };
 		char szPortBuffer[6] = { 0 };
