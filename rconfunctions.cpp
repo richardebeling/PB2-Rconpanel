@@ -109,7 +109,7 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 		recvfrom(hUdpSocket, NULL, 0, 0, NULL, 0);
 	}
 
-	if (sendto(hUdpSocket, sPacketContent.c_str(), static_cast<int>(sPacketContent.size() + 1), 0, (sockaddr*)  &stAddress, iSizeOfAddressStructure) == SOCKET_ERROR)
+	if (SOCKET_ERROR == sendto(hUdpSocket, sPacketContent.c_str(), static_cast<int>(sPacketContent.size() + 1), 0, (sockaddr*)  &stAddress, iSizeOfAddressStructure))
 	{
 		if (bOwnSocket)
 		{
@@ -118,11 +118,12 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 		return -2;
 	}
 
-	int iReceivedBytes = 6;
 	sReturnBuffer->assign("print\n");
+	int iTotalReceivedBytes = 6;
+
 	bool bReceivedSomething = false;
 
-	char szTempBuffer[MTU] = {'\0'};
+	std::vector<char> buffer(MTU);
 
 	while (true)
 	{
@@ -131,47 +132,43 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 		tv.tv_sec = static_cast<long>(dTimeout);
 		tv.tv_usec = static_cast<long>((fmod(dTimeout, 1))*1000000);
 
-		int iRetVal = select(FD_SETSIZE, &fdset, 0, 0, &tv);
-		if (iRetVal > 0)
+		int selectResult = select(FD_SETSIZE, &fdset, 0, 0, &tv);
+		if (selectResult > 0)
 		{
 			bReceivedSomething = true;
-			iRetVal = recvfrom(hUdpSocket, szTempBuffer, MTU, 0, (sockaddr*) &stAddress, &iSizeOfAddressStructure);
+			int receivedBytes = recvfrom(hUdpSocket, buffer.data(), static_cast<int>(buffer.size()), 0, (sockaddr*) &stAddress, &iSizeOfAddressStructure);
 
-			szTempBuffer[iRetVal] = '\0';
+			buffer[receivedBytes] = '\0';
 
-			if (strncmp(szTempBuffer, "\xFF\xFF\xFF\xFFprint\n", 10) == 0)
+			if (strncmp(buffer.data(), "\xFF\xFF\xFF\xFFprint\n", 10) == 0)
 			{
-				memmove(szTempBuffer, szTempBuffer+10, strlen(szTempBuffer));
-				iRetVal -= 10;
+				memmove(buffer.data(), buffer.data()+10, strlen(buffer.data()));
+				receivedBytes -= 10;
 			}
 			else
 				return -5;
 
-			sReturnBuffer->append(szTempBuffer);
+			sReturnBuffer->append(buffer.data());
 
-			iReceivedBytes += iRetVal;
-			if (iRetVal < 1200)
+			iTotalReceivedBytes += receivedBytes;
+			if (receivedBytes < 1200)  // todo: possibly wrong heuristic
 				break;
 		}
-		else if (iRetVal == 0)
+		else if (selectResult == 0)
 			break;
-		else if (iRetVal < 0)
+		else if (selectResult < 0)
 			return -3;
-	}
-
-	if (!bReceivedSomething)
-	{
-		if (bOwnSocket)
-		{
-			closesocket(hUdpSocket);
-		}
-		return -4;
 	}
 
 	if (bOwnSocket)
 		closesocket(hUdpSocket);
 
-	return iReceivedBytes;
+	if (!bReceivedSomething)
+	{
+		return -4;
+	}
+
+	return iTotalReceivedBytes;
 }
 
 int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::string sRconPassword,

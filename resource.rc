@@ -160,15 +160,15 @@ FONT 8, "Ms Shell Dlg"
     CONTROL         "", IDC_PS_TRACKOTHERSERVERS, TRACKBAR_CLASS, WS_TABSTOP | TBS_BOTH | TBS_NOTICKS, 138, 30, 100, 15, WS_EX_LEFT
     LTEXT           "1.000 s", IDC_PS_STATICOTHERSERVERS, 243, 33, 24, 8, SS_LEFT, WS_EX_LEFT
     
-    GROUPBOX        "Intervals", 0, 7, 60, 266, 51, 0, WS_EX_LEFT
+    GROUPBOX        "Intervals", 1, 7, 60, 266, 51, 0, WS_EX_LEFT
     LTEXT           "Checking interval for ID ban thread (if active):", IDC_STATIC, 13, 71, 144, 8, SS_LEFT, WS_EX_LEFT
     EDITTEXT        IDC_PS_EDITBANINTERVAL, 160, 68, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
-    LTEXT           "seconds", 0, 201, 71, 28, 8, SS_LEFT, WS_EX_LEFT
+    LTEXT           "seconds", 2, 201, 71, 28, 8, SS_LEFT, WS_EX_LEFT
     AUTOCHECKBOX    "Automatically reload the players every:", IDC_PS_CHECKAUTORELOAD, 14, 89, 136, 8, 0, WS_EX_LEFT
     EDITTEXT        IDC_PS_EDITAUTORELOAD, 160, 87, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
-    LTEXT           "seconds", 0, 201, 90, 28, 8, SS_LEFT, WS_EX_LEFT
+    LTEXT           "seconds", 3, 201, 90, 28, 8, SS_LEFT, WS_EX_LEFT
     
-    GROUPBOX        "Other settings", 0, 7, 116, 266, 77, 0, WS_EX_LEFT
+    GROUPBOX        "Other settings", 4, 7, 116, 266, 77, 0, WS_EX_LEFT
     AUTOCHECKBOX    "Limit console line count to:", IDC_PS_CHECKLINECOUNT, 14, 128, 100, 8, 0, WS_EX_LEFT
     EDITTEXT        IDC_PS_EDITLINECOUNT, 115, 125, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
     AUTOCHECKBOX    "Color the row backgrounds in the player's team colors.", IDC_PS_CHECKCOLORPLAYERS, 14, 144, 185, 8, 0, WS_EX_LEFT
@@ -184,34 +184,8 @@ STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VIS
 CAPTION "Common Rcon Commands"
 FONT 8, "Ms Shell Dlg"
 {
-//TODO: Change this, Microsoft's compiler  truncates static control's texts after 256 chars.
-    LTEXT   "sv (Prefix) - lets you use most of the in-game commands, including admin commands\r\n\
-Examples:\r\n\r\n\
-sv addip\r\n\
-sv expert X\r\n\
-sv listip\r\n\
-sv listuserip\r\n\
-sv maplist\r\n\
-sv newmap\r\n\
-sv players\r\n\
-sv removeip\r\n\
-sv rotation add\r\n\
-sv rotation delete\r\n\
-sv rotation load\r\n\
-sv rotation save\r\n\
-sv tban\r\n\
-sv writeip\r\n\r\n\
-VARNAME VALUE - sets the specified variable to the value\r\n\
-status - gives you an overview of all players and the current map\r\n\
-kick NUMBER - kicks a player by his number\r\n\
-map NAME - instantly restarts the server and loads a map.\r\n\
-say TEXT - says the text as server\r\n\
-quit - closes the server\r\n\
-exit - closes the server\r\n\
-exec PATH - executes a config file\r\n\
-set VARNAME CONTENT TYPE - sets the content of a variable. The type is optional\r\n\
-unset VARNAME - unsets a variable",
-			IDC_STATIC, 7, 7, 318, 224, SS_LEFT
+	// Text is set in OnRCONCommandsInitDialog because the microsoft .rc compiler truncates text here.
+    LTEXT   "", IDC_RCONCOMMANDS_INFOTEXT, 7, 7, 318, 224, SS_LEFT
 }
 
 IDD_SETPING DIALOG 0, 0, 151, 47

@@ -82,14 +82,14 @@ struct Ban
 		NAME = 1,
 	};
 
-    Type tType;
+    Type tType = Type::ID;
     std::string sText;
 };
 
 struct LoadServersArgs
 {
-	int iKey;
-	HWND hwnd;
+	int iKey = 0;
+	HWND hwnd = NULL;
 };
 
 std::unique_ptr<Gdiplus::Bitmap> CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int width, unsigned int height);

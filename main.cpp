@@ -178,16 +178,16 @@ void ShowPlayerInfo(HWND hwnd)
 							+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 		HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 		HINTERNET hFile = InternetOpenUrl(hInternet, sUrlBuffer.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
-		char szBuffer[MTU] = {0};
+		std::vector<char> buffer(MTU);
 		long unsigned int iBytesRead = 0;
 		bool bSuccessful = true;
 		while (bSuccessful)
 		{
-			InternetReadFile(hFile, szBuffer, sizeof(szBuffer), &iBytesRead);
+			InternetReadFile(hFile, buffer.data(), static_cast<DWORD>(buffer.size()), &iBytesRead);
 
 			if (bSuccessful && iBytesRead == 0) break;
-			szBuffer[iBytesRead] = '\0';
-			sPlayersite.append(szBuffer);
+			buffer[iBytesRead] = '\0';
+			sPlayersite.append(buffer.data());
 		}
 		InternetCloseHandle(hFile);
 		InternetCloseHandle(hInternet);
@@ -256,16 +256,16 @@ void ShowPlayerInfo(HWND hwnd)
 							+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 		HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 		HINTERNET hFile = InternetOpenUrl(hInternet, sUrlBuffer.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
-		char szBuffer[MTU] = {0};
+		std::vector<char> buffer(MTU);
 		long unsigned int iBytesRead = 0;
 		bool bSuccessful = true;
 		while (bSuccessful)
 		{
-			InternetReadFile(hFile, szBuffer, sizeof(szBuffer), &iBytesRead);
+			InternetReadFile(hFile, buffer.data(), static_cast<int>(buffer.size()), &iBytesRead);
 
 			if (bSuccessful && iBytesRead == 0) break;
-			szBuffer[iBytesRead] = '\0';
-			sUtraceXml.append(szBuffer);
+			buffer[iBytesRead] = '\0';
+			sUtraceXml.append(buffer.data());
 		}
 		InternetCloseHandle(hFile);
 		InternetCloseHandle(hInternet);
@@ -822,6 +822,10 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	
 	g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
 	hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
+	if (hThread == NULL) {
+		MessageBox(NULL, "Error while starting the refresh thread", "Error", MB_OK | MB_ICONERROR);
+		return false;
+	}
 	CloseHandle(hThread);
 	
 	return true;
@@ -1273,7 +1277,9 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				CheckMenuItem(GetMenu(hwnd), IDM_BANS_ENABLE, MF_CHECKED);
 	
 				if (g_hBanThread == INVALID_HANDLE_VALUE || WaitForSingleObject(g_hBanThread, 0) != WAIT_TIMEOUT) {
-					CloseHandle(g_hBanThread);
+					if (g_hBanThread != NULL) {
+						CloseHandle(g_hBanThread);
+					}
 					g_hBanThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) BanThreadFunction, NULL, 0, NULL);
 				}
 			}
@@ -1439,6 +1445,8 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
 	MoveWindow(gWindows.hButtonReload		 , cx - 45*iMW, 25 *iMH, 43*iMW, 12*iMH, FALSE);
 	MoveWindow(gWindows.hButtonUtrace		 , cx - 45*iMW, 96 *iMH, 43*iMW, 12*iMH, FALSE);
 
+#pragma warning(push)
+#pragma warning(disable:26451)  // We're not computing large numbers here
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iNumber, 17*iMW);                   //num
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iName,   cx - 220*iMW);             //name
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iBuild,  18*iMW);                   //build
@@ -1448,6 +1456,7 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iPing,   17*iMW);                   //Ping
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iScore,  20*iMW);                   //Score
 	ListView_SetColumnWidth(gWindows.hListPlayers, 7,                 LVSCW_AUTOSIZE_USEHEADER);
+#pragma warning(pop)
 
 	RedrawWindow(gWindows.hWinMain, NULL, NULL, RDW_ERASE | RDW_INVALIDATE);
 	
@@ -1567,11 +1576,11 @@ BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 	SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_SETTICFREQ, 1000, 0);
 	SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_SETTICFREQ, 100, 0);
 	
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_SETPOS, TRUE, (int) (gSettings.fTimeoutSecs * 20));
+	SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_SETPOS, TRUE, (LPARAM) (gSettings.fTimeoutSecs) * 20);
 	sprintf (szBuffer, "%.2f s", gSettings.fTimeoutSecs);
 	SetDlgItemText(hwnd, IDC_PS_STATICOWNSERVERS, szBuffer);
 	
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_SETPOS, TRUE, (int) (gSettings.fAllServersTimeoutSecs * 20));
+	SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_SETPOS, TRUE, (LPARAM) (gSettings.fAllServersTimeoutSecs) * 20);
 	sprintf (szBuffer, "%.2f s", gSettings.fAllServersTimeoutSecs);
 	SetDlgItemText(hwnd, IDC_PS_STATICOTHERSERVERS, szBuffer);
 	
@@ -1681,7 +1690,9 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				
 				if (g_hAutoReloadThread == INVALID_HANDLE_VALUE || WaitForSingleObject(g_hAutoReloadThread, 0) != WAIT_TIMEOUT)
 				{
-					CloseHandle(g_hAutoReloadThread);
+					if(g_hAutoReloadThread != NULL)
+						CloseHandle(g_hAutoReloadThread);
+
 					g_hAutoReloadThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) AutoReloadThreadFunction, NULL, 0, NULL);
 				}
 			}
@@ -1923,8 +1934,8 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				std::vector<char> mapnameBuffer(iBufferSize);
 				SendMessage(GetDlgItem(hwnd, IDC_MROT_LIST), LB_GETTEXT, iCurSel, (LPARAM) mapnameBuffer.data());
 				SetDlgItemText(hwnd, IDC_MROT_EDITMAP, mapnameBuffer.data());
-				break;
 			}
+			break;
 		}
 	
 		case IDC_MROT_EDITMAP:
@@ -2013,6 +2024,40 @@ LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, L
 // Callback RCON Commands Dialog                                                                   |
 //{-------------------------------------------------------------------------------------------------
 
+BOOL OnRCONCommandsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
+{
+	HWND textElement = GetDlgItem(hwnd, IDC_RCONCOMMANDS_INFOTEXT);
+	SetWindowText(textElement,
+		"sv (Prefix) - lets you use most of the in-game commands, including admin commands\r\n"
+		"Examples:\r\n\r\n"
+		"sv addip\r\n"
+		"sv expert X\r\n"
+		"sv listip\r\n"
+		"sv listuserip\r\n"
+		"sv maplist\r\n"
+		"sv newmap\r\n"
+		"sv players\r\n"
+		"sv removeip\r\n"
+		"sv rotation add\r\n"
+		"sv rotation delete\r\n"
+		"sv rotation load\r\n"
+		"sv rotation save\r\n"
+		"sv tban\r\n"
+		"sv writeip\r\n\r\n"
+		"VARNAME VALUE - sets the specified variable to the value\r\n"
+		"status - gives you an overview of all players and the current map\r\n"
+		"kick NUMBER - kicks a player by his number\r\n"
+		"map NAME - instantly restarts the server and loads a map.\r\n"
+		"say TEXT - says the text as server\r\n"
+		"quit - closes the server\r\n"
+		"exit - closes the server\r\n"
+		"exec PATH - executes a config file\r\n"
+		"set VARNAME CONTENT TYPE - sets the content of a variable. The type is optional\r\n"
+		"unset VARNAME - unsets a variable"
+	);
+	return TRUE;
+}
+
 void OnRCONCommandsClose(HWND hwnd)
 {
 	gWindows.hDlgRconCommands = NULL;
@@ -2023,6 +2068,7 @@ LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPA
 {
     switch (Msg)
     {
+		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnRCONCommandsInitDialog);
 		HANDLE_MSG(hWndDlg, WM_CLOSE, OnRCONCommandsClose);
     }
     return FALSE;
@@ -2047,16 +2093,16 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 						+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 	HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 	HINTERNET hFile = InternetOpenUrl(hInternet, gSettings.sServerlistAddress.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
-	char szBuffer[MTU] = {0};
-	bool bSuccessful = true;
-	while (bSuccessful)
+	std::vector<char> buffer(MTU);
+
+	while (true)
 	{
 		long unsigned int iBytesRead = 0;
-		InternetReadFile(hFile, szBuffer, sizeof(szBuffer), &iBytesRead);
+		InternetReadFile(hFile, buffer.data(), static_cast<DWORD>(buffer.size()), &iBytesRead);
 
-		if (bSuccessful && iBytesRead == 0) break;
-		szBuffer[iBytesRead] = '\0';
-		sServerlist.append(szBuffer);
+		if (iBytesRead == 0) break;
+		buffer[iBytesRead] = '\0';
+		sServerlist.append(buffer.data());
 	}
 	InternetCloseHandle(hFile);
 	InternetCloseHandle(hInternet);
@@ -2145,7 +2191,13 @@ BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 	g_mLoadServersThreads.insert(std::pair<int, HANDLE>(lpArgumentsStruct->iKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
 	
 	HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) &LoadServersToListbox, lpArgumentsStruct, 0, NULL);
-	CloseHandle(hThread);
+	if (hThread == NULL) {
+		MessageBox(NULL, "Failed to create thread to load servers", "Error", MB_OK | MB_ICONERROR);
+	}
+	else
+	{
+		CloseHandle(hThread);
+	}
 	
 	return TRUE;
 }
@@ -2265,8 +2317,8 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			BYTE b0, b1, b2, b3;
 			SplitIpAddressToBytes(szIpBuffer, &b0, &b1, &b2, &b3);
 
-			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0,
-								MAKEIPADDRESS(b0, b1, b2, b3));
+#pragma warning (suppress : 26451)
+			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_SETTEXT,
 						0, (LPARAM) (std::to_string(g_vAllServers[selectedServerIndex].iPort)).c_str());
 
@@ -2287,8 +2339,8 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			BYTE b0, b1, b2, b3;
 			SplitIpAddressToBytes(szIpBuffer, &b0, &b1, &b2, &b3);
 
-			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0,
-								MAKEIPADDRESS(b0, b1, b2, b3));
+#pragma warning (suppress : 26451)
+			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_SETTEXT,
 						0, (LPARAM) (std::to_string(g_vSavedServers[selectedSavedServerIndex].iPort)).c_str());
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_SETTEXT,
@@ -2330,24 +2382,27 @@ BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 
 void OnForcejoinCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 {
-	switch(id)
+	switch (id)
 	{
-	case IDC_FJ_OK: //return the char that can be used to join (r, b, p, y, a or o)
-		char szBuffer[14]; //max: "[a] Automatic"
-		SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST),
-					LB_GETTEXT,
-					SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_GETCURSEL, 0, 0),
-					(LPARAM) szBuffer);
+	case IDC_FJ_OK: { //return the char that can be used to join (r, b, p, y, a or o)
+		auto hwndColorList = GetDlgItem(hwnd, IDC_FJ_COLORLIST);
+		auto selectedColorIndex = SendMessage(hwndColorList, LB_GETCURSEL, 0, 0);
+		auto selectedColorLength = SendMessage(hwndColorList, LB_GETTEXTLEN, selectedColorIndex, 0);
 
-		if (strlen(szBuffer) > 1)
-			EndDialog(hwnd, (LPARAM) szBuffer[1]);
+		std::vector<char> buffer(selectedColorLength + 1);
+		SendMessage(hwndColorList, LB_GETTEXT, selectedColorIndex, (LPARAM)buffer.data());
+
+		if (strlen(buffer.data()) > 1)
+			EndDialog(hwnd, (LPARAM)buffer[1]);
 		else
 			EndDialog(hwnd, -1);
 		return;
+	}
 
-	case IDC_FJ_CANCEL: //return -1
+	case IDC_FJ_CANCEL: {
 		EndDialog(hwnd, -1);
 		return;
+	}
 	}
 }
 
@@ -2432,7 +2487,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		case IDC_MIDS_BUTTONADD:
 		{
 			Ban tempban;
-			std::vector<char> buffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_MIDS_EDIT)) + 1);
+			std::vector<char> buffer(static_cast<size_t>(GetWindowTextLength(GetDlgItem(hwnd, IDC_MIDS_EDIT))) + 1);
 
 			SendMessage (GetDlgItem(hwnd, IDC_MIDS_EDIT), WM_GETTEXT, buffer.size(), (LPARAM) buffer.data()); //set text
 			tempban.sText = buffer.data();
@@ -2646,6 +2701,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 							SendMessage(GetDlgItem(hwnd, IDC_MIPS_LIST), LB_GETCURSEL, 0, 0),
 							(LPARAM) szBuffer);
 				SplitIpAddressToBytes(szBuffer, &b0, &b1, &b2, &b3);
+#pragma warning (suppress : 26451)
 				SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
 			}
 			return;
@@ -2895,7 +2951,13 @@ void AutoReloadThreadFunction(void)
 			
 			g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
 			hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
-			CloseHandle(hThread);
+			if (hThread == NULL) {
+				MessageBox(NULL, "Failed to create thread to refresh main window", "Error", MB_OK | MB_ICONERROR);
+			}
+			else
+			{
+				CloseHandle(hThread);
+			}
 		}
 	}
 }

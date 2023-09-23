@@ -34,14 +34,14 @@ struct Player //basic information gained by "sv players" and RCON / non RCON sta
 {
 	std::string sName;
 	std::string sIp;
-	int iPort;
-	int iNumber;
-	int iId;
-	int iBuild;
-	int iOp;
-	int iPing;
-	int iScore;
-	char cColor;
+	int iPort = 0;
+	int iNumber = 0;
+	int iId = 0;
+	int iBuild = 0;
+	int iOp = 0;
+	int iPing = 0;
+	int iScore = 0;
+	char cColor = 'o';
 };
 
 struct Server

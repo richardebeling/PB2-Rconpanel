@@ -107,6 +107,7 @@
 #define IDC_PS_BUTTONCANCEL					224
 
 #define IDD_RCONCOMMANDS					230
+#define IDC_RCONCOMMANDS_INFOTEXT			231
 
 #define IDD_SETPING							240
 #define IDC_SP_EDIT							241

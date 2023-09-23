@@ -48,17 +48,17 @@ namespace DEFAULTSETTINGS
 
 struct SETTINGS
 {
-	bool  bRunAutoReloadThread;   // signals for threads to exit.
-	bool  bRunBanThread;          //
-	bool  bLimitConsoleLineCount; // Enable or disable the automatic line reduction
-	float fTimeoutSecs;           // timeout used for servers you have rcon access  to
-	float fAllServersTimeoutSecs; // timeout used for servers that you  don't have rcon access to (maybe higher ping?)
-	int   iBanCheckDelaySecs;     // delay between checking the servers for banned players in seconds
-	int   iMaxConsoleLineCount;   // maximum lines in the console edit
-	int   iMaxPingMsecs;          // maximum ping in ms, 0 = unlimited
-	bool  bColorPings;            // in the listview, the background color of the pings will vary from green to red
-	bool  bColorPlayers;          // in the listview, players will get their teamcolor as background
-	bool  bDisableConsole;		  // the lower part of the GUI (manual RCON communication) will not be shown.
-	int   iAutoReloadDelaySecs;   // delay for auto-reloading;
-	std::string sServerlistAddress;	  // address where the server list can be gotten in case it changes.
+	bool  bRunAutoReloadThread = false;		// signals for threads to exit.
+	bool  bRunBanThread = false;			//
+	bool  bLimitConsoleLineCount = false;	// Enable or disable the automatic line reduction
+	float fTimeoutSecs = .5;				// timeout used for servers you have rcon access  to
+	float fAllServersTimeoutSecs = 1;		// timeout used for servers that you  don't have rcon access to (maybe higher ping?)
+	int   iBanCheckDelaySecs = 10;			// delay between checking the servers for banned players in seconds
+	int   iMaxConsoleLineCount = 10000;		// maximum lines in the console edit
+	int   iMaxPingMsecs = 0;				// maximum ping in ms, 0 = unlimited
+	bool  bColorPings = false;				// in the listview, the background color of the pings will vary from green to red
+	bool  bColorPlayers = true;				// in the listview, players will get their teamcolor as background
+	bool  bDisableConsole = false;			// the lower part of the GUI (manual RCON communication) will not be shown.
+	int   iAutoReloadDelaySecs = 10;		// delay for auto-reloading;
+	std::string sServerlistAddress;			// address where the server list can be gotten in case it changes.
 };
