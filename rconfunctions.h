@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2015 Richard Ebeling
+	Copyright (C) 2023 Richard Ebeling
 
 	This file is part of "DP:PB2 Rconpanel".
 	"DP:PB2 Rconpanel" is free software: you can redistribute it and/or modify
@@ -24,10 +24,13 @@
 //Set that high so it even works in future (Current DSL / Ethernet MTU is <= 1500, TCP Limit is 65536)
 
 #include <winsock2.h>
+#include <Ws2tcpip.h>
 #include <vector>
 #include <string>
 
-struct PLAYER //basic information gained by "sv players" and RCON / non RCON status
+// TODO: Namespace
+
+struct Player //basic information gained by "sv players" and RCON / non RCON status
 {
 	std::string sName;
 	std::string sIp;
@@ -41,50 +44,34 @@ struct PLAYER //basic information gained by "sv players" and RCON / non RCON sta
 	char cColor;
 };
 
-/*struct SERVEREX //extended information including current status
-{
-	char sIp;
-	char sHostname;
-	char sRconPassword;
-	char sTimeLeft;
-	char sScores;
-	char sAdmin;
-	char sEmail;
-	char sLocation;
-	char sWebsite;
-	char sMapname;
-	char sVersion;
-	int iPort;
-	int iMaxclients;
-	int iElim;
-	int iFraglimit;
-	int iNeedpass;
-	int iSv_Login;
-	int iTimelimit;
-};*/
-
-struct SERVER //Basic information needed to communicate with this server
+struct Server
 {
 	std::string sIp;
 	std::string sHostname;
 	std::string sRconPassword;
-	int iPort;
+	int iPort = 0;
+
+	Server() = default;
+	Server(std::string ip, int port);
+
+	void retrieveAndSetHostname(SOCKET hUdpSocket = 0, double dTimeout = 0.5);
 };
 
-void vResetPlayer(PLAYER * player);
+// TODO: Proper API
+// * split functions for rcon / non rcon
+// * overloads taking Server instance
+// * handle optional udp socket -- make explicit optional / give overload without parameter?
 
 int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage, std::string* sReturnBuffer,
 						std::string sRconPassword = "", SOCKET hUdpSocket = 0, double dTimeout = 0.5);
 
-//TODO (#1#): int iServerExStructFromAddress (const char *szIpAddress, int iPort, SERVER *pServerStruct, SOCKET hUdpSocket = 0, double dTimeout = 0.5);
-int iServerStructFromAddress (std::string sIpAddress, int iPort, SERVER *pServerStruct, SOCKET hUdpSocket = 0, double dTimeout = 0.5);
-
 int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::string sRconPassword,
-								std::vector <PLAYER> * playervector, SOCKET hUdpSocket = 0, double dTimeout = 0.5);
+								std::vector <Player> * playervector, SOCKET hUdpSocket = 0, double dTimeout = 0.5);
 
 int iVarContentFromName (std::string sIpAddress, int iPort, std::string sRconPassword, std::string sVarName,
 						std::string* sReturnBuffer, SOCKET hUdpSocket = 0, double dTimeout = 0.5);
 
 int InitializeWinsock();
 int ShutdownWinsock();
+
 #endif // RCONFUNCTIONS_H_INCLUDED

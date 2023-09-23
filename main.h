@@ -31,6 +31,7 @@
 #include <shellapi.h>
 #include <wininet.h>
 
+#include <assert.h>
 #include <ctime>
 #include <map>
 #include <regex>
@@ -41,7 +42,7 @@
 
 #include <Gdiplus.h>
 
-struct WINDOWHANDLES
+struct WindowHandles
 {
 	HWND hDlgManageRotation;
 	HWND hDlgManageIds;
@@ -65,33 +66,36 @@ struct WINDOWHANDLES
 	HWND hStaticServerInfo;
 };
 
-struct COLORS
+struct Colors
 {
-	static const DWORD dwRed    = RGB(255, 100, 60);
-	static const DWORD dwBlue   = RGB(100, 150, 255);
-	static const DWORD dwPurple = RGB(225, 0,   225);
-	static const DWORD dwYellow = RGB(240, 240, 0);
-	static const DWORD dwWhite  = RGB(255, 255, 255);
+	static constexpr DWORD dwRed    = RGB(255, 100, 60);
+	static constexpr DWORD dwBlue   = RGB(100, 150, 255);
+	static constexpr DWORD dwPurple = RGB(225, 0,   225);
+	static constexpr DWORD dwYellow = RGB(240, 240, 0);
+	static constexpr DWORD dwWhite  = RGB(255, 255, 255);
 };
 
-#define BANTYPE_ID 0
-#define BANTYPE_NAME 1
-
-struct BAN
+struct Ban
 {
-    int iType; //0 = ID, 1 = Name
+	enum class Type {
+		ID = 0,
+		NAME = 1,
+	};
+
+    Type tType;
     std::string sText;
 };
 
-struct LOADSERVERSARGS
+struct LoadServersArgs
 {
 	int iKey;
 	HWND hwnd;
 };
 
 Gdiplus::Bitmap* CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int width, unsigned int height);
-int iGetFirstUnusedMapIntKey (std::map<int, HANDLE> * m);
+int iGetFirstUnusedMapIntKey(const std::map<int, HANDLE>& m);
 
+std::string ConfigLocation(void);
 int  LoadConfig(void);
 void SaveConfig(void);
 void DeleteConfig(void);
@@ -106,8 +110,9 @@ inline bool MainWindowRefreshThreadExitIfSignaled(int iUID, SOCKET hSocket);
 int  MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent);
 int  MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent);
 inline void SignalAllThreads(std::map<int, HANDLE> * m);
-void MainWindowWriteConsole(std::string);
-void ListView_SetImage(HWND hListview, std::string sImagePath);
+void MainWindowWriteConsole(std::string_view);
+void ListView_SetImage(HWND hListview, std::string_view sImagePath);
+std::string ListView_CustomGetItemText(HWND hListView, int iItemIndex, int iSubItem);
 void LoadBannedIPsToListbox(HWND hListBox);
 void LoadRotationToListbox(HWND hListBox);
 void LoadServersToListbox(LPVOID lpArgumentStruct);

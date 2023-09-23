@@ -31,20 +31,6 @@ int ShutdownWinsock()
 	return WSACleanup();
 }
 
-void vResetPlayer(PLAYER * player)
-{
-	player->sName.assign("");
-	player->sIp.assign("");
-	player->iPort = 0;
-	player->iNumber = 0;
-	player->iId = 0;
-	player->iBuild = 0;
-	player->iOp = 0;
-	player->iPing = 0;
-	player->iScore = 0;
-	player->cColor = 0;
-}
-
 int iVarContentFromName (std::string sIpAddress, int iPort, std::string sRconPassword, std::string sVarName,
 						std::string* sReturnBuffer, SOCKET hUdpSocket, double dTimeout)
 {
@@ -61,24 +47,18 @@ int iVarContentFromName (std::string sIpAddress, int iPort, std::string sRconPas
 		return 0;
 }
 
-int iServerStructFromAddress (std::string sIpAddress, int iPort, SERVER *pServerStruct, SOCKET hUdpSocket, double dTimeout)
-{
+Server::Server(std::string ip, int port) : sIp(std::move(ip)), iPort(port) {}
+
+void Server::retrieveAndSetHostname(SOCKET hUdpSocket, double dTimeout) {
 	std::string sAnswer;
-	iSendMessageToServer(sIpAddress, iPort, "status", &sAnswer, "", hUdpSocket, dTimeout);
+	iSendMessageToServer(sIp, iPort, "status", &sAnswer, "", hUdpSocket, dTimeout);
 	std::smatch MatchResults;
-	std::regex rx ("\\\\hostname\\\\(.*?)\\\\");
+	std::regex rx("\\\\hostname\\\\(.*?)\\\\");
 	int found = std::regex_search(sAnswer, MatchResults, rx);
 
-	std::string sVar = "COULD NOT GET HOSTNAME";
+	std::string sHostname = "COULD NOT GET HOSTNAME";
 	if (found)
-		sVar = MatchResults[1];
-
-	pServerStruct->sHostname.assign(sVar);
-	pServerStruct->sIp.assign(sIpAddress);
-	pServerStruct->iPort = iPort;
-
-	if (found) return 1;
-	return 0;
+		sHostname = MatchResults[1];
 }
 
 int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage, std::string* sReturnBuffer,
@@ -97,7 +77,7 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 	}
 
 	std::string sPacketContent;
-	if(sRconPassword.compare("") == 0) //if szRconPassword == "" ==> if no rcon is being sent
+	if(sRconPassword == "") //if szRconPassword == "" ==> if no rcon is being sent
 	{
 		sPacketContent.assign("\xFF\xFF\xFF\xFF");
 		sPacketContent.append(sMessage);
@@ -110,15 +90,15 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 		sPacketContent.append(sMessage);
 	}
 
-	struct sockaddr_in stAddress;
+	struct sockaddr_in stAddress = { 0 };
 	stAddress.sin_family = AF_INET;
-	stAddress.sin_addr.s_addr = inet_addr(sIpAddress.c_str());
+	InetPton(AF_INET, sIpAddress.c_str(), &stAddress.sin_addr.s_addr);
 	stAddress.sin_port = htons(iPort);
 
 	int iSizeOfAddressStructure = sizeof(stAddress);
 
-	fd_set fdset; //remove any answers that are still depending for that socket while we don't want them
-	timeval tv;
+	fd_set fdset = { 0 }; //remove any answers that are still depending for that socket while we don't want them
+	timeval tv = { 0 };
 	FD_ZERO(&fdset);
 	FD_SET(hUdpSocket, &fdset);
 	tv.tv_sec = 0;
@@ -129,13 +109,12 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 		recvfrom(hUdpSocket, NULL, 0, 0, NULL, 0);
 	}
 
-	if (sendto(hUdpSocket, sPacketContent.c_str(), sPacketContent.size() + 1, 0, (sockaddr*)  &stAddress, iSizeOfAddressStructure) == SOCKET_ERROR)
+	if (sendto(hUdpSocket, sPacketContent.c_str(), static_cast<int>(sPacketContent.size() + 1), 0, (sockaddr*)  &stAddress, iSizeOfAddressStructure) == SOCKET_ERROR)
 	{
 		if (bOwnSocket)
 		{
 			closesocket(hUdpSocket);
 		}
-		//std::cout << WSAGetLastError() << std::endl;
 		return -2;
 	}
 
@@ -196,7 +175,7 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 }
 
 int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::string sRconPassword,
-								std::vector <PLAYER> * playervector, SOCKET hUdpSocket , double dTimeout)
+								std::vector <Player> * playervector, SOCKET hUdpSocket , double dTimeout)
 {
 	if (sRconPassword.compare("") == 0)
 		return -10;
@@ -225,15 +204,13 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
     }
     vLines.push_back(sAnswer.substr(iPrevious));
 	
-	PLAYER tempplayer;
 
 	for (unsigned int i = 0; i < vLines.size(); i++)
 	{		
 		rx.assign("(\\d+) \\((\\d+)\\)] \\* OP (\\d+), (.*?) \\(b(\\d+)\\)");
 		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Admin, logged in
 		{
-			vResetPlayer(&tempplayer);
-			
+			Player tempplayer;
 			tempplayer.iNumber = atoi( std::string(MatchResults[1]).c_str() );
 			tempplayer.iId     = atoi( std::string(MatchResults[2]).c_str() );
 			tempplayer.iOp     = atoi( std::string(MatchResults[3]).c_str() );
@@ -247,10 +224,9 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		rx.assign("(\\d+) \\((\\d+)\\)] \\* (.*?) \\(b(\\d+)\\)");
 		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Player, logged in
 		{
-			vResetPlayer(&tempplayer);
-	
 			std::string sName (MatchResults[3]);
-			
+
+			Player tempplayer;
 			tempplayer.iNumber = atoi( std::string(MatchResults[1]).c_str() );
 			tempplayer.iId	   = atoi( std::string(MatchResults[2]).c_str() );
 			tempplayer.iBuild  = atoi( std::string(MatchResults[4]).c_str() );
@@ -262,8 +238,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		rx.assign("(\\d+) ] \\* OP (\\d+), (.*?) \\(b(\\d+)\\)");
 		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Admin, not logged in
 		{
-			vResetPlayer(&tempplayer);
-			
+			Player tempplayer;
 			tempplayer.iNumber = atoi( std::string (MatchResults[1]).c_str() );
 			tempplayer.iOp     = atoi( std::string (MatchResults[2]).c_str() );
 			tempplayer.iBuild  = atoi( std::string (MatchResults[4]).c_str() );
@@ -275,11 +250,10 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 
 		rx.assign("(\\d+) ] \\* (.*?) \\(b(\\d+)\\)");
 		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Player, not logged in
-		{
-			vResetPlayer(&tempplayer);		
-			
+		{			
 			std::string sName (MatchResults[2]);
-			
+
+			Player tempplayer;
 			tempplayer.iNumber = atoi( std::string (MatchResults[1]).c_str() );
 			tempplayer.iBuild  = atoi( std::string (MatchResults[3]).c_str() );
 			tempplayer.sName   = sName;
@@ -291,8 +265,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		rx.assign("(\\d+) \\(bot\\)] \\* (.*?) \\(b0\\)");
 		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Bot
 		{
-			vResetPlayer(&tempplayer);
-			
+			Player tempplayer;
 			tempplayer.iNumber = atoi( std::string(MatchResults[1]).c_str() );
 			tempplayer.sName   = std::string(MatchResults[2]);
 			
@@ -339,7 +312,8 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 					break;
 				}
 			}
-			catch (const std::out_of_range& oor)
+			// todo -- race condition, mutex
+			catch (const std::out_of_range&)
 			{
 				break;
 			}
@@ -362,18 +336,13 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 
 	while (std::regex_search(start, end, MatchResults, rx))
 	{
-		char * szFound;
-		char * szNumbers;
-		
 		start = MatchResults[0].second;
 		
 		sColor.assign(MatchResults[1]);
 		sNumbers.assign(MatchResults[2]);
 		
-		szNumbers = new char[sNumbers.length()+1];
-		strcpy(szNumbers, sNumbers.c_str());
-		
-		szFound = strtok(szNumbers, "!");		
+		char* strtok_context = NULL;
+		char* szFound = strtok_s(sNumbers.data(), "!", &strtok_context);
 		while (szFound != NULL)
 		{
 			int iNum = atoi(szFound);
@@ -381,15 +350,14 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			{
 				playervector->at(iNum).cColor = *(sColor.c_str());
 			}
-			catch (const std::out_of_range& oor)
+			// todo -- race condition, mutex
+			catch (const std::out_of_range&)
 			{
 				//Maybe another player connected until now and there is no playervector->at(iNum), so if this occurs just ignore it.
 				break;
 			}
-			szFound = strtok(NULL, "!");	
+			szFound = strtok_s(NULL, "!", &strtok_context);
 		}
-		
-		delete[] szNumbers;
 	}
 	//}
 	return 1;
