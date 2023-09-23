@@ -130,5 +130,5 @@ ServiceFabricBackup/
 # Local History for Visual Studio Code
 .history/
 
-# zlib dependency
-zlib-*/
+# might be created when retrieving the serverlist
+templist.txt
