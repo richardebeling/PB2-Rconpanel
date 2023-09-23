@@ -65,9 +65,8 @@ WindowHandles gWindows; // stores all window handles
 SETTINGS gSettings;     // stores all program settings
 
 ULONG_PTR g_gdiplusStartupToken;
-// TODO: Make unique_ptr
-Gdiplus::Bitmap *g_pMapshotBitmap = NULL;
-Gdiplus::Bitmap *g_pMapshotBitmapResized = NULL;
+std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmap;
+std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmapResized;
 
 //--------------------------------------------------------------------------------------------------
 // Program Entry Point                                                                             |
@@ -1805,11 +1804,8 @@ BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 	sMapshot.append("\\pball\\pics\\mapshots\\-no-preview-.jpg");
 	sWideMapshot = std::wstring(sMapshot.begin(), sMapshot.end());
 	
-	if (g_pMapshotBitmap) delete g_pMapshotBitmap;
-	if (g_pMapshotBitmapResized) delete g_pMapshotBitmapResized;
-	
-	g_pMapshotBitmap = new Gdiplus::Bitmap(sWideMapshot.c_str());
-	g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap,
+	g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
+	g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(),
 								rc.right - rc.left, rc.bottom - rc.top);
 
 	return TRUE;
@@ -1828,7 +1824,7 @@ void OnManageRotationPaint(HWND hwnd)
 	if (g_pMapshotBitmapResized)
 	{
 		Gdiplus::Graphics graphics(hdc);
-		graphics.DrawImage(g_pMapshotBitmapResized, 0, 0);
+		graphics.DrawImage(g_pMapshotBitmapResized.get(), 0, 0);
 	}
 	
 	EndPaint(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &ps);
@@ -1837,19 +1833,7 @@ void OnManageRotationPaint(HWND hwnd)
 
 
 void OnManageRotationClose(HWND hwnd)
-{
-	if (g_pMapshotBitmap)
-	{
-		delete g_pMapshotBitmap;
-		g_pMapshotBitmap = NULL;
-	}
-	
-	if (g_pMapshotBitmapResized)
-	{
-		delete g_pMapshotBitmapResized;
-		g_pMapshotBitmapResized = NULL;
-	}
-	
+{	
 	gWindows.hDlgManageRotation = NULL;
 	
 	EndDialog(hwnd, 0);
@@ -1968,11 +1952,8 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				{
 					sWideMapshot = std::wstring(sMapshot.begin(), sMapshot.end());
 					
-					if (g_pMapshotBitmap) delete g_pMapshotBitmap;
-					if (g_pMapshotBitmapResized) delete g_pMapshotBitmapResized;
-					
-					g_pMapshotBitmap = new Gdiplus::Bitmap(sWideMapshot.c_str());
-					g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap,
+					g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
+					g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(),
 												rc.right - rc.left, rc.bottom - rc.top);
 												
 					RedrawWindow(hwnd, NULL, NULL, RDW_UPDATENOW | RDW_INVALIDATE);
@@ -1983,11 +1964,8 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 					sMapshot.append("\\pball\\pics\\mapshots\\-no-preview-.jpg");
 					sWideMapshot = std::wstring(sMapshot.begin(), sMapshot.end());
 					
-					if (g_pMapshotBitmap) delete g_pMapshotBitmap;
-					if (g_pMapshotBitmapResized) delete g_pMapshotBitmapResized;
-					
-					g_pMapshotBitmap = new Gdiplus::Bitmap(sWideMapshot.c_str());
-					g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap,
+					g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
+					g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(),
 												rc.right - rc.left, rc.bottom - rc.top);
 					
 					RedrawWindow(hwnd, NULL, NULL, RDW_UPDATENOW | RDW_INVALIDATE);
@@ -3125,10 +3103,10 @@ int iGetFirstUnusedMapIntKey (const std::map<int, HANDLE>& m)
 	return -1;
 }
 
-Gdiplus::Bitmap* CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int width, unsigned int height)
+std::unique_ptr<Gdiplus::Bitmap> CreateResizedBitmapClone(Gdiplus::Bitmap *source, unsigned int width, unsigned int height)
 {
-    unsigned int originalHeight = bmp->GetHeight();
-    unsigned int originalWidth = bmp->GetWidth();
+    unsigned int originalHeight = source->GetHeight();
+    unsigned int originalWidth = source->GetWidth();
     unsigned int newWidth = width;
     unsigned int newHeight = height;
     
@@ -3139,8 +3117,8 @@ Gdiplus::Bitmap* CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int wid
 	    newWidth = static_cast<unsigned int>(newHeight * ratio);
     }
     
-    Gdiplus::Bitmap* newBitmap = new Gdiplus::Bitmap(newWidth, newHeight, bmp->GetPixelFormat());
-    Gdiplus::Graphics graphics(newBitmap);
-    graphics.DrawImage(bmp, 0, 0, newWidth, newHeight);
+    auto newBitmap = std::make_unique<Gdiplus::Bitmap>(newWidth, newHeight, source->GetPixelFormat());
+    Gdiplus::Graphics graphics(newBitmap.get());
+    graphics.DrawImage(source, 0, 0, newWidth, newHeight);
     return newBitmap;
 }

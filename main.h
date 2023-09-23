@@ -92,7 +92,7 @@ struct LoadServersArgs
 	HWND hwnd;
 };
 
-Gdiplus::Bitmap* CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int width, unsigned int height);
+std::unique_ptr<Gdiplus::Bitmap> CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int width, unsigned int height);
 int iGetFirstUnusedMapIntKey(const std::map<int, HANDLE>& m);
 
 std::string ConfigLocation(void);
