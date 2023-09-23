@@ -20,15 +20,14 @@
 #ifndef RCONFUNCTIONS_H_INCLUDED
 #define RCONFUNCTIONS_H_INCLUDED
 
-#define MTU 65536 //Maximum packet size that might come back as answer to a rcon packet.
-//Set that high so it even works in future (Current DSL / Ethernet MTU is <= 1500, TCP Limit is 65536)
-
 #include <winsock2.h>
 #include <Ws2tcpip.h>
 #include <vector>
 #include <string>
 
 // TODO: Namespace
+
+constexpr static size_t MTU = 65536; //Maximum packet size that might come back as answer to a rcon packet (Ethernet MTU is <= 1500, TCP Limit is 65536)
 
 struct Player //basic information gained by "sv players" and RCON / non RCON status
 {
