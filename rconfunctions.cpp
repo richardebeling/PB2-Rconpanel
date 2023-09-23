@@ -18,7 +18,7 @@
 */
 
 #include "rconfunctions.h"
-#include <boost\regex.hpp>
+#include <regex>
 
 int InitializeWinsock()
 {
@@ -50,9 +50,9 @@ int iVarContentFromName (std::string sIpAddress, int iPort, std::string sRconPas
 {
 	std::string sAnswer;
 	iSendMessageToServer(sIpAddress, iPort, sVarName, &sAnswer, sRconPassword, hUdpSocket, dTimeout);
-	boost::smatch MatchResults;
-	boost::regex rx ("\".*\" is \"(.*)\"");
-	if (boost::regex_search(sAnswer, MatchResults, rx))
+	std::smatch MatchResults;
+	std::regex rx ("\".*\" is \"(.*)\"");
+	if (std::regex_search(sAnswer, MatchResults, rx))
 	{
 		sReturnBuffer->assign(MatchResults[1]);
 		return 1;
@@ -65,9 +65,9 @@ int iServerStructFromAddress (std::string sIpAddress, int iPort, SERVER *pServer
 {
 	std::string sAnswer;
 	iSendMessageToServer(sIpAddress, iPort, "status", &sAnswer, "", hUdpSocket, dTimeout);
-	boost::smatch MatchResults;
-	boost::regex rx ("\\\\hostname\\\\(.*?)\\\\");
-	int found = boost::regex_search(sAnswer, MatchResults, rx);
+	std::smatch MatchResults;
+	std::regex rx ("\\\\hostname\\\\(.*?)\\\\");
+	int found = std::regex_search(sAnswer, MatchResults, rx);
 
 	std::string sVar = "COULD NOT GET HOSTNAME";
 	if (found)
@@ -209,8 +209,8 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	if (iRetVal <= 0)
 		return iRetVal;
 
-	boost::smatch MatchResults;
-	boost::regex rx;
+	std::smatch MatchResults;
+	std::regex rx;
 	std::vector <std::string> vLines;
 	
 	std::size_t iPosition = 0;
@@ -230,7 +230,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	for (unsigned int i = 0; i < vLines.size(); i++)
 	{		
 		rx.assign("(\\d+) \\((\\d+)\\)] \\* OP (\\d+), (.*?) \\(b(\\d+)\\)");
-		if (boost::regex_search(vLines.at(i), MatchResults, rx)) //Admin, logged in
+		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Admin, logged in
 		{
 			vResetPlayer(&tempplayer);
 			
@@ -245,7 +245,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		}
 		
 		rx.assign("(\\d+) \\((\\d+)\\)] \\* (.*?) \\(b(\\d+)\\)");
-		if (boost::regex_search(vLines.at(i), MatchResults, rx)) //Player, logged in
+		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Player, logged in
 		{
 			vResetPlayer(&tempplayer);
 	
@@ -260,7 +260,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		}
 
 		rx.assign("(\\d+) ] \\* OP (\\d+), (.*?) \\(b(\\d+)\\)");
-		if (boost::regex_search(vLines.at(i), MatchResults, rx)) //Admin, not logged in
+		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Admin, not logged in
 		{
 			vResetPlayer(&tempplayer);
 			
@@ -274,7 +274,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		}
 
 		rx.assign("(\\d+) ] \\* (.*?) \\(b(\\d+)\\)");
-		if (boost::regex_search(vLines.at(i), MatchResults, rx)) //Player, not logged in
+		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Player, not logged in
 		{
 			vResetPlayer(&tempplayer);		
 			
@@ -289,7 +289,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		}
 
 		rx.assign("(\\d+) \\(bot\\)] \\* (.*?) \\(b0\\)");
-		if (boost::regex_search(vLines.at(i), MatchResults, rx)) //Bot
+		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Bot
 		{
 			vResetPlayer(&tempplayer);
 			
@@ -314,7 +314,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	std::string::const_iterator end   = sAnswer.end();
 	std::string sName;
 	
-	while (boost::regex_search(start, end, MatchResults, rx))
+	while (std::regex_search(start, end, MatchResults, rx))
 	{
 		start = MatchResults[0].second;
 		sName.assign(MatchResults[4]);
@@ -360,7 +360,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	std::string sColor;
 	std::string sNumbers;
 
-	while (boost::regex_search(start, end, MatchResults, rx))
+	while (std::regex_search(start, end, MatchResults, rx))
 	{
 		char * szFound;
 		char * szNumbers;

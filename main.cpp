@@ -217,19 +217,19 @@ void ShowPlayerInfo(HWND hwnd)
 		InternetCloseHandle(hFile);
 		InternetCloseHandle(hInternet);
 
-		boost::smatch MatchResults;
-		boost::regex rx ("<tr><td><b class=\"faqtitle\">(.+?:)</b></td><td>(.+?)</td></tr>");
+		std::smatch MatchResults;
+		std::regex rx ("<tr><td><b class=\"faqtitle\">(.+?:)</b></td><td>(.+?)</td></tr>");
 		//												1-VARNAME		2-CONTENT
-		boost::regex rxWebcodes("(&gt;)|(&quot;)");
+		std::regex rxWebcodes("(&gt;)|(&quot;)");
 		
-		boost::regex rxLink1("<a href=\\\".+?\\\">");
-		boost::regex rxLink2("</a>");
-		boost::regex rxMail("&#([x0-9a-fA-F]+?);");
+		std::regex rxLink1("<a href=\\\".+?\\\">");
+		std::regex rxLink2("</a>");
+		std::regex rxMail("&#([x0-9a-fA-F]+?);");
 				
 		std::string::const_iterator start = sPlayersite.begin();
 		std::string::const_iterator end = sPlayersite.end();
 		
-		while (boost::regex_search(start, end, MatchResults, rx))
+		while (std::regex_search(start, end, MatchResults, rx))
 		{
 			start = MatchResults[0].second;
 			
@@ -237,20 +237,20 @@ void ShowPlayerInfo(HWND hwnd)
 			sBoxContent.append(" ");
 			
 			std::string sContent = MatchResults[2]; //Content may contain links, must remove them			
-			sContent = boost::regex_replace(sContent, rxLink1, "");
-			sContent = boost::regex_replace(sContent, rxLink2, "");
+			sContent = std::regex_replace(sContent, rxLink1, "");
+			sContent = std::regex_replace(sContent, rxLink2, "");
 			
-			sContent = boost::regex_replace(sContent, rxWebcodes, ""); //Content may contain web codes like &quot; ot &gt;
+			sContent = std::regex_replace(sContent, rxWebcodes, ""); //Content may contain web codes like &quot; ot &gt;
 			
 			if (std::string("Email:").compare(MatchResults[1]) == 0) //email is encoded as char values, this has to be made readable for humans.
 			{
 				std::string::const_iterator startMail = sContent.begin();
 				std::string::const_iterator endMail = sContent.end();
-				boost::smatch MatchResultsMail;
+				std::smatch MatchResultsMail;
 				std::vector <char> vChars;
 				std::string sNum;
 				
-				while (boost::regex_search(startMail, endMail, MatchResultsMail, rxMail))
+				while (std::regex_search(startMail, endMail, MatchResultsMail, rxMail))
 				{
 					startMail = MatchResultsMail[0].second;
 					sNum.assign(MatchResultsMail[1]);
@@ -302,30 +302,30 @@ void ShowPlayerInfo(HWND hwnd)
 		InternetCloseHandle(hFile);
 		InternetCloseHandle(hInternet);
 
-		boost::smatch MatchResults;
-		boost::regex rx ("\\Q<ip>\\E(.*?)\\Q</ip>\\E");
-		if (boost::regex_search(sUtraceXml, MatchResults, rx))
+		std::smatch MatchResults;
+		std::regex rx ("\\Q<ip>\\E(.*?)\\Q</ip>\\E");
+		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
 			sBoxContent.append("IP: ");
 			sBoxContent.append(MatchResults[1]);
 			sBoxContent.append("\r\n");
 		}
 		rx.assign("\\Q<isp>\\E(.*?)\\Q</isp>\\E");
-		if (boost::regex_search(sUtraceXml, MatchResults, rx))
+		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
 			sBoxContent.append("ISP: ");
 			sBoxContent.append(MatchResults[1]);
 			sBoxContent.append("\r\n");
 		}
 		rx.assign("\\Q<region>\\E(.*?)\\Q</region>\\E");
-		if (boost::regex_search(sUtraceXml, MatchResults, rx))
+		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
 			sBoxContent.append("Region: ");
 			sBoxContent.append(MatchResults[1]);
 			sBoxContent.append("\r\n");
 		}
 		rx.assign("\\Q<countrycode>\\E(.*?)\\Q</countrycode>\\E");
-		if (boost::regex_search(sUtraceXml, MatchResults, rx))
+		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
 			sBoxContent.append("Countrycode: ");
 			sBoxContent.append(MatchResults[1]);
@@ -383,36 +383,33 @@ int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 						&sAnswer, g_vSavedServers[i].sRconPassword, hSocket, gSettings.fTimeoutSecs);
 	
 	sAnswer = sAnswer.substr(6, std::string::npos);
-	
-	boost::char_separator<char> sep(";", "", boost::keep_empty_tokens);
-	boost::tokenizer<boost::char_separator<char> > tok (sAnswer, sep);
-	int iteration = 0;
-	for (auto tok_iter = tok.begin(); tok_iter != tok.end(); tok_iter++, iteration++)
+
+	std::stringstream sAnswerStream{ sAnswer };
+	int field = 0;
+	std::string sCurrentValue;
+	while(std::getline(sAnswerStream, sCurrentValue, ';'))
 	{
-		std::string current(*tok_iter);
-		switch(iteration)
+		std::string sCurrentValueOrErr = (sCurrentValue.size() > 0) ? sCurrentValue : "err";
+		switch(field)
 		{
 		case 0:
-			sContent.assign("map: ");
-			sContent.append((current.size() > 0) ? current : "err");
+			sContent += "map: " + sCurrentValueOrErr;
 			break;
 		case 1:
-			sContent.append("  |  pw: ");
-			sContent.append((current.size() > 0) ? current : "none");
+			sContent += "  |  pw: ";
+			sContent += (sCurrentValue.size() > 0) ? sCurrentValue : "none";
 			break;
 		case 2:
-			sContent.append("  |  elim: ");
-			sContent.append((current.size() > 0) ? current : "err");
+			sContent += "  |  elim: " + sCurrentValueOrErr;
 			break;
 		case 3:
-			sContent.append("  |  timelimit: ");
-			sContent.append((current.size() > 0) ? current : "err");
+			sContent += "  |  timelimit: " + sCurrentValueOrErr;
 			break;
 		case 4:
-			sContent.append("  |  maxclients: ");
-			sContent.append((current.size() > 0) ? current : "err");
+			sContent += "  |  maxclients: " + sCurrentValueOrErr;
 			break;
 		}
+		++field;
 	}
 	
 	if (WaitForSingleObject(hExitEvent, 0) == WAIT_OBJECT_0)
@@ -580,11 +577,12 @@ void MainWindowWriteConsole(std::string str) // prints text to gWindows.hEditCon
 
 	//append text
 	sFinalString.append(str);
-	boost::replace_all(sFinalString, "\n", "\r\n"); //make all linux line endings (which are used in rcon packets) visible
-	while (boost::algorithm::ends_with(sFinalString, "\r\n"))
+	sFinalString = std::regex_replace(sFinalString, std::regex{"\n"}, "\n---------> "); //indent text after line ending
+
+	while (sFinalString.ends_with("\n"))
 		sFinalString = sFinalString.substr(0, sFinalString.length() - 2);
 
-	boost::replace_all(sFinalString, "\r\n", "\r\n---------> "); //indent text after line ending
+	sFinalString = std::regex_replace(sFinalString, std::regex{"\n"}, "\r\n");
 
 	//add linebreak (if its not the first line) and the the text to the end of gWindows.hEditConsole
 	SendMessage(gWindows.hEditConsole, EM_SETSEL, -2, -2);
@@ -2008,9 +2006,9 @@ void LoadRotationToListbox(HWND hListBox)
 
 	std::string::const_iterator start = sAnswer.begin();
 	std::string::const_iterator end = sAnswer.end();
-	boost::regex rx ("^\\d+ (.*?)$", boost::regex::perl);
-	boost::smatch MatchResults;
-	while (boost::regex_search(start, end, MatchResults, rx))
+	std::regex rx ("^\\d+ (.*?)$");
+	std::smatch MatchResults;
+	while (std::regex_search(start, end, MatchResults, rx))
 	{
 		std::string sMap (MatchResults[1]);
 		SendMessage(hListBox, LB_ADDSTRING, 0, (LPARAM) sMap.c_str());
@@ -2418,13 +2416,13 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 	if (hSocket == INVALID_SOCKET)
 		return;
 
-	boost::smatch MatchResults;
-	boost::regex rx ("(\\d+\\.\\d+\\.\\d+\\.\\d+):(\\d{2,5})");
+	std::smatch MatchResults;
+	std::regex rx ("(\\d+\\.\\d+\\.\\d+\\.\\d+):(\\d{2,5})");
 
 	std::string::const_iterator start = sServerlist.begin();
 	std::string::const_iterator end   = sServerlist.end();
 
-	while (boost::regex_search(start, end, MatchResults, rx)) //add all servers who answer to the listbox
+	while (std::regex_search(start, end, MatchResults, rx)) //add all servers who answer to the listbox
 	{
 		std::string sIP(MatchResults[1]);
 		std::string sPort(MatchResults[2]);
@@ -2955,9 +2953,9 @@ void LoadBannedIPsToListbox(HWND hListBox)
 
 	std::string::const_iterator start = sAnswer.begin();
 	std::string::const_iterator end = sAnswer.end();
-	boost::regex rx ("\\s*\\d+\\.\\s*\\d+\\.\\s*\\d+\\.\\s*\\d+");
-	boost::smatch MatchResults;
-	while (boost::regex_search(start, end, MatchResults, rx))
+	std::regex rx ("\\s*\\d+\\.\\s*\\d+\\.\\s*\\d+\\.\\s*\\d+");
+	std::smatch MatchResults;
+	while (std::regex_search(start, end, MatchResults, rx))
 	{
 		std::string sIp (MatchResults[0]);
 		SendMessage(hListBox, LB_ADDSTRING, 0, (LPARAM) sIp.c_str());
@@ -3098,12 +3096,12 @@ LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 	
 	std::string::const_iterator start = sAnswer.begin();
 	std::string::const_iterator end = sAnswer.end();
-	boost::regex rx (" (.*?) \"(.*?)\"\\n");
-	boost::smatch MatchResults;
+	std::regex rx (" (.*?) \"(.*?)\"\\n");
+	std::smatch MatchResults;
 	LVITEM LvItem;
 	LvItem.mask = LVIF_TEXT;
 	LvItem.iItem = 0;
-	while (boost::regex_search(start, end, MatchResults, rx))
+	while (std::regex_search(start, end, MatchResults, rx))
 	{
 		std::string sCvar (MatchResults[1]);
 		std::string sValue (MatchResults[2]);

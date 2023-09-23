@@ -32,11 +32,13 @@
 #include <wininet.h>
 
 #include <ctime>
-#include <vector>
 #include <map>
-#include <boost/algorithm/string.hpp>
-#include <boost/tokenizer.hpp>
-#include <boost/regex.hpp>
+#include <regex>
+#include <string>
+#include <string_view>
+#include <sstream>
+#include <vector>
+
 #include <Gdiplus.h>
 
 struct WINDOWHANDLES
