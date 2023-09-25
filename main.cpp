@@ -266,28 +266,28 @@ void ShowPlayerInfo(HWND hwnd)
 		InternetCloseHandle(hInternet);
 
 		std::smatch MatchResults;
-		std::regex rx ("\\Q<ip>\\E(.*?)\\Q</ip>\\E");
+		std::regex rx (R"(\Q<ip>\E(.*?)\Q</ip>\E)");
 		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
 			sBoxContent += "IP: ";
 			sBoxContent += MatchResults[1];
 			sBoxContent += "\r\n";
 		}
-		rx.assign("\\Q<isp>\\E(.*?)\\Q</isp>\\E");
+		rx = R"(\Q<isp>\E(.*?)\Q</isp>\E)";
 		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
 			sBoxContent += "ISP: ";
 			sBoxContent += MatchResults[1];
 			sBoxContent += "\r\n";
 		}
-		rx.assign("\\Q<region>\\E(.*?)\\Q</region>\\E");
+		rx = R"(\Q<region>\E(.*?)\Q</region>\E)";
 		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
 			sBoxContent += "Region: ";
 			sBoxContent += MatchResults[1];
 			sBoxContent += "\r\n";
 		}
-		rx.assign("\\Q<countrycode>\\E(.*?)\\Q</countrycode>\\E");
+		rx = R"(\Q<countrycode>\E(.*?)\Q</countrycode>\E)";
 		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
 			sBoxContent += "Countrycode: ";
@@ -1782,7 +1782,7 @@ void LoadRotationToListbox(HWND hListBox)
 
 	std::string::const_iterator start = sAnswer.begin();
 	std::string::const_iterator end = sAnswer.end();
-	std::regex rx ("^\\d+ (.*?)$");
+	std::regex rx (R"(^\d+ (.*?)$)");
 	std::smatch MatchResults;
 	while (std::regex_search(start, end, MatchResults, rx))
 	{
@@ -2103,7 +2103,7 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 		return;
 
 	std::smatch MatchResults;
-	std::regex rx ("(\\d+\\.\\d+\\.\\d+\\.\\d+):(\\d{2,5})");
+	std::regex rx (R"((\d+\.\d+\.\d+\.\d+):(\d{2,5}))");
 
 	std::string::const_iterator start = sServerlist.begin();
 	std::string::const_iterator end   = sServerlist.end();
@@ -2607,7 +2607,7 @@ void LoadBannedIPsToListbox(HWND hListBox)
 
 	std::string::const_iterator start = sAnswer.begin();
 	std::string::const_iterator end = sAnswer.end();
-	std::regex rx ("\\s*\\d+\\.\\s*\\d+\\.\\s*\\d+\\.\\s*\\d+");
+	std::regex rx (R"(\s*\d+\.\s*\d+\.\s*\d+\.\s*\d+)");
 	std::smatch MatchResults;
 	while (std::regex_search(start, end, MatchResults, rx))
 	{

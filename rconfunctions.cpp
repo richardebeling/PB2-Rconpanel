@@ -55,7 +55,7 @@ void Server::retrieveAndSetHostname(SOCKET hUdpSocket, double dTimeout) {
 	std::string sAnswer;
 	iSendMessageToServer(sIp, iPort, "status", &sAnswer, "", hUdpSocket, dTimeout);
 	std::smatch MatchResults;
-	std::regex rx("\\\\hostname\\\\(.*?)\\\\");
+	std::regex rx(R"(\\hostname\\(.*?)\\)");
 	int found = std::regex_search(sAnswer, MatchResults, rx);
 
 	sHostname = "COULD NOT GET HOSTNAME";
@@ -158,6 +158,9 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 			return -3;
 	}
 
+	// TODO: Uniformly handle "bad password" answer? We will get "print\nBad rcon_password.\n"
+	// --> Maybe have custom wrapper in main.cpp that prints this to the console.
+
 	if (bOwnSocket)
 		closesocket(hUdpSocket);
 
@@ -204,7 +207,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			continue;
 		}
 		
-		rx.assign(R"((\d+) \((\d+)\)\] \* (.*?) \(b(\d+)\))");
+		rx = R"((\d+) \((\d+)\)\] \* (.*?) \(b(\d+)\))";
 		if (std::regex_search(line, MatchResults, rx)) //Player, logged in
 		{
 			std::string sName (MatchResults[3]);
@@ -218,7 +221,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			continue;
 		}
 
-		rx.assign(R"((\d+) \] \* OP (\d+), (.*?) \(b(\d+)\))");
+		rx = R"((\d+) \] \* OP (\d+), (.*?) \(b(\d+)\))";
 		if (std::regex_search(line, MatchResults, rx)) //Admin, not logged in
 		{
 			Player tempplayer;
@@ -231,7 +234,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			continue;
 		}
 
-		rx.assign(R"((\d+) \] \* (.*?) \(b(\d+)\))");
+		rx = R"((\d+) \] \* (.*?) \(b(\d+)\))";
 		if (std::regex_search(line, MatchResults, rx)) //Player, not logged in
 		{			
 			std::string sName (MatchResults[2]);
@@ -245,7 +248,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			continue;
 		}
 
-		rx.assign(R"((\d+) \(bot\)\] \* (.*?) \(b0\))");
+		rx = R"((\d+) \(bot\)\] \* (.*?) \(b0\))";
 		if (std::regex_search(line, MatchResults, rx)) //Bot
 		{
 			Player tempplayer;
@@ -311,7 +314,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	if (iRetVal <= 0)
 		return iRetVal;
 	
-	rx.assign(R"(p([byrpo])\\((\!\d+)+))");
+	rx = R"(p([byrpo])\\((\!\d+)+))";
 	start = sAnswer.begin();
 	end   = sAnswer.end();
 	
