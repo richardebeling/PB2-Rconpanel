@@ -103,6 +103,7 @@ void DeleteConfig(void);
 
 void AutoReloadThreadFunction(void);
 void BanThreadFunction(void);
+std::string GetHttpResponse(std::string url);
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
 int  GetPb2InstallPath(std::string * sPath);

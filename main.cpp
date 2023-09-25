@@ -164,76 +164,32 @@ void ShowPlayerInfo(HWND hwnd)
 	std::string sPlayerName = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iName);
 	sBoxContent += sPlayerName;
 	sBoxContent += "\r\n\r\n";
+	sBoxContent += "DPLogin Profile:\r\n";
 
 	std::string sPlayerId = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iId);
 	if (sPlayerId != "0")
 	{
-		std::string sPlayersite ("");
-		std::string sUrlBuffer = "http://www.dplogin.com/index.php?action=viewmember&playerid=" + sPlayerId;
-		std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(AutoVersion::MAJOR)
-							+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
-		HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-		HINTERNET hFile = InternetOpenUrl(hInternet, sUrlBuffer.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
-		std::vector<char> buffer(MTU);
-		long unsigned int iBytesRead = 0;
-		bool bSuccessful = true;
-		while (bSuccessful)
-		{
-			InternetReadFile(hFile, buffer.data(), static_cast<DWORD>(buffer.size()), &iBytesRead);
-
-			if (bSuccessful && iBytesRead == 0) break;
-			buffer[iBytesRead] = '\0';
-			sPlayersite += buffer.data();
-		}
-		InternetCloseHandle(hFile);
-		InternetCloseHandle(hInternet);
+		std::string sPlayersite = GetHttpResponse("http://www.dplogin.com/index.php?action=viewmember&playerid=" + sPlayerId);
 
 		std::smatch MatchResults;
 		std::regex rx ("<tr><td><b class=\"faqtitle\">(.+?:)</b></td><td>(.+?)</td></tr>");
 		//												1-VARNAME		2-CONTENT
-		std::regex rxWebcodes("(&gt;)|(&quot;)");
-		
-		std::regex rxLink1("<a href=\\\".+?\\\">");
-		std::regex rxLink2("</a>");
-		std::regex rxMail("&#([x0-9a-fA-F]+?);");
 				
-		std::string::const_iterator start = sPlayersite.begin();
-		std::string::const_iterator end = sPlayersite.end();
-		
-		while (std::regex_search(start, end, MatchResults, rx))
+		auto start = sPlayersite.cbegin();
+		while (std::regex_search(start, sPlayersite.cend(), MatchResults, rx))
 		{
 			start = MatchResults[0].second;
 			
 			sBoxContent += MatchResults[1];
 			sBoxContent += " ";
 			
-			std::string sContent = MatchResults[2]; //Content may contain links, must remove them			
-			sContent = std::regex_replace(sContent, rxLink1, "");
-			sContent = std::regex_replace(sContent, rxLink2, "");
-			
-			sContent = std::regex_replace(sContent, rxWebcodes, ""); //Content may contain web codes like &quot; ot &gt;
-			
-			// TODO -- what?
-			if (std::string("Email:").compare(MatchResults[1]) == 0) //email is encoded as char values, this has to be made readable for humans.
-			{
-				std::string::const_iterator startMail = sContent.begin();
-				std::string::const_iterator endMail = sContent.end();
-				std::smatch MatchResultsMail;
-				std::vector <char> vChars;
-				std::string sNum;
-				
-				while (std::regex_search(startMail, endMail, MatchResultsMail, rxMail))
-				{
-					startMail = MatchResultsMail[0].second;
-					sNum = MatchResultsMail[1];
-					if (sNum.compare(0, 1, "x") == 0)
-						vChars.push_back((char) strtol(sNum.substr(1, sNum.length() - 1).c_str(), NULL, 16));
-					else
-						vChars.push_back((char) strtol(sNum.c_str(), NULL, 10));
-				}
-				vChars.push_back('\0');
-				sContent = vChars.data();
-			}
+			std::string sContent = MatchResults[2];		
+			sContent = std::regex_replace(sContent, std::regex(R"(<a href=\".+?\">)"), "");
+			sContent = std::regex_replace(sContent, std::regex("</a>"), "");
+
+			sContent = std::regex_replace(sContent, std::regex("&gt;"), ">");
+			sContent = std::regex_replace(sContent, std::regex("&lt;"), "<");
+			sContent = std::regex_replace(sContent, std::regex("&quot;"), "\"");
 			
 			sBoxContent += sContent + "\r\n";
 		}
@@ -244,57 +200,31 @@ void ShowPlayerInfo(HWND hwnd)
 
 	if (sPlayerIp != "0.0.0.0")
 	{
-		// TODO: utrace doesn't exist anymore -- use some other service
-		std::string sUtraceXml;
-		std::string sUrlBuffer = "http://xml.utrace.de/?query=" + sPlayerIp;
-		std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(AutoVersion::MAJOR)
-							+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
-		HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-		HINTERNET hFile = InternetOpenUrl(hInternet, sUrlBuffer.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
-		std::vector<char> buffer(MTU);
-		long unsigned int iBytesRead = 0;
-		bool bSuccessful = true;
-		while (bSuccessful)
-		{
-			InternetReadFile(hFile, buffer.data(), static_cast<int>(buffer.size()), &iBytesRead);
+		std::string sIpApiResponse = GetHttpResponse(
+			"http://ip-api.com/line/"
+			+ sPlayerIp
+			+ "?fields=continent,country,regionName,city,district,zip,isp,org,as,proxy,hosting");
 
-			if (bSuccessful && iBytesRead == 0) break;
-			buffer[iBytesRead] = '\0';
-			sUtraceXml += buffer.data();
-		}
-		InternetCloseHandle(hFile);
-		InternetCloseHandle(hInternet);
+		auto linesView = sIpApiResponse
+			| std::ranges::views::split('\n')
+			| std::ranges::views::transform([](auto&& rng) { return std::string_view(rng.begin(), rng.end()); });
 
-		std::smatch MatchResults;
-		std::regex rx (R"(\Q<ip>\E(.*?)\Q</ip>\E)");
-		if (std::regex_search(sUtraceXml, MatchResults, rx))
-		{
-			sBoxContent += "IP: ";
-			sBoxContent += MatchResults[1];
-			sBoxContent += "\r\n";
-		}
-		rx = R"(\Q<isp>\E(.*?)\Q</isp>\E)";
-		if (std::regex_search(sUtraceXml, MatchResults, rx))
-		{
-			sBoxContent += "ISP: ";
-			sBoxContent += MatchResults[1];
-			sBoxContent += "\r\n";
-		}
-		rx = R"(\Q<region>\E(.*?)\Q</region>\E)";
-		if (std::regex_search(sUtraceXml, MatchResults, rx))
-		{
-			sBoxContent += "Region: ";
-			sBoxContent += MatchResults[1];
-			sBoxContent += "\r\n";
-		}
-		rx = R"(\Q<countrycode>\E(.*?)\Q</countrycode>\E)";
-		if (std::regex_search(sUtraceXml, MatchResults, rx))
-		{
-			sBoxContent += "Countrycode: ";
-			sBoxContent += MatchResults[1];
-			sBoxContent += "\r\n";
-		}
-		sBoxContent += "\r\nData from dplogin.com";
+		std::vector<std::string> lines(linesView.begin(), linesView.end());
+		lines.resize(11); // cheap way to prevent oor-access
+		
+		sBoxContent += "IP: " + sPlayerIp + " (data from ip-api.com)\r\n";
+		sBoxContent += "ISP: " + lines[6] + "\r\n";
+		sBoxContent += "Organization: " + lines[7] + "\r\n";
+		sBoxContent += "AS: " + lines[8] + "\r\n";
+		sBoxContent += "Is proxy: " + lines[9] + "\r\n";
+		sBoxContent += "Is hosting: " + lines[10] + "\r\n";
+		sBoxContent += "\r\n";
+		sBoxContent += "Continent: " + lines[0] + "\r\n";
+		sBoxContent += "Country: " + lines[1] + "\r\n";
+		sBoxContent += "Region: " + lines[2] + "\r\n";
+		sBoxContent += "City: " + lines[3] + "\r\n";
+		sBoxContent += "District: " + lines[4] + "\r\n";
+		sBoxContent += "Zip code: " + lines[5] + "\r\n";
 	}
 
 	SetWindowText(hwnd, "DP:PB2 Rconpanel");
@@ -2078,24 +2008,7 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 	
 	MainWindowWriteConsole("Loading servers, this may take a short time...");
 	
-	std::string sServerlist ("");
-	std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(AutoVersion::MAJOR)
-						+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
-	HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-	HINTERNET hFile = InternetOpenUrl(hInternet, gSettings.sServerlistAddress.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
-	std::vector<char> buffer(MTU);
-
-	while (true)
-	{
-		long unsigned int iBytesRead = 0;
-		InternetReadFile(hFile, buffer.data(), static_cast<DWORD>(buffer.size()), &iBytesRead);
-
-		if (iBytesRead == 0) break;
-		buffer[iBytesRead] = '\0';
-		sServerlist += buffer.data();
-	}
-	InternetCloseHandle(hFile);
-	InternetCloseHandle(hInternet);
+	std::string sServerlist = GetHttpResponse(gSettings.sServerlistAddress);
 	
 	// TODO: RAII class for socket
 	SOCKET hSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -2117,6 +2030,7 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 		Server tempserver(sIp, std::stoi(sPort));
 		tempserver.retrieveAndSetHostname(hSocket, gSettings.fAllServersTimeoutSecs);
 		
+		// TODO: doesn't currently work?
 		try
 		{
 			if (WaitForSingleObject(g_mLoadServersThreads.at(iKey), 0) == WAIT_OBJECT_0)
@@ -2725,6 +2639,30 @@ LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 //}-------------------------------------------------------------------------------------------------
 // Other functions                                                                                 |
 //{-------------------------------------------------------------------------------------------------
+
+std::string GetHttpResponse(std::string url)
+{
+	const char* user_agent = ""; // TODO?
+	HINTERNET hInternet = InternetOpen(user_agent, INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+	HINTERNET hFile = InternetOpenUrl(hInternet, url.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
+
+	std::string response;
+	std::vector<char> buffer(MTU);
+	while(true)
+	{
+		DWORD bytes_read;
+		BOOL ret_val = InternetReadFile(hFile, buffer.data(), static_cast<int>(buffer.size()), &bytes_read);
+		if (!ret_val || bytes_read == 0 )
+			break;
+
+		buffer[bytes_read] = '\0';
+		response += buffer.data();
+	}
+	InternetCloseHandle(hFile);
+	InternetCloseHandle(hInternet);
+
+	return response;
+}
 
 void Edit_ReduceLines(HWND hEdit, int iLines)
 {
