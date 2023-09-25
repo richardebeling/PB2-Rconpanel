@@ -81,15 +81,11 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 	std::string sPacketContent;
 	if(sRconPassword == "") //if szRconPassword == "" ==> if no rcon is being sent
 	{
-		sPacketContent.assign("\xFF\xFF\xFF\xFF");
-		sPacketContent.append(sMessage);
+		sPacketContent = "\xFF\xFF\xFF\xFF" + sMessage;
 	}
 	else //if a rcon command is being sent
 	{
-		sPacketContent.assign("\xFF\xFF\xFF\xFFrcon ");
-		sPacketContent.append(sRconPassword);
-		sPacketContent.append(" ");
-		sPacketContent.append(sMessage);
+		sPacketContent = "\xFF\xFF\xFF\xFFrcon " + sRconPassword + " " + sMessage;
 	}
 
 	struct sockaddr_in stAddress = { 0 };
@@ -186,18 +182,15 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	int iRetVal = iSendMessageToServer(sIpAddress, iPort, "sv players\0", &sAnswer, sRconPassword, hUdpSocket, dTimeout);
 	if (iRetVal <= 0)
 		return iRetVal;
-
-	std::smatch MatchResults;
-	std::regex rx;
-	std::vector <std::string> vLines;
 	
 	auto lines = sAnswer
-		| std::ranges::views::split(' ')
-		| std::ranges::views::transform([](auto&& subrange) { return std::string(&*subrange.begin(), std::ranges::distance(subrange)); });
+		| std::ranges::views::split('\n')
+		| std::ranges::views::transform([](auto&& rng) { return std::string(rng.begin(), rng.end()); });
 
 	for (const auto& line : lines)
-	{		
-		rx.assign("(\\d+) \\((\\d+)\\)] \\* OP (\\d+), (.*?) \\(b(\\d+)\\)");
+	{
+		std::smatch MatchResults;
+		std::regex rx(R"((\d+) \((\d+)\)\] \* OP (\d+), (.*?) \(b(\d+)\))");
 		if (std::regex_search(line, MatchResults, rx)) //Admin, logged in
 		{
 			Player tempplayer;
@@ -211,7 +204,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			continue;
 		}
 		
-		rx.assign("(\\d+) \\((\\d+)\\)] \\* (.*?) \\(b(\\d+)\\)");
+		rx.assign(R"((\d+) \((\d+)\)\] \* (.*?) \(b(\d+)\))");
 		if (std::regex_search(line, MatchResults, rx)) //Player, logged in
 		{
 			std::string sName (MatchResults[3]);
@@ -225,7 +218,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			continue;
 		}
 
-		rx.assign("(\\d+) ] \\* OP (\\d+), (.*?) \\(b(\\d+)\\)");
+		rx.assign(R"((\d+) \] \* OP (\d+), (.*?) \(b(\d+)\))");
 		if (std::regex_search(line, MatchResults, rx)) //Admin, not logged in
 		{
 			Player tempplayer;
@@ -238,7 +231,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			continue;
 		}
 
-		rx.assign("(\\d+) ] \\* (.*?) \\(b(\\d+)\\)");
+		rx.assign(R"((\d+) \] \* (.*?) \(b(\d+)\))");
 		if (std::regex_search(line, MatchResults, rx)) //Player, not logged in
 		{			
 			std::string sName (MatchResults[2]);
@@ -252,7 +245,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 			continue;
 		}
 
-		rx.assign("(\\d+) \\(bot\\)] \\* (.*?) \\(b0\\)");
+		rx.assign(R"((\d+) \(bot\)\] \* (.*?) \(b0\))");
 		if (std::regex_search(line, MatchResults, rx)) //Bot
 		{
 			Player tempplayer;
@@ -271,16 +264,17 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	if (iRetVal <= 0)
 		return iRetVal;
 	
-	rx.assign("(\\d+)\\s*(\\d+)\\s*(\\d+)\\s{0,1}(.+?)\\s*(\\d+|CNCT)\\s*(\\d+\\.\\d+\\.\\d+\\.\\d+):(\\d{1,5})\\s*(\\d{2,5})");
-	//			NUM-1	SCORE-2		PING-3	NAME-4		LASTMSG-5	  IP-6							PORT-7			QPORT-8
+	std::regex rx(R"((\d+)\s*(\d+)\s*(\d+)\s{0,1}(.+?)\s*(\d+|CNCT)\s*(\d+\.\d+\.\d+\.\d+):(\d{1,5})\s*(\d{2,5}))");
+	//				 NUM-1	SCORE-2	PING-3		NAME-4	  LASTMSG-5    IP-6					PORT-7		QPORT-8
 	std::string::const_iterator start = sAnswer.begin();
 	std::string::const_iterator end   = sAnswer.end();
 	std::string sName;
 	
+	std::smatch MatchResults;
 	while (std::regex_search(start, end, MatchResults, rx))
 	{
 		start = MatchResults[0].second;
-		sName.assign(MatchResults[4]);
+		sName = MatchResults[4];
 
 		for (unsigned int i = 0; i < playervector->size(); i++)
 		{
@@ -317,7 +311,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	if (iRetVal <= 0)
 		return iRetVal;
 	
-	rx.assign("p([byrpo])\\\\((\\!\\d+)+)");
+	rx.assign(R"(p([byrpo])\\((\!\d+)+))");
 	start = sAnswer.begin();
 	end   = sAnswer.end();
 	
@@ -328,8 +322,8 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	{
 		start = MatchResults[0].second;
 		
-		sColor.assign(MatchResults[1]);
-		sNumbers.assign(MatchResults[2]);
+		sColor = MatchResults[1];
+		sNumbers = MatchResults[2];
 		
 		char* strtok_context = NULL;
 		char* szFound = strtok_s(sNumbers.data(), "!", &strtok_context);

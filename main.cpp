@@ -162,15 +162,14 @@ void ShowPlayerInfo(HWND hwnd)
 		return;
 
 	std::string sPlayerName = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iName);
-	sBoxContent.append(sPlayerName);
-	sBoxContent.append("\r\n\r\n");
+	sBoxContent += sPlayerName;
+	sBoxContent += "\r\n\r\n";
 
 	std::string sPlayerId = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iId);
 	if (sPlayerId != "0")
 	{
 		std::string sPlayersite ("");
-		std::string sUrlBuffer = "http://www.dplogin.com/index.php?action=viewmember&playerid=";
-		sUrlBuffer.append(sPlayerId);
+		std::string sUrlBuffer = "http://www.dplogin.com/index.php?action=viewmember&playerid=" + sPlayerId;
 		std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(AutoVersion::MAJOR)
 							+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 		HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
@@ -184,12 +183,11 @@ void ShowPlayerInfo(HWND hwnd)
 
 			if (bSuccessful && iBytesRead == 0) break;
 			buffer[iBytesRead] = '\0';
-			sPlayersite.append(buffer.data());
+			sPlayersite += buffer.data();
 		}
 		InternetCloseHandle(hFile);
 		InternetCloseHandle(hInternet);
 
-		// TODO: Do not reconstruct regexes on every iteration.
 		std::smatch MatchResults;
 		std::regex rx ("<tr><td><b class=\"faqtitle\">(.+?:)</b></td><td>(.+?)</td></tr>");
 		//												1-VARNAME		2-CONTENT
@@ -206,8 +204,8 @@ void ShowPlayerInfo(HWND hwnd)
 		{
 			start = MatchResults[0].second;
 			
-			sBoxContent.append(MatchResults[1]);
-			sBoxContent.append(" ");
+			sBoxContent += MatchResults[1];
+			sBoxContent += " ";
 			
 			std::string sContent = MatchResults[2]; //Content may contain links, must remove them			
 			sContent = std::regex_replace(sContent, rxLink1, "");
@@ -227,20 +225,19 @@ void ShowPlayerInfo(HWND hwnd)
 				while (std::regex_search(startMail, endMail, MatchResultsMail, rxMail))
 				{
 					startMail = MatchResultsMail[0].second;
-					sNum.assign(MatchResultsMail[1]);
+					sNum = MatchResultsMail[1];
 					if (sNum.compare(0, 1, "x") == 0)
 						vChars.push_back((char) strtol(sNum.substr(1, sNum.length() - 1).c_str(), NULL, 16));
 					else
 						vChars.push_back((char) strtol(sNum.c_str(), NULL, 10));
 				}
 				vChars.push_back('\0');
-				sContent.assign((char *)vChars.data());
+				sContent = vChars.data();
 			}
 			
-			sBoxContent.append(sContent);
-			sBoxContent.append("\r\n");
+			sBoxContent += sContent + "\r\n";
 		}
-		sBoxContent.append("\r\n");
+		sBoxContent += "\r\n";
 	}
 
 	std::string sPlayerIp = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iIp);
@@ -249,8 +246,7 @@ void ShowPlayerInfo(HWND hwnd)
 	{
 		// TODO: utrace doesn't exist anymore -- use some other service
 		std::string sUtraceXml;
-		std::string sUrlBuffer = "http://xml.utrace.de/?query=";
-		sUrlBuffer.append(sPlayerIp);
+		std::string sUrlBuffer = "http://xml.utrace.de/?query=" + sPlayerIp;
 		std::string sUserAgent = "Digital Paint: Paintball 2 RCON Panel V" + std::to_string(AutoVersion::MAJOR)
 							+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
 		HINTERNET hInternet = InternetOpen(sUserAgent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
@@ -264,7 +260,7 @@ void ShowPlayerInfo(HWND hwnd)
 
 			if (bSuccessful && iBytesRead == 0) break;
 			buffer[iBytesRead] = '\0';
-			sUtraceXml.append(buffer.data());
+			sUtraceXml += buffer.data();
 		}
 		InternetCloseHandle(hFile);
 		InternetCloseHandle(hInternet);
@@ -273,32 +269,32 @@ void ShowPlayerInfo(HWND hwnd)
 		std::regex rx ("\\Q<ip>\\E(.*?)\\Q</ip>\\E");
 		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
-			sBoxContent.append("IP: ");
-			sBoxContent.append(MatchResults[1]);
-			sBoxContent.append("\r\n");
+			sBoxContent += "IP: ";
+			sBoxContent += MatchResults[1];
+			sBoxContent += "\r\n";
 		}
 		rx.assign("\\Q<isp>\\E(.*?)\\Q</isp>\\E");
 		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
-			sBoxContent.append("ISP: ");
-			sBoxContent.append(MatchResults[1]);
-			sBoxContent.append("\r\n");
+			sBoxContent += "ISP: ";
+			sBoxContent += MatchResults[1];
+			sBoxContent += "\r\n";
 		}
 		rx.assign("\\Q<region>\\E(.*?)\\Q</region>\\E");
 		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
-			sBoxContent.append("Region: ");
-			sBoxContent.append(MatchResults[1]);
-			sBoxContent.append("\r\n");
+			sBoxContent += "Region: ";
+			sBoxContent += MatchResults[1];
+			sBoxContent += "\r\n";
 		}
 		rx.assign("\\Q<countrycode>\\E(.*?)\\Q</countrycode>\\E");
 		if (std::regex_search(sUtraceXml, MatchResults, rx))
 		{
-			sBoxContent.append("Countrycode: ");
-			sBoxContent.append(MatchResults[1]);
-			sBoxContent.append("\r\n");
+			sBoxContent += "Countrycode: ";
+			sBoxContent += MatchResults[1];
+			sBoxContent += "\r\n";
 		}
-		sBoxContent.append("\r\nThis information was provided by dplogin.com and en.utrace.de");
+		sBoxContent += "\r\nData from dplogin.com";
 	}
 
 	SetWindowText(hwnd, "DP:PB2 Rconpanel");
@@ -465,7 +461,7 @@ int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
 			LvItem.iItem = y;
 			LvItem.iSubItem = SUBITEMS::iNumber;
 			LvItem.lParam = y;
-			sItemText.assign(std::to_string(g_vPlayers[y].iNumber));
+			sItemText = std::to_string(g_vPlayers[y].iNumber);
 			LvItem.pszText = (LPSTR) sItemText.c_str();
 			SendMessage(gWindows.hListPlayers, LVM_INSERTITEM, 0, (LPARAM) &LvItem);
 
@@ -474,25 +470,25 @@ int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
 				switch(x)
 				{
 				case SUBITEMS::iName:
-					sItemText.assign(g_vPlayers[y].sName.c_str());
+					sItemText = g_vPlayers[y].sName;
 					break;
 				case SUBITEMS::iBuild:
-					sItemText.assign(std::to_string(g_vPlayers[y].iBuild));
+					sItemText = std::to_string(g_vPlayers[y].iBuild);
 					break;
 				case SUBITEMS::iId:
-					sItemText.assign(std::to_string(g_vPlayers[y].iId));
+					sItemText = std::to_string(g_vPlayers[y].iId);
 					break;
 				case SUBITEMS::iOp:
-					sItemText.assign(std::to_string(g_vPlayers[y].iOp));
+					sItemText = std::to_string(g_vPlayers[y].iOp);
 					break;
 				case SUBITEMS::iIp:
-					sItemText.assign(g_vPlayers[y].sIp);
+					sItemText = g_vPlayers[y].sIp;
 					break;
 				case SUBITEMS::iPing:
-					sItemText.assign(std::to_string(g_vPlayers[y].iPing));
+					sItemText = std::to_string(g_vPlayers[y].iPing);
 					break;
 				case SUBITEMS::iScore:
-					sItemText.assign(std::to_string(g_vPlayers[y].iScore));
+					sItemText = std::to_string(g_vPlayers[y].iScore);
 					break;
 				}
 				LvItem.mask=LVIF_TEXT;
@@ -529,7 +525,7 @@ void MainWindowWriteConsole(const std::string_view str) // prints text to gWindo
 	sFinalString = szBuffer;
 
 	//append text
-	sFinalString.append(str);
+	sFinalString += str;
 	sFinalString = std::regex_replace(sFinalString, std::regex{"\n"}, "\n---------> "); //indent text after line ending
 
 	while (sFinalString.ends_with("\n"))
@@ -944,15 +940,15 @@ void OnMainWindowJoinServer(void)
 	if (selectedServerIndex == CB_ERR)
 		return;
 
-	std::string sArgs = "+connect ";
-	sArgs.append(g_vSavedServers.at(selectedServerIndex).sIp);
-	sArgs.append(":");
-	sArgs.append(std::to_string(g_vSavedServers.at(selectedServerIndex).iPort));
+	std::string sArgs = "+connect "
+		+ g_vSavedServers.at(selectedServerIndex).sIp
+		+ ":"
+		+ std::to_string(g_vSavedServers.at(selectedServerIndex).iPort);
 
 	std::string sPb2Path;
 	if (GetPb2InstallPath(&sPb2Path))
 	{
-		sPb2Path.append("\\paintball2.exe");
+		sPb2Path += "\\paintball2.exe";
 		auto ret = (INT_PTR) ShellExecute(0, "open", sPb2Path.c_str(), sArgs.c_str(), 0, 1); //start it
 		if (ret <= 32)
 		{
@@ -1592,17 +1588,17 @@ BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 	sprintf (szBuffer, "%.2f s", gSettings.fAllServersTimeoutSecs);
 	SetDlgItemText(hwnd, IDC_PS_STATICOTHERSERVERS, szBuffer);
 	
-	sBuffer.assign(std::to_string(gSettings.iBanCheckDelaySecs));
+	sBuffer = std::to_string(gSettings.iBanCheckDelaySecs);
 	SetDlgItemText(hwnd, IDC_PS_EDITBANINTERVAL, sBuffer.c_str());
 	
-	sBuffer.assign(std::to_string(gSettings.iAutoReloadDelaySecs));
+	sBuffer = std::to_string(gSettings.iAutoReloadDelaySecs);
 	SetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, sBuffer.c_str());
 	if (gSettings.bRunAutoReloadThread)
 		CheckDlgButton(hwnd, IDC_PS_CHECKAUTORELOAD, BST_CHECKED);
 	else
 		EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITAUTORELOAD), FALSE);
 
-	sBuffer.assign(std::to_string(gSettings.iMaxConsoleLineCount));
+	sBuffer = std::to_string(gSettings.iMaxConsoleLineCount);
 	SetDlgItemText(hwnd, IDC_PS_EDITLINECOUNT, sBuffer.c_str());
 	if (gSettings.bLimitConsoleLineCount)
 		CheckDlgButton(hwnd, IDC_PS_CHECKLINECOUNT, BST_CHECKED);
@@ -1812,18 +1808,16 @@ BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 	SetDlgItemText(hwnd, IDC_MROT_EDITFILE, sAnswer.c_str());
 
 	std::string sMapshot;
-	std::wstring sWideMapshot;
-	RECT rc;
-	
 	if (not GetPb2InstallPath(&sMapshot))
 		return TRUE;
 	
-	GetClientRect(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &rc);
-	
-	sMapshot.append("\\pball\\pics\\mapshots\\-no-preview-.jpg");
-	sWideMapshot = std::wstring(sMapshot.begin(), sMapshot.end());
+	sMapshot += "\\pball\\pics\\mapshots\\-no-preview-.jpg";
+	std::wstring sWideMapshot (sMapshot.begin(), sMapshot.end());
 	
 	g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
+
+	RECT rc;
+	GetClientRect(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &rc);
 	g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(),
 								rc.right - rc.left, rc.bottom - rc.top);
 
@@ -1912,8 +1906,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				MessageBox(hwnd, "The maplist was saved successfully", "Success", MB_OK | MB_ICONINFORMATION);
 			else
 			{
-				std::string sContent ("An error occured. The server answered: ");
-				sContent.append(sAnswer);
+				std::string sContent = "An error occured. The server answered: " + sAnswer;
 				MessageBox(hwnd, sContent.c_str(), "Error", MB_OK | MB_ICONERROR);
 			}
 			break;
@@ -1950,45 +1943,34 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		{
 			if (codeNotify == EN_CHANGE)
 			{
-				RECT rc;
 				std::string sMapshot;
-				std::wstring sWideMapshot;
-				
 				if (not GetPb2InstallPath(&sMapshot))
 					return;
 				
-				GetClientRect(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &rc);
-				
-				sMapshot.append("\\pball\\pics\\mapshots\\");
+				sMapshot += "\\pball\\pics\\mapshots\\";
 				int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_MROT_EDITMAP)) + 1;
 				std::vector<char> mapnameBuffer(iBufferSize);
 				GetDlgItemText(hwnd, IDC_MROT_EDITMAP, mapnameBuffer.data(), iBufferSize);
-				sMapshot.append(mapnameBuffer.data());
-				sMapshot.append(".jpg");
-				
+				sMapshot += mapnameBuffer.data();
+				sMapshot += ".jpg";
+
 				DWORD dwAttributes = GetFileAttributes(sMapshot.c_str());
-				if (dwAttributes != INVALID_FILE_ATTRIBUTES && !(dwAttributes & FILE_ATTRIBUTE_DIRECTORY))
-				{
-					sWideMapshot = std::wstring(sMapshot.begin(), sMapshot.end());
-					
-					g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
-					g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(),
-												rc.right - rc.left, rc.bottom - rc.top);
-												
-					RedrawWindow(hwnd, NULL, NULL, RDW_UPDATENOW | RDW_INVALIDATE);
-				}
-				else
+				if (dwAttributes == INVALID_FILE_ATTRIBUTES || (dwAttributes & FILE_ATTRIBUTE_DIRECTORY))
 				{
 					GetPb2InstallPath(&sMapshot);
-					sMapshot.append("\\pball\\pics\\mapshots\\-no-preview-.jpg");
-					sWideMapshot = std::wstring(sMapshot.begin(), sMapshot.end());
-					
-					g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
-					g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(),
-												rc.right - rc.left, rc.bottom - rc.top);
-					
-					RedrawWindow(hwnd, NULL, NULL, RDW_UPDATENOW | RDW_INVALIDATE);
+					sMapshot += "\\pball\\pics\\mapshots\\-no-preview-.jpg";
 				}
+
+				RECT rcMapshotImageRect;
+				GetClientRect(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &rcMapshotImageRect);
+
+				std::wstring sWideMapshot(sMapshot.begin(), sMapshot.end());
+				g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
+				g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(),
+					rcMapshotImageRect.right - rcMapshotImageRect.left,
+					rcMapshotImageRect.bottom - rcMapshotImageRect.top);
+
+				RedrawWindow(hwnd, NULL, NULL, RDW_UPDATENOW | RDW_INVALIDATE);
 			}
 		}
 	}
@@ -2110,7 +2092,7 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 
 		if (iBytesRead == 0) break;
 		buffer[iBytesRead] = '\0';
-		sServerlist.append(buffer.data());
+		sServerlist += buffer.data();
 	}
 	InternetCloseHandle(hFile);
 	InternetCloseHandle(hInternet);
@@ -2240,7 +2222,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 							 std::to_string(FOURTH_IPADDRESS(dwIP));
 
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
-			tempserver.sRconPassword.assign(buffer.data());
+			tempserver.sRconPassword = buffer.data();
 			
 			tempserver.retrieveAndSetHostname(0, gSettings.fAllServersTimeoutSecs);
 
@@ -2293,7 +2275,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_GETADDRESS, 0, (LPARAM) &dwIP);
 			snprintf(buffer.data(), iBufferSize, "%lu.%lu.%lu.%lu", FIRST_IPADDRESS(dwIP), SECOND_IPADDRESS(dwIP),
 					THIRD_IPADDRESS(dwIP), FOURTH_IPADDRESS(dwIP));
-			g_vSavedServers[iRet].sIp.assign(buffer.data());
+			g_vSavedServers[iRet].sIp = buffer.data();
 
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, iBufferSize, (LPARAM)buffer.data());
 			g_vSavedServers[iRet].sRconPassword = buffer.data();
@@ -2682,8 +2664,8 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 			DWORD dwIP = 0;
 			SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_GETADDRESS, 0, (LPARAM) &dwIP);
-			sMsg.append(std::to_string(FIRST_IPADDRESS(dwIP)) + "." + std::to_string(SECOND_IPADDRESS(dwIP))
-					+ "." + std::to_string(THIRD_IPADDRESS(dwIP)) + "." + std::to_string(FOURTH_IPADDRESS(dwIP)));
+			sMsg += std::to_string(FIRST_IPADDRESS(dwIP)) + "." + std::to_string(SECOND_IPADDRESS(dwIP))
+					+ "." + std::to_string(THIRD_IPADDRESS(dwIP)) + "." + std::to_string(FOURTH_IPADDRESS(dwIP));
 
 			std::string sAnswer;
 			iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg,
@@ -2850,7 +2832,7 @@ void StartServerbrowser(void)
 	std::string sSbPath;
 	if (GetPb2InstallPath(&sSbPath))
 	{
-		sSbPath.append("\\serverbrowser.exe");
+		sSbPath += "\\serverbrowser.exe";
 		auto iRet = (INT_PTR) ShellExecute(0, "open", sSbPath.c_str(), "", 0, 1); //start it
 		if (iRet <= 32)
 		{
@@ -2892,8 +2874,8 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 			{
 				if (gSettings.iMaxPingMsecs != 0 && player.iPing > gSettings.iMaxPingMsecs)
 				{
-					sMsgBuffer.assign("kick ");
-					sMsgBuffer.append(std::to_string(player.iNumber));
+					sMsgBuffer = "kick ";
+					sMsgBuffer += std::to_string(player.iNumber);
 						
 					iSendMessageToServer(server.sIp, server.iPort, sMsgBuffer, &sReturnBuffer,
 										server.sRconPassword, 0, gSettings.fTimeoutSecs);
@@ -2907,8 +2889,8 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
                     if ((ban.tType == Ban::Type::NAME && strcasecmp (player.sName.c_str(), ban.sText.c_str()) == 0)
 						|| (ban.tType == Ban::Type::ID && player.iId == std::stoi(ban.sText)))
 					{
-						sMsgBuffer.assign("kick ");
-						sMsgBuffer.append(std::to_string(player.iNumber));
+						sMsgBuffer = "kick ";
+						sMsgBuffer += std::to_string(player.iNumber);
 							
 						iSendMessageToServer(server.sIp, server.iPort,
 											sMsgBuffer, &sReturnBuffer,
@@ -3085,7 +3067,7 @@ int LoadConfig() // loads the servers and settings from the config file
 		{
 			return -2;
 		}
-		tempban.sText.assign(szReadBuffer);
+		tempban.sText = szReadBuffer;
 
 		sprintf(szKeyBuffer, "%dtype", i);
 		GetPrivateProfileString("bans", szKeyBuffer, "-1", szReadBuffer, 6, path.c_str());
@@ -3157,8 +3139,7 @@ void SaveConfig() // Saves all servers and settings in the config file
 		sKeyBuffer = std::to_string(i);
 		WritePrivateProfileString("bans", sKeyBuffer.c_str(), g_vBannedPlayers[i].sText.c_str(), path.c_str());
 
-		sKeyBuffer = std::to_string(i);
-		sKeyBuffer.append("type");
+		sKeyBuffer = std::to_string(i) + "type";
 		sWriteBuffer = std::to_string(static_cast<int>(g_vBannedPlayers[i].tType));
 		WritePrivateProfileString("bans", sKeyBuffer.c_str(), sWriteBuffer.c_str(), path.c_str());
 	}
