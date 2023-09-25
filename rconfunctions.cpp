@@ -58,7 +58,7 @@ void Server::retrieveAndSetHostname(SOCKET hUdpSocket, double dTimeout) {
 	std::regex rx("\\\\hostname\\\\(.*?)\\\\");
 	int found = std::regex_search(sAnswer, MatchResults, rx);
 
-	std::string sHostname = "COULD NOT GET HOSTNAME";
+	sHostname = "COULD NOT GET HOSTNAME";
 	if (found)
 		sHostname = MatchResults[1];
 }
