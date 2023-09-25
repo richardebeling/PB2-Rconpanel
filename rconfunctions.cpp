@@ -19,6 +19,7 @@
 
 #include "rconfunctions.h"
 #include <regex>
+#include <ranges>
 
 int InitializeWinsock()
 {
@@ -31,6 +32,7 @@ int ShutdownWinsock()
 	return WSACleanup();
 }
 
+// TODO: Return optional(string)
 int iVarContentFromName (std::string sIpAddress, int iPort, std::string sRconPassword, std::string sVarName,
 						std::string* sReturnBuffer, SOCKET hUdpSocket, double dTimeout)
 {
@@ -189,23 +191,14 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	std::regex rx;
 	std::vector <std::string> vLines;
 	
-	std::size_t iPosition = 0;
-    std::size_t iPrevious = 0;
-    
-    iPosition = sAnswer.find("\n");
-    while (iPosition != std::string::npos)
-    {
-        vLines.push_back(sAnswer.substr(iPrevious, iPosition - iPrevious));
-        iPrevious = iPosition + 1;
-        iPosition = sAnswer.find("\n", iPrevious);
-    }
-    vLines.push_back(sAnswer.substr(iPrevious));
-	
+	auto lines = sAnswer
+		| std::ranges::views::split(' ')
+		| std::ranges::views::transform([](auto&& subrange) { return std::string(&*subrange.begin(), std::ranges::distance(subrange)); });
 
-	for (unsigned int i = 0; i < vLines.size(); i++)
+	for (const auto& line : lines)
 	{		
 		rx.assign("(\\d+) \\((\\d+)\\)] \\* OP (\\d+), (.*?) \\(b(\\d+)\\)");
-		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Admin, logged in
+		if (std::regex_search(line, MatchResults, rx)) //Admin, logged in
 		{
 			Player tempplayer;
 			tempplayer.iNumber = atoi( std::string(MatchResults[1]).c_str() );
@@ -219,7 +212,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		}
 		
 		rx.assign("(\\d+) \\((\\d+)\\)] \\* (.*?) \\(b(\\d+)\\)");
-		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Player, logged in
+		if (std::regex_search(line, MatchResults, rx)) //Player, logged in
 		{
 			std::string sName (MatchResults[3]);
 
@@ -233,7 +226,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		}
 
 		rx.assign("(\\d+) ] \\* OP (\\d+), (.*?) \\(b(\\d+)\\)");
-		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Admin, not logged in
+		if (std::regex_search(line, MatchResults, rx)) //Admin, not logged in
 		{
 			Player tempplayer;
 			tempplayer.iNumber = atoi( std::string (MatchResults[1]).c_str() );
@@ -246,7 +239,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		}
 
 		rx.assign("(\\d+) ] \\* (.*?) \\(b(\\d+)\\)");
-		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Player, not logged in
+		if (std::regex_search(line, MatchResults, rx)) //Player, not logged in
 		{			
 			std::string sName (MatchResults[2]);
 
@@ -260,7 +253,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 		}
 
 		rx.assign("(\\d+) \\(bot\\)] \\* (.*?) \\(b0\\)");
-		if (std::regex_search(vLines.at(i), MatchResults, rx)) //Bot
+		if (std::regex_search(line, MatchResults, rx)) //Bot
 		{
 			Player tempplayer;
 			tempplayer.iNumber = atoi( std::string(MatchResults[1]).c_str() );

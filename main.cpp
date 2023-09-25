@@ -25,11 +25,6 @@
 //TODO: Disable "Ban IP" button when the IP was not loaded correctly
 
 
-#ifdef __GNUC__
-#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#endif
-
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
 #define strcasecmp _stricmp
@@ -40,6 +35,8 @@
 #include "main.h"
 #include "version.h"
 #include "settings.h"
+
+using namespace std::string_literals;
 
 std::vector<Server> g_vSavedServers;	//used to store servers in the combo box
 std::vector<Server> g_vAllServers;		//used to fill server list in the "Manage servers" dialog
@@ -192,6 +189,7 @@ void ShowPlayerInfo(HWND hwnd)
 		InternetCloseHandle(hFile);
 		InternetCloseHandle(hInternet);
 
+		// TODO: Do not reconstruct regexes on every iteration.
 		std::smatch MatchResults;
 		std::regex rx ("<tr><td><b class=\"faqtitle\">(.+?:)</b></td><td>(.+?)</td></tr>");
 		//												1-VARNAME		2-CONTENT
@@ -217,6 +215,7 @@ void ShowPlayerInfo(HWND hwnd)
 			
 			sContent = std::regex_replace(sContent, rxWebcodes, ""); //Content may contain web codes like &quot; ot &gt;
 			
+			// TODO -- what?
 			if (std::string("Email:").compare(MatchResults[1]) == 0) //email is encoded as char values, this has to be made readable for humans.
 			{
 				std::string::const_iterator startMail = sContent.begin();
@@ -335,30 +334,36 @@ int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
 	
 	sAnswer = sAnswer.substr(6, std::string::npos);
 
+	auto splits = sAnswer
+		| std::ranges::views::split(';')
+		| std::ranges::views::transform([](auto&& subrange) { return std::string_view(&*subrange.begin(), std::ranges::distance(subrange)); });
+
 	std::string sContent;
-	std::stringstream sAnswerStream{ sAnswer };
 	int field = 0;
-	std::string sCurrentValue;
-	while(std::getline(sAnswerStream, sCurrentValue, ';'))
+	for (const auto& sCurrentValue : splits)
 	{
-		std::string sCurrentValueOrErr = (sCurrentValue.size() > 0) ? sCurrentValue : "err";
+		std::string_view sCurrentValueOrErr = (sCurrentValue.size() > 0) ? sCurrentValue : "err";
 		switch(field)
 		{
 		case 0:
-			sContent += "map: " + sCurrentValueOrErr;
+			sContent += "map: ";
+			sContent += sCurrentValueOrErr;
 			break;
 		case 1:
 			sContent += "  |  pw: ";
 			sContent += (sCurrentValue.size() > 0) ? sCurrentValue : "none";
 			break;
 		case 2:
-			sContent += "  |  elim: " + sCurrentValueOrErr;
+			sContent += "  |  elim: ";
+			sContent += sCurrentValueOrErr;
 			break;
 		case 3:
-			sContent += "  |  timelimit: " + sCurrentValueOrErr;
+			sContent += "  |  timelimit: ";
+			sContent += sCurrentValueOrErr;
 			break;
 		case 4:
-			sContent += "  |  maxclients: " + sCurrentValueOrErr;
+			sContent += "  |  maxclients: ";
+			sContent += sCurrentValueOrErr;
 			break;
 		}
 		++field;
@@ -387,6 +392,7 @@ void MainWindowRefreshThread(LPVOID lpKey)
 	
 	if (g_vSavedServers.size() == 0)
 	{
+		// TODO - mutex?
 		MainWindowWriteConsole("There are no servers in your server list.");
 		return;
 	}
@@ -777,8 +783,8 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	
 	SendMessage(gWindows.hEditConsole		  , EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
 
-	LVCOLUMN lvc;
-	char szText[32]; //maximum: "Build\0"
+	LVCOLUMN lvc = { 0 };
+	char szText[32] = { 0 }; //maximum: "Build\0"
 	lvc.mask = LVCF_TEXT | LVCF_SUBITEM | LVCF_FMT;
 	for (int i = 0; i <= 7; i++)
 	{
@@ -1125,6 +1131,8 @@ void OnMainWindowDestroy(HWND hwnd)
 	HANDLE rHandles[3] = {g_hBanThread, g_hAutoReloadThread, g_hSendRconThread};
 	WaitForMultipleObjects(3, rHandles, TRUE, 10000);
 	
+	// TODO -- remove these? Threads should cooperate.
+
 	if (g_hBanThread != INVALID_HANDLE_VALUE)
 	{
 		TerminateThread(g_hBanThread, 0);
@@ -1180,6 +1188,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				
 				SignalAllThreads(&g_mRefreshThreads);
 				
+				// TODO: Happens multiple times -- pass ints directly without heap allocation
 				piKey = new int; //will be deleted as first operation in thread
 				*piKey = iGetFirstUnusedMapIntKey(g_mRefreshThreads);
 				
@@ -1264,9 +1273,6 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				SetForegroundWindow(gWindows.hDlgManageRotation);
 			
 			break;
-		/*case IDM_SERVER_CVARS:
-			CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGECVARS), hwnd, (DLGPROC)ManageCvarsDlgProc);
-			break;*/
 		case IDM_BANS_ENABLE:
 		{
 			if (GetMenuState(GetMenu(hwnd), IDM_BANS_ENABLE, MF_BYCOMMAND) == SW_SHOWNA) {
@@ -2226,7 +2232,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
 			tempserver.iPort = atoi(buffer.data());
 
-			DWORD dwIP;
+			DWORD dwIP = 0;
 			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_GETADDRESS, 0, (LPARAM) &dwIP);
 			tempserver.sIp = std::to_string(FIRST_IPADDRESS(dwIP)) + "." +
 							 std::to_string(SECOND_IPADDRESS(dwIP)) + "." +
@@ -2697,7 +2703,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		{
 			if (codeNotify == LBN_SELCHANGE) // set content of ip control
 			{
-				char szBuffer[16];
+				char szBuffer[16] = { 0 };
 				BYTE b0, b1, b2, b3;
 				SendMessage(GetDlgItem(hwnd, IDC_MIPS_LIST), LB_GETTEXT,
 							SendMessage(GetDlgItem(hwnd, IDC_MIPS_LIST), LB_GETCURSEL, 0, 0),
@@ -2770,6 +2776,7 @@ void SplitIpAddressToBytes(char * szIp, BYTE * pb0, BYTE * pb1, BYTE * pb2, BYTE
 	*pb3 = atoi(split);
 }
 
+// todo: return optional std::string
 int GetPb2InstallPath(std::string * sPath)
 {
 	HKEY key;
@@ -2866,6 +2873,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 
 	while (true)
 	{
+		// TODO: Make std::threads, use proper wait + stop mechanic (condition variable, mutex, bool flag?)
 		if (!gSettings.bRunBanThread)
 		{
             g_hBanThread = INVALID_HANDLE_VALUE;
@@ -2951,6 +2959,7 @@ void AutoReloadThreadFunction(void)
 			piKey = new int; //will be deleted as first operation in thread
 			*piKey = iGetFirstUnusedMapIntKey(g_mRefreshThreads);
 			
+			// TODO: Maybe have one thread running all the time and just signal it with a flag/condition_variable/whatever
 			g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
 			hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
 			if (hThread == NULL) {
@@ -3143,7 +3152,7 @@ void SaveConfig() // Saves all servers and settings in the config file
 	std::string sKeyBuffer = std::to_string(g_vBannedPlayers.size());
 	WritePrivateProfileString("bans", "count", sKeyBuffer.c_str(), path.c_str());
 
-	for (unsigned int i = 0; i< g_vBannedPlayers.size(); i++)
+	for (unsigned int i = 0; i < g_vBannedPlayers.size(); i++)
 	{
 		sKeyBuffer = std::to_string(i);
 		WritePrivateProfileString("bans", sKeyBuffer.c_str(), g_vBannedPlayers[i].sText.c_str(), path.c_str());

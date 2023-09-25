@@ -34,6 +34,7 @@
 #include <assert.h>
 #include <ctime>
 #include <map>
+#include <ranges>
 #include <regex>
 #include <string>
 #include <string_view>
