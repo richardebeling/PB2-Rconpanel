@@ -1452,9 +1452,9 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
 #pragma warning(push)
 #pragma warning(disable:26451)  // We're not computing large numbers here
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iNumber, 17*iMW);                   //num
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iName,   cx - 220*iMW);             //name
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iName,   cx - 218*iMW);             //name
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iBuild,  18*iMW);                   //build
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iId,     25*iMW);                   //ID
+	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iId,     27*iMW);                   //ID
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iOp,     15*iMW);                   //OP
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iIp,     47*iMW);                   //IP
 	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iPing,   17*iMW);                   //Ping
