@@ -2029,7 +2029,6 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 		Server tempserver(sIp, std::stoi(sPort));
 		tempserver.retrieveAndSetHostname(hSocket, gSettings.fAllServersTimeoutSecs);
 		
-		// TODO: doesn't currently work?
 		try
 		{
 			if (WaitForSingleObject(g_mLoadServersThreads.at(iKey), 0) == WAIT_OBJECT_0)
