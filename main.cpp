@@ -21,7 +21,7 @@
 //TODO: Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server (IDD_MANAGECVARS is the current placeholder)
 //TODO: Fix ip addresses not being shown sometimes (because assignment of information to the player fails?)
 //TODO: Option to draw nothing instead of a 0 in the listview when no information is given.
-//TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin and utrace?)
+//TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin / ip whois?)
 //TODO: Disable "Ban IP" button when the IP was not loaded correctly
 
 
@@ -665,7 +665,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonUtrace = CreateWindowEx(0, WC_BUTTON, "&uTrace\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonWhois = CreateWindowEx(0, WC_BUTTON, "&Whois IP\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
 	gWindows.hButtonForcejoin = CreateWindowEx(0, WC_BUTTON, "&Forcejoin\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
@@ -701,7 +701,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	SendMessage(gWindows.hButtonBanIP		  , WM_SETFONT, WPARAM(g_hFont), true);
 	SendMessage(gWindows.hButtonReload		  , WM_SETFONT, WPARAM(g_hFont), true);
 	SendMessage(gWindows.hButtonDPLoginProfile, WM_SETFONT, WPARAM(g_hFont), true);
-	SendMessage(gWindows.hButtonUtrace		  , WM_SETFONT, WPARAM(g_hFont), true);
+	SendMessage(gWindows.hButtonWhois		  , WM_SETFONT, WPARAM(g_hFont), true);
 	SendMessage(gWindows.hButtonForcejoin	  , WM_SETFONT, WPARAM(g_hFont), true);
 	SendMessage(gWindows.hComboRcon			  , WM_SETFONT, WPARAM(g_hFont), true);
 	SendMessage(gWindows.hButtonSend		  , WM_SETFONT, WPARAM(g_hFont), true);
@@ -891,7 +891,7 @@ void OnMainWindowJoinServer(void)
 	}
 }
 
-void OnMainWindowOpenUtrace(void)
+void OnMainWindowOpenWhois(void)
 {
 	auto iSelectedRow = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
 	if (iSelectedRow == -1)
@@ -902,8 +902,7 @@ void OnMainWindowOpenUtrace(void)
 
 	std::string sPlayerIp = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iIp);
 
-	// TODO: uTrace is out of service
-	std::string sUrl = "http://www.utrace.de/?query=" + sPlayerIp;
+	std::string sUrl = "https://www.utrace.me/?query=" + sPlayerIp;
 	ShellExecute(0, "open", sUrl.c_str(), 0, 0, 1);
 }
 
@@ -1126,7 +1125,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (hwndCtl == gWindows.hButtonBanID) OnMainWindowBanID();
 			if (hwndCtl == gWindows.hButtonBanIP) OnMainWindowBanIP();
 			if (hwndCtl == gWindows.hButtonDPLoginProfile) OnMainWindowOpenDPLogin();
-			if (hwndCtl == gWindows.hButtonUtrace) OnMainWindowOpenUtrace();
+			if (hwndCtl == gWindows.hButtonWhois) OnMainWindowOpenWhois();
 			if (hwndCtl == gWindows.hButtonForcejoin) OnMainWindowForcejoin();
 			if (hwndCtl == gWindows.hButtonJoin) OnMainWindowJoinServer();
 			break;
@@ -1377,7 +1376,7 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
 	MoveWindow(gWindows.hButtonJoin		     , cx - 45*iMW, 2  *iMH + 1, 43*iMW, 12*iMH, FALSE);
 	MoveWindow(gWindows.hButtonKick		     , cx - 45*iMW, 41 *iMH, 43*iMW, 12*iMH, FALSE);
 	MoveWindow(gWindows.hButtonReload		 , cx - 45*iMW, 25 *iMH, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonUtrace		 , cx - 45*iMW, 96 *iMH, 43*iMW, 12*iMH, FALSE);
+	MoveWindow(gWindows.hButtonWhois		 , cx - 45*iMW, 96 *iMH, 43*iMW, 12*iMH, FALSE);
 
 #pragma warning(push)
 #pragma warning(disable:26451)  // We're not computing large numbers here

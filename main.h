@@ -58,7 +58,7 @@ struct WindowHandles
 	HWND hButtonBanIP;
 	HWND hButtonReload;
 	HWND hButtonDPLoginProfile;
-	HWND hButtonUtrace;
+	HWND hButtonWhois;
 	HWND hButtonForcejoin;
 	HWND hEditConsole;
 	HWND hComboRcon;
@@ -141,7 +141,7 @@ void OnMainWindowKickPlayer(void);
 int  CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort);
 int  OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh);
 void OnMainWindowOpenDPLogin(void);
-void OnMainWindowOpenUtrace(void);
+void OnMainWindowOpenWhois(void);
 int  OnMainWindowSendRcon(void); //according to msdn functions used for threads should return sth.
 void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy);
 
