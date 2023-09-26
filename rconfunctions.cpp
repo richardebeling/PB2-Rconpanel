@@ -34,10 +34,10 @@ int ShutdownWinsock()
 
 // TODO: Return optional(string)
 int iVarContentFromName (std::string sIpAddress, int iPort, std::string sRconPassword, std::string sVarName,
-						std::string* sReturnBuffer, SOCKET hUdpSocket, double dTimeout)
+						std::string* sReturnBuffer, double dTimeout)
 {
 	std::string sAnswer;
-	iSendMessageToServer(sIpAddress, iPort, sVarName, &sAnswer, sRconPassword, hUdpSocket, dTimeout);
+	iSendMessageToServer(sIpAddress, iPort, sVarName, &sAnswer, sRconPassword, dTimeout);
 	std::smatch MatchResults;
 	std::regex rx ("\".*\" is \"(.*)\"");
 	if (std::regex_search(sAnswer, MatchResults, rx))
@@ -51,9 +51,9 @@ int iVarContentFromName (std::string sIpAddress, int iPort, std::string sRconPas
 
 Server::Server(std::string ip, int port) : sIp(std::move(ip)), iPort(port) {}
 
-void Server::retrieveAndSetHostname(SOCKET hUdpSocket, double dTimeout) {
+void Server::retrieveAndSetHostname(double dTimeout) {
 	std::string sAnswer;
-	iSendMessageToServer(sIp, iPort, "status", &sAnswer, "", hUdpSocket, dTimeout);
+	iSendMessageToServer(sIp, iPort, "status", &sAnswer, "", dTimeout);
 	std::smatch MatchResults;
 	std::regex rx(R"(\\hostname\\(.*?)\\)");
 	int found = std::regex_search(sAnswer, MatchResults, rx);
@@ -63,19 +63,22 @@ void Server::retrieveAndSetHostname(SOCKET hUdpSocket, double dTimeout) {
 		sHostname = MatchResults[1];
 }
 
+
+/*
+* Benchmarks regarding sockets on Windows 10, sending 10'000 UDP packets
+* New socket for each packet: 0.514109s
+* Reusing same socket for every packet: 0.079289
+* -> Creating a new one is ~10x slower, but still fast enough for the pb2 context with <100 servers
+*/
 int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage, std::string* sReturnBuffer,
-						std::string sRconPassword, SOCKET hUdpSocket, double dTimeout)
+						std::string sRconPassword, double dTimeout)
 {
-	bool bOwnSocket = false;
-	if (hUdpSocket == 0 || hUdpSocket == INVALID_SOCKET)
+
+	SOCKET hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (hUdpSocket == INVALID_SOCKET)
 	{
-		bOwnSocket = true;
-		hUdpSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-		if (hUdpSocket == INVALID_SOCKET)
-		{
-			closesocket(hUdpSocket);
-			return -1;
-		}
+		closesocket(hUdpSocket);
+		return -1;
 	}
 
 	std::string sPacketContent;
@@ -111,10 +114,7 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 
 	if (SOCKET_ERROR == sendto(hUdpSocket, sPacketContent.c_str(), static_cast<int>(sPacketContent.size() + 1), 0, (sockaddr*)  &stAddress, iSizeOfAddressStructure))
 	{
-		if (bOwnSocket)
-		{
-			closesocket(hUdpSocket);
-		}
+		closesocket(hUdpSocket);
 		return -2;
 	}
 
@@ -169,8 +169,7 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 	// TODO: Uniformly handle "bad password" answer? We will get "print\nBad rcon_password.\n"
 	// --> Maybe have custom wrapper in main.cpp that prints this to the console.
 
-	if (bOwnSocket)
-		closesocket(hUdpSocket);
+	closesocket(hUdpSocket);
 
 	if (!bReceivedSomething)
 	{
@@ -181,7 +180,7 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 }
 
 int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::string sRconPassword,
-								std::vector <Player> * playervector, SOCKET hUdpSocket , double dTimeout)
+								std::vector <Player> * playervector, double dTimeout)
 {
 	if (sRconPassword.compare("") == 0)
 		return -10;
@@ -190,7 +189,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	std::string sAnswer;
 	
 	//{ send and process answer to "sv players" (gives number, name, build, ID and OP)
-	int iRetVal = iSendMessageToServer(sIpAddress, iPort, "sv players\0", &sAnswer, sRconPassword, hUdpSocket, dTimeout);
+	int iRetVal = iSendMessageToServer(sIpAddress, iPort, "sv players\0", &sAnswer, sRconPassword, dTimeout);
 	if (iRetVal <= 0)
 		return iRetVal;
 	
@@ -271,7 +270,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	//}
 
 	//{ send and process answer to "status" as RCON packet (gives IP, score and ping)
-	iRetVal = iSendMessageToServer(sIpAddress, iPort, "status", &sAnswer, sRconPassword, hUdpSocket, dTimeout);
+	iRetVal = iSendMessageToServer(sIpAddress, iPort, "status", &sAnswer, sRconPassword, dTimeout);
 	if (iRetVal <= 0)
 		return iRetVal;
 	
@@ -318,7 +317,7 @@ int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::stri
 	//}
 	
 	//{ send and process answer to "status" as non-RCON packet (gives color)
-	iRetVal = iSendMessageToServer(sIpAddress, iPort, "status", &sAnswer, "", hUdpSocket, dTimeout);
+	iRetVal = iSendMessageToServer(sIpAddress, iPort, "status", &sAnswer, "", dTimeout);
 	if (iRetVal <= 0)
 		return iRetVal;
 	

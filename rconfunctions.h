@@ -53,22 +53,21 @@ struct Server
 	Server() = default;
 	Server(std::string ip, int port);
 
-	void retrieveAndSetHostname(SOCKET hUdpSocket = 0, double dTimeout = 0.5);
+	void retrieveAndSetHostname(double dTimeout = 0.5);
 };
 
 // TODO: Proper API
 // * split functions for rcon / non rcon
 // * overloads taking Server instance
-// * handle optional udp socket -- make explicit optional / give overload without parameter?
 
 int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage, std::string* sReturnBuffer,
-						std::string sRconPassword = "", SOCKET hUdpSocket = 0, double dTimeout = 0.5);
+						std::string sRconPassword = "", double dTimeout = 0.5);
 
 int iPlayerStructVectorFromAddress (std::string sIpAddress, int iPort, std::string sRconPassword,
-								std::vector <Player> * playervector, SOCKET hUdpSocket = 0, double dTimeout = 0.5);
+								std::vector <Player> * playervector, double dTimeout = 0.5);
 
 int iVarContentFromName (std::string sIpAddress, int iPort, std::string sRconPassword, std::string sVarName,
-						std::string* sReturnBuffer, SOCKET hUdpSocket = 0, double dTimeout = 0.5);
+						std::string* sReturnBuffer, double dTimeout = 0.5);
 
 int InitializeWinsock();
 int ShutdownWinsock();

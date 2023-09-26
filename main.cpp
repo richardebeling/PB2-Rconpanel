@@ -244,19 +244,16 @@ void ShowAboutDialog(HWND hwnd)
 					MB_OK | MB_ICONINFORMATION);
 }
 
-int MainWindowLoadServerInfo(SOCKET hSocket, HANDLE hExitEvent)
+int MainWindowLoadServerInfo(HANDLE hExitEvent)
 {
 	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
 	if (selectedServerIndex == CB_ERR)
 		return -3;
-	
-	if (hSocket == INVALID_SOCKET)
-		return -1;
 
 	std::string sAnswer;
 	iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort,
 						"echo $mapname;$password;$elim;$timelimit;$maxclients",
-						&sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, hSocket, gSettings.fTimeoutSecs);
+						&sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
 	
 	sAnswer = sAnswer.substr(6, std::string::npos);
 
@@ -312,7 +309,6 @@ void MainWindowRefreshThread(LPVOID lpKey)
 	int iKey = *((int*)lpKey);
 	delete (int*)lpKey;
 	
-	SOCKET hSocket;
 	HANDLE hExitEvent = g_mRefreshThreads.at(iKey);
 	g_iAutoReloadThreadTimeWaitedMsecs = 0;
 	
@@ -323,30 +319,27 @@ void MainWindowRefreshThread(LPVOID lpKey)
 		return;
 	}
 	
-	hSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	
-	MainWindowLoadPlayers(hSocket, hExitEvent);
+	MainWindowLoadPlayers(hExitEvent);
 		
-	if (MainWindowRefreshThreadExitIfSignaled(iKey, hSocket)) return;
+	if (MainWindowRefreshThreadExitIfSignaled(iKey)) return;
 	
-	MainWindowLoadServerInfo(hSocket, hExitEvent);
+	MainWindowLoadServerInfo(hExitEvent);
 	
-	if (MainWindowRefreshThreadExitIfSignaled(iKey, hSocket)) return;
+	if (MainWindowRefreshThreadExitIfSignaled(iKey)) return;
 	
 	MainWindowWriteConsole("The player list was reloaded.");
 	
 	SetEvent(hExitEvent);
-	MainWindowRefreshThreadExitIfSignaled (iKey, hSocket);
+	MainWindowRefreshThreadExitIfSignaled (iKey);
 }
 
-inline bool MainWindowRefreshThreadExitIfSignaled(int iKey, SOCKET hSocket)
+inline bool MainWindowRefreshThreadExitIfSignaled(int iKey)
 {
 	try
 	{
 		if (WaitForSingleObject(g_mRefreshThreads.at(iKey), 0) == WAIT_OBJECT_0)
 		{
 			CloseHandle(g_mRefreshThreads.at(iKey)); //Delete the Event
-			closesocket(hSocket);
 			g_mRefreshThreads.erase(g_mRefreshThreads.find(iKey));
 			return true;
 		}
@@ -354,8 +347,8 @@ inline bool MainWindowRefreshThreadExitIfSignaled(int iKey, SOCKET hSocket)
 	}
 	catch (const std::out_of_range&)
 	{
+		// TODO: mutex -- race condition
 		MessageBox(NULL, "Error when trying to access g_mRefreshThreads: out of range\n", "ACCESS ERROR", MB_OK | MB_ICONERROR);
-		closesocket(hSocket);
 		return true;
 	}
 }
@@ -368,7 +361,7 @@ inline void SignalAllThreads(std::map<int, HANDLE> * m)
 	}
 }
 
-int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
+int MainWindowLoadPlayers(HANDLE hExitEvent)
 {
 	ListView_DeleteAllItems(gWindows.hListPlayers);
 	
@@ -379,7 +372,7 @@ int MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent)
 	}
 
 	int iRetVal = iPlayerStructVectorFromAddress (g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort,
-										g_vSavedServers[selectedServerIndex].sRconPassword, &g_vPlayers, hSocket, gSettings.fTimeoutSecs);
+										g_vSavedServers[selectedServerIndex].sRconPassword, &g_vPlayers, gSettings.fTimeoutSecs);
 
 	if (iRetVal > 0) //add players to the listview
 	{
@@ -806,7 +799,7 @@ void OnMainWindowForcejoin(void)
 				std::string sAnswer;
 				iSelectedColor = iSendMessageToServer(selectedServer.sIp, selectedServer.iPort,
 									sMsgBuffer, &sAnswer,
-									selectedServer.sRconPassword, 0,
+									selectedServer.sRconPassword,
 									gSettings.fTimeoutSecs);
 
 				if (iSelectedColor > 0)
@@ -846,7 +839,7 @@ int OnMainWindowSendRcon(void) //according to msdn functions used for threads sh
 	auto& selectedServer = g_vSavedServers[selectedServerIndex];
 	
 	//send the content of gWindows.hComboRcon to the server and receive the answer
-	if (iSendMessageToServer(selectedServer.sIp, selectedServer.iPort, commandBuffer.data(), &sAnswer, selectedServer.sRconPassword, 0, gSettings.fTimeoutSecs) > 0)
+	if (iSendMessageToServer(selectedServer.sIp, selectedServer.iPort, commandBuffer.data(), &sAnswer, selectedServer.sRconPassword, gSettings.fTimeoutSecs) > 0)
 	{
 		MainWindowWriteConsole("Got answer from Server:\r\n" + sAnswer); //print the answer to the console
 	}
@@ -965,7 +958,7 @@ void OnMainWindowKickPlayer(void)
 					
 				int iRetVal = iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort,
 									sMsg, &sAnswer,
-									g_vSavedServers[selectedServerIndex].sRconPassword, 0,
+									g_vSavedServers[selectedServerIndex].sRconPassword,
 									gSettings.fTimeoutSecs);
 
 				if (iRetVal > 0)
@@ -1009,7 +1002,7 @@ void OnMainWindowBanIP(void)
 
 	std::string sAnswer;
 	int iRetVal = iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg, &sAnswer,
-						g_vSavedServers[selectedServerIndex].sRconPassword, 0, gSettings.fTimeoutSecs);
+						g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
 	
 	if (iRetVal > 0) {
 		MainWindowWriteConsole("The IP " + sIp + " was successfully added to servers ban list.");
@@ -1705,7 +1698,7 @@ void LoadRotationToListbox(HWND hListBox)
 	std::string sAnswer;
 	
 	iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, "sv maplist", &sAnswer,
-							g_vSavedServers[selectedServerIndex].sRconPassword, 0, gSettings.fTimeoutSecs);
+							g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
 
 	std::string::const_iterator start = sAnswer.begin();
 	std::string::const_iterator end = sAnswer.end();
@@ -1730,7 +1723,7 @@ BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 		return TRUE;
 
 	iVarContentFromName(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, g_vSavedServers[selectedServerIndex].sRconPassword,
-						"rot_file", &sAnswer, 0, gSettings.fTimeoutSecs);
+						"rot_file", &sAnswer, gSettings.fTimeoutSecs);
 
 	SetDlgItemText(hwnd, IDC_MROT_EDITFILE, sAnswer.c_str());
 
@@ -1790,7 +1783,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		sMsg += subcommand;
 
 		std::string sAnswer;
-		iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg, &sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, 0, gSettings.fTimeoutSecs);
+		iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg, &sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
 		LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
 
 		return sAnswer;
@@ -1911,7 +1904,7 @@ void OnManageRotationReloadContent(HWND hwnd)
 		return;
 
 	std::string sRotationFile;
-	iVarContentFromName(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, g_vSavedServers[selectedServerIndex].sRconPassword, "rot_file", &sRotationFile, 0, gSettings.fTimeoutSecs);
+	iVarContentFromName(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, g_vSavedServers[selectedServerIndex].sRconPassword, "rot_file", &sRotationFile, gSettings.fTimeoutSecs);
 
 	SetDlgItemText(hwnd, IDC_MROT_EDITFILE, sRotationFile.c_str());
 	return;
@@ -2005,11 +1998,6 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 	MainWindowWriteConsole("Loading servers, this may take a short time...");
 	
 	std::string sServerlist = GetHttpResponse(gSettings.sServerlistAddress);
-	
-	// TODO: RAII class for socket
-	SOCKET hSocket = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	if (hSocket == INVALID_SOCKET)
-		return;
 
 	std::smatch MatchResults;
 	std::regex rx (R"((\d+\.\d+\.\d+\.\d+):(\d{2,5}))");
@@ -2024,7 +2012,7 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 		start = MatchResults[0].second;
 
 		Server tempserver(sIp, std::stoi(sPort));
-		tempserver.retrieveAndSetHostname(hSocket, gSettings.fAllServersTimeoutSecs);
+		tempserver.retrieveAndSetHostname(gSettings.fAllServersTimeoutSecs);
 		
 		try
 		{
@@ -2036,7 +2024,7 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 		}
 		catch (const std::out_of_range&)
 		{
-			closesocket(hSocket);
+			// todo
 			return;
 		}
 		
@@ -2049,7 +2037,6 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 	}
 
 	CloseHandle(g_mLoadServersThreads.at(iKey)); //Delete the Event
-	closesocket(hSocket);
 	g_mLoadServersThreads.erase(g_mLoadServersThreads.find(iKey));
 	if (!bExit) MainWindowWriteConsole("Done.");
 }
@@ -2133,7 +2120,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
 			tempserver.sRconPassword = buffer.data();
 			
-			tempserver.retrieveAndSetHostname(0, gSettings.fAllServersTimeoutSecs);
+			tempserver.retrieveAndSetHostname(gSettings.fAllServersTimeoutSecs);
 
 			g_vSavedServers.push_back(tempserver);
 
@@ -2189,7 +2176,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, iBufferSize, (LPARAM)buffer.data());
 			g_vSavedServers[iRet].sRconPassword = buffer.data();
 
-			g_vSavedServers[iRet].retrieveAndSetHostname(0, gSettings.fAllServersTimeoutSecs);
+			g_vSavedServers[iRet].retrieveAndSetHostname(gSettings.fAllServersTimeoutSecs);
 
 			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_RESETCONTENT, 0, 0); //reload right listbox
 			for(size_t i = 0; i < g_vSavedServers.size(); i++)
@@ -2512,7 +2499,7 @@ void LoadBannedIPsToListbox(HWND hListBox)
 	std::string sAnswer;
 
 	iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, "sv listip", &sAnswer,
-							g_vSavedServers[selectedServerIndex].sRconPassword, 0, gSettings.fTimeoutSecs);
+							g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
 
 	std::string::const_iterator start = sAnswer.begin();
 	std::string::const_iterator end = sAnswer.end();
@@ -2557,7 +2544,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 			std::string sAnswer;
 			iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg,
-									&sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, 0, gSettings.fTimeoutSecs);
+									&sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
 
 			LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
 			return;
@@ -2578,7 +2565,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 			std::string sAnswer;
 			iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg,
-									&sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, 0, gSettings.fTimeoutSecs);
+									&sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
 
 			LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
 			return;
@@ -2698,7 +2685,7 @@ std::optional<std::string> GetPb2InstallPath()
 		if (RegOpenKeyEx(root, "SOFTWARE\\Digital Paint\\Paintball2", 0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS)
 		{
 			std::string buffer(MAX_PATH, '\0');
-			DWORD buffer_size = buffer.size();
+			DWORD buffer_size = static_cast<DWORD>(buffer.size());
 
 			auto retVal = RegQueryValueEx(key, "INSTDIR", NULL, NULL, (LPBYTE)buffer.data(), &buffer_size);
 			RegCloseKey(key);
@@ -2790,7 +2777,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 
         for (const auto& server : servers)
 		{
-            iPlayerStructVectorFromAddress(server.sIp, server.iPort, server.sRconPassword, &players, 0, gSettings.fTimeoutSecs);
+            iPlayerStructVectorFromAddress(server.sIp, server.iPort, server.sRconPassword, &players, gSettings.fTimeoutSecs);
 			
             for (const auto& player : players)
 			{
@@ -2800,7 +2787,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 					sMsgBuffer += std::to_string(player.iNumber);
 						
 					iSendMessageToServer(server.sIp, server.iPort, sMsgBuffer, &sReturnBuffer,
-										server.sRconPassword, 0, gSettings.fTimeoutSecs);
+										server.sRconPassword, gSettings.fTimeoutSecs);
 					
 					MainWindowWriteConsole("Player " + player.sName + " on server " + server.sHostname + "had a too high ping.");
 					MainWindowWriteConsole("Server answered to kick message: " + sReturnBuffer);
@@ -2816,7 +2803,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 							
 						iSendMessageToServer(server.sIp, server.iPort,
 											sMsgBuffer, &sReturnBuffer,
-											server.sRconPassword, 0, gSettings.fTimeoutSecs);
+											server.sRconPassword, gSettings.fTimeoutSecs);
 						
 						MainWindowWriteConsole("Found banned player " + player.sName + " on server " + server.sHostname);
 						MainWindowWriteConsole("Server answered to kick message: " + sReturnBuffer);
@@ -2967,7 +2954,7 @@ int LoadConfig() // loads the servers and settings from the config file
 		GetPrivateProfileString("port", szKeyBuffer, "00000\0", szPortBuffer, 6, path.c_str());
 		Server tempServer(szReadBuffer, atoi(szPortBuffer));
 
-		tempServer.retrieveAndSetHostname(0, gSettings.fTimeoutSecs);
+		tempServer.retrieveAndSetHostname(gSettings.fTimeoutSecs);
 
 		GetPrivateProfileString("pw", szKeyBuffer, "\0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
 		tempServer.sRconPassword = szReadBuffer;
