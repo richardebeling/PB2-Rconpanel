@@ -93,6 +93,8 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 	InetPton(AF_INET, sIpAddress.c_str(), &stAddress.sin_addr.s_addr);
 	stAddress.sin_port = htons(iPort);
 
+	auto serverAddress = stAddress.sin_addr.s_addr;
+
 	int iSizeOfAddressStructure = sizeof(stAddress);
 
 	fd_set fdset = { 0 }; //remove any answers that are still depending for that socket while we don't want them
@@ -133,10 +135,16 @@ int iSendMessageToServer(std::string sIpAddress, int iPort, std::string sMessage
 		int selectResult = select(FD_SETSIZE, &fdset, 0, 0, &tv);
 		if (selectResult > 0)
 		{
-			bReceivedSomething = true;
 			int receivedBytes = recvfrom(hUdpSocket, buffer.data(), static_cast<int>(buffer.size()), 0, (sockaddr*) &stAddress, &iSizeOfAddressStructure);
+			if (receivedBytes == SOCKET_ERROR) {
+				break;  // TODO: Inform user?
+			}
+			if (stAddress.sin_addr.s_addr != serverAddress) {
+				break;  // TODO: Inform user?
+			}
 
 			buffer[receivedBytes] = '\0';
+			bReceivedSomething = true;
 
 			if (strncmp(buffer.data(), "\xFF\xFF\xFF\xFFprint\n", 10) == 0)
 			{
