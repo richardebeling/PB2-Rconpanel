@@ -875,19 +875,17 @@ void OnMainWindowJoinServer(void)
 		+ ":"
 		+ std::to_string(g_vSavedServers.at(selectedServerIndex).iPort);
 
-	std::string sPb2Path;
-	if (GetPb2InstallPath(&sPb2Path))
-	{
-		sPb2Path += "\\paintball2.exe";
-		auto ret = (INT_PTR) ShellExecute(0, "open", sPb2Path.c_str(), sArgs.c_str(), 0, 1); //start it
-		if (ret <= 32)
-		{
-			MainWindowWriteConsole("Error while starting:\r\n" + sPb2Path + "\r\nShellExecute returned: " + std::to_string(ret));
-		}
+	std::optional<std::string> pb2Path = GetPb2InstallPath();
+	if (!pb2Path) {
+		MainWindowWriteConsole("Could not find the path of your DP:PB2 install directory in the registry.");
+		return;
 	}
-	else
+
+	std::string pb2Executable = pb2Path.value() + "\\paintball2.exe";
+	auto ret = (INT_PTR) ShellExecute(0, "open", pb2Executable.c_str(), sArgs.c_str(), 0, 1); //start it
+	if (ret <= 32)
 	{
-		MainWindowWriteConsole("Could not find the path of you DP:PB2 install directory in the registry.");
+		MainWindowWriteConsole("Error while starting:\r\n" + pb2Executable + "\r\nShellExecute returned: " + std::to_string(ret));
 	}
 }
 
@@ -1736,11 +1734,11 @@ BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 
 	SetDlgItemText(hwnd, IDC_MROT_EDITFILE, sAnswer.c_str());
 
-	std::string sMapshot;
-	if (not GetPb2InstallPath(&sMapshot))
+	std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
+	if (!pb2InstallPath)
 		return TRUE;
-	
-	sMapshot += "\\pball\\pics\\mapshots\\-no-preview-.jpg";
+
+	std::string sMapshot = pb2InstallPath.value() + "\\pball\\pics\\mapshots\\-no-preview-.jpg";
 	std::wstring sWideMapshot (sMapshot.begin(), sMapshot.end());
 	
 	g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
@@ -1872,11 +1870,11 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		{
 			if (codeNotify == EN_CHANGE)
 			{
-				std::string sMapshot;
-				if (not GetPb2InstallPath(&sMapshot))
+				std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
+				if (!pb2InstallPath)
 					return;
-				
-				sMapshot += "\\pball\\pics\\mapshots\\";
+
+				std::string sMapshot = pb2InstallPath.value() + R"(\pball\pics\mapshots\)";
 				int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_MROT_EDITMAP)) + 1;
 				std::vector<char> mapnameBuffer(iBufferSize);
 				GetDlgItemText(hwnd, IDC_MROT_EDITMAP, mapnameBuffer.data(), iBufferSize);
@@ -1886,8 +1884,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				DWORD dwAttributes = GetFileAttributes(sMapshot.c_str());
 				if (dwAttributes == INVALID_FILE_ATTRIBUTES || (dwAttributes & FILE_ATTRIBUTE_DIRECTORY))
 				{
-					GetPb2InstallPath(&sMapshot);
-					sMapshot += "\\pball\\pics\\mapshots\\-no-preview-.jpg";
+					sMapshot = pb2InstallPath.value() + R"(\pball\pics\mapshots\-no-preview-.jpg)";
 				}
 
 				RECT rcMapshotImageRect;
@@ -2694,36 +2691,27 @@ void SplitIpAddressToBytes(char * szIp, BYTE * pb0, BYTE * pb1, BYTE * pb2, BYTE
 	*pb3 = atoi(split);
 }
 
-// todo: return optional std::string
-int GetPb2InstallPath(std::string * sPath)
+std::optional<std::string> GetPb2InstallPath()
 {
-	HKEY key;
-	char szPbPath[MAX_PATH] = { 0 };
-	long unsigned int iPathSize = sizeof(szPbPath) - 1;
+	for (auto root : { HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE }) {
+		HKEY key;
+		if (RegOpenKeyEx(root, "SOFTWARE\\Digital Paint\\Paintball2", 0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS)
+		{
+			std::string buffer(MAX_PATH, '\0');
+			DWORD buffer_size = buffer.size();
 
-	if (RegOpenKeyEx(HKEY_CURRENT_USER, "SOFTWARE\\Digital Paint\\Paintball2", 0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS)
-	{
-		if (RegQueryValueEx(key, "INSTDIR", NULL, NULL, (LPBYTE) &szPbPath, &iPathSize) == ERROR_SUCCESS)
-		{
-			szPbPath[iPathSize] = '\0';
-			sPath->assign(szPbPath);
+			auto retVal = RegQueryValueEx(key, "INSTDIR", NULL, NULL, (LPBYTE)buffer.data(), &buffer_size);
 			RegCloseKey(key);
-			return 1;
+
+			if (retVal == ERROR_SUCCESS && buffer_size >= 1)
+			{
+				buffer.resize(buffer_size - 1);
+				return buffer;
+			}
 		}
-		RegCloseKey(key);
 	}
-	else if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, "SOFTWARE\\Digital Paint\\Paintball2\0", 0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS)
-	{
-		if (RegQueryValueEx(key, "INSTDIR", NULL, NULL, (LPBYTE) &szPbPath, &iPathSize) == ERROR_SUCCESS)
-		{
-			szPbPath[iPathSize] = '\0';
-			sPath->assign(szPbPath);
-			RegCloseKey(key);
-			return 1;
-		}
-		RegCloseKey(key);
-	}
-	return 0;
+
+	return std::nullopt;
 }
 
 void ListView_SetImage(HWND hListview, std::string_view sImagePath)
@@ -2765,19 +2753,17 @@ std::string ListView_CustomGetItemText(HWND hListView, int iItemIndex, int iSubI
 
 void StartServerbrowser(void)
 {
-	std::string sSbPath;
-	if (GetPb2InstallPath(&sSbPath))
-	{
-		sSbPath += "\\serverbrowser.exe";
-		auto iRet = (INT_PTR) ShellExecute(0, "open", sSbPath.c_str(), "", 0, 1); //start it
-		if (iRet <= 32)
-		{
-			MainWindowWriteConsole("Error while starting:\r\n" + sSbPath + "\r\nShellExecute returned: " + std::to_string(iRet));
-		}
+	std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
+	if (!pb2InstallPath) {
+		MainWindowWriteConsole("Could not find the path of your DP:PB2 install directory in the registry.");
+		return;
 	}
-	else
+
+	std::string serverbrowserPath = pb2InstallPath.value() + "\\serverbrowser.exe";
+	auto iRet = (INT_PTR) ShellExecute(0, "open", serverbrowserPath.c_str(), "", pb2InstallPath.value().c_str(), 1);
+	if (iRet <= 32)
 	{
-		MainWindowWriteConsole("Could not find the path of you DP:PB2 install directory in the registry.");
+		MainWindowWriteConsole("Error while starting:\r\n" + serverbrowserPath + "\r\nShellExecute returned: " + std::to_string(iRet));
 	}
 }
 

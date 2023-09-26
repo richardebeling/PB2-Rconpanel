@@ -34,6 +34,7 @@
 #include <assert.h>
 #include <ctime>
 #include <map>
+#include <optional>
 #include <ranges>
 #include <regex>
 #include <string>
@@ -106,7 +107,7 @@ void BanThreadFunction(void);
 std::string GetHttpResponse(std::string url);
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
-int  GetPb2InstallPath(std::string * sPath);
+std::optional<std::string>  GetPb2InstallPath(void);
 void MainWindowRefreshThread(LPVOID lpArgument);
 inline bool MainWindowRefreshThreadExitIfSignaled(int iUID, SOCKET hSocket);
 int  MainWindowLoadPlayers(SOCKET hSocket, HANDLE hExitEvent);
