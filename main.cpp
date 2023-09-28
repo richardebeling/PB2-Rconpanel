@@ -24,13 +24,14 @@
 //TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin / ip whois?)
 //TODO: Disable "Ban IP" button when the IP was not loaded correctly
 
+// TODO: Disallow adding server with empty password
 
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
 #define strcasecmp _stricmp
 #endif
 
-#include "rconfunctions.h"
+#include "pb2lib.h"
 #include "resource.h"
 #include "main.h"
 #include "version.h"
@@ -38,17 +39,17 @@
 
 using namespace std::string_literals;
 
-std::vector<Server> g_vSavedServers;	//used to store servers in the combo box
-std::vector<Server> g_vAllServers;		//used to fill server list in the "Manage servers" dialog
-std::vector<Player> g_vPlayers;			//used to fill the list view in the main window
-std::vector<Ban> 	g_vBannedPlayers;	//stores either ID or name of a banned player as string
+std::vector<pb2lib::Server> g_vSavedServers;	//used to store servers in the combo box
+std::vector<pb2lib::Server> g_vAllServers;		//used to fill server list in the "Manage servers" dialog
+std::vector<pb2lib::Player> g_vPlayers;			//used to fill the list view in the main window
+std::vector<Ban> 			g_vBannedPlayers;	//stores either ID or name of a banned player as string
 
 HANDLE g_hAutoReloadThread  = 0;
 HANDLE g_hBanThread         = 0;
 HANDLE g_hSendRconThread    = 0;
 
-std::map <int, HANDLE> g_mRefreshThreads;		//contains UID and ExitEvent for every reload thread
-std::map <int, HANDLE> g_mLoadServersThreads;	//contains UID and ExitEvent for every reload thread
+std::map <size_t, HANDLE> g_mRefreshThreads;		//contains UID and ExitEvent for every reload thread
+std::map <size_t, HANDLE> g_mLoadServersThreads;	//contains UID and ExitEvent for every reload thread
 
 bool g_bDontWriteConfig = false;
 int g_iAutoReloadThreadTimeWaitedMsecs; // global so it can be reset when the list is manually reset
@@ -59,7 +60,7 @@ const HBRUSH g_hConsoleBackgroundBrush = (HBRUSH) CreateSolidBrush(RGB(255, 255,
 HFONT g_hFont, g_hConsoleFont;
 
 WindowHandles gWindows; // stores all window handles
-SETTINGS gSettings;     // stores all program settings
+Settings gSettings;     // stores all program settings
 
 ULONG_PTR g_gdiplusStartupToken;
 std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmap;
@@ -112,12 +113,6 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 		MessageBox(NULL, "Could not register window class. Will now exit.", NULL, MB_OK | MB_ICONERROR);
 		exit(-1);
 	}
-	
-	if (InitializeWinsock() != 0)
-	{
-		MessageBox(NULL, "InitializeWinsock returned 0. Will now exit.", NULL, MB_OK | MB_ICONERROR);
-		exit(-1);
-	}
 
 	DWORD dwBaseUnits = GetDialogBaseUnits();
 	gWindows.hWinMain = CreateWindowEx (0,
@@ -152,38 +147,83 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 // Main Window Functions                                                                           |
 //{-------------------------------------------------------------------------------------------------
 
+// TODO: Namespacing instead of function name prefixing
+
+pb2lib::Server* MainWindowGetSelectedServerOrLoggedNull() noexcept {
+	if (g_vSavedServers.size() == 0) {
+		MainWindowWriteConsole("There are no servers in your server list.");
+		return nullptr;
+	}
+
+	size_t selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
+	if (selectedServerIndex == CB_ERR || selectedServerIndex >= g_vSavedServers.size()) {
+		MainWindowWriteConsole("Error when trying to get the selected server");
+		return nullptr;
+	}
+
+	return &g_vSavedServers.at(selectedServerIndex);
+}
+
+pb2lib::Player* MainWindowGetSelectedPlayerOrNull() noexcept {
+	auto iSelectedItem = ListView_GetNextItem(gWindows.hListPlayers, -1, LVNI_SELECTED);
+	if (iSelectedItem == -1) {
+		return nullptr;
+	}
+
+	LVITEM item = { 0 };
+	item.iItem = iSelectedItem;
+	ListView_GetItem(gWindows.hListPlayers, &item);
+	size_t stored_index = item.lParam;
+
+	return &g_vPlayers.at(stored_index);
+}
+
+pb2lib::Player* MainWindowGetSelectedPlayerOrLoggedNull() noexcept {
+	auto result = MainWindowGetSelectedPlayerOrNull();
+	if (!result) {
+		MainWindowWriteConsole("Please select a player first.");
+	}
+	return result;
+}
+
+template <typename FuncT>
+auto MainWindowLogExceptionsToConsole(FuncT&& functor) {
+	try {
+		functor();
+	}
+	catch (pb2lib::Exception& e) {
+		MainWindowWriteConsole("An error occurred: "s + e.what());
+	}
+}
+
 void ShowPlayerInfo(HWND hwnd)
 {
-	SetWindowText(hwnd, "DP:PB2 Rconpanel - Retrieving Information...");
-	
-	std::string sBoxContent = "Information about player ";
-	auto iSelectedRow = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
-	if (iSelectedRow == -1)
+	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
+	if (!player) {
 		return;
+	}
 
-	std::string sPlayerName = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iName);
-	sBoxContent += sPlayerName;
+	SetWindowText(hwnd, "DP:PB2 Rconpanel - Retrieving Information...");
+	std::string sBoxContent = "Information about player " + player->name;
 	sBoxContent += "\r\n\r\n";
 	sBoxContent += "DPLogin Profile:\r\n";
 
-	std::string sPlayerId = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iId);
-	if (sPlayerId != "0")
+	if (player->id != 0)
 	{
-		std::string sPlayersite = GetHttpResponse("http://www.dplogin.com/index.php?action=viewmember&playerid=" + sPlayerId);
+		std::string sPlayersite = GetHttpResponse("http://www.dplogin.com/index.php?action=viewmember&playerid=" + std::to_string(player->id));
 
-		std::smatch MatchResults;
+		std::smatch matches;
 		std::regex rx ("<tr><td><b class=\"faqtitle\">(.+?:)</b></td><td>(.+?)</td></tr>");
 		//												1-VARNAME		2-CONTENT
 				
 		auto start = sPlayersite.cbegin();
-		while (std::regex_search(start, sPlayersite.cend(), MatchResults, rx))
-		{
-			start = MatchResults[0].second;
+		while (std::regex_search(start, sPlayersite.cend(), matches, rx)) {
+			start = matches[0].second;
 			
-			sBoxContent += MatchResults[1];
+			sBoxContent += matches[1];
 			sBoxContent += " ";
 			
-			std::string sContent = MatchResults[2];		
+			std::string sContent = matches[2];
 			sContent = std::regex_replace(sContent, std::regex(R"(<a href=\".+?\">)"), "");
 			sContent = std::regex_replace(sContent, std::regex("</a>"), "");
 
@@ -196,13 +236,11 @@ void ShowPlayerInfo(HWND hwnd)
 		sBoxContent += "\r\n";
 	}
 
-	std::string sPlayerIp = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iIp);
-
-	if (sPlayerIp != "0.0.0.0")
+	if (player->ip != "0.0.0.0")
 	{
 		std::string sIpApiResponse = GetHttpResponse(
 			"http://ip-api.com/line/"
-			+ sPlayerIp
+			+ player->ip
 			+ "?fields=continent,country,regionName,city,district,zip,isp,org,as,proxy,hosting");
 
 		auto linesView = sIpApiResponse
@@ -212,7 +250,7 @@ void ShowPlayerInfo(HWND hwnd)
 		std::vector<std::string> lines(linesView.begin(), linesView.end());
 		lines.resize(11); // cheap way to prevent oor-access
 		
-		sBoxContent += "IP: " + sPlayerIp + " (data from ip-api.com)\r\n";
+		sBoxContent += "IP: " + player->ip + " (data from ip-api.com)\r\n";
 		sBoxContent += "ISP: " + lines[6] + "\r\n";
 		sBoxContent += "Organization: " + lines[7] + "\r\n";
 		sBoxContent += "AS: " + lines[8] + "\r\n";
@@ -244,103 +282,64 @@ void ShowAboutDialog(HWND hwnd)
 					MB_OK | MB_ICONINFORMATION);
 }
 
-int MainWindowLoadServerInfo(HANDLE hExitEvent)
+void MainWindowUpdateServerInfo(const pb2lib::Server& server)
 {
-	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-	if (selectedServerIndex == CB_ERR)
-		return -3;
+	MainWindowLogExceptionsToConsole([&]() {
+		std::vector<std::string> status_vars = { "mapname", "password", "elim", "timelimit", "maxclients" };
+		std::vector<std::string> values = pb2lib::get_cvars(server.address, server.rcon_password, status_vars, gSettings.fTimeoutSecs);
 
-	std::string sAnswer;
-	iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort,
-						"echo $mapname;$password;$elim;$timelimit;$maxclients",
-						&sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
-	
-	sAnswer = sAnswer.substr(6, std::string::npos);
+		std::string display_text;
+		display_text += "map: " + values[0];
+		display_text += " | pw: " + (values[1].size() > 0 ? values[1] : "none");
+		display_text += " | elim: " + values[2];
+		display_text += " | timelimit: " + values[3];
+		display_text += " | maxclients: " + values[4];
 
-	auto splits = sAnswer
-		| std::ranges::views::split(';')
-		| std::ranges::views::transform([](auto&& subrange) { return std::string_view(&*subrange.begin(), std::ranges::distance(subrange)); });
+		// TODO: Threaded access to window handles where the windows might not exist anymore // mutex?
 
-	std::string sContent;
-	int field = 0;
-	for (const auto& sCurrentValue : splits)
-	{
-		std::string_view sCurrentValueOrErr = (sCurrentValue.size() > 0) ? sCurrentValue : "err";
-		switch(field)
-		{
-		case 0:
-			sContent += "map: ";
-			sContent += sCurrentValueOrErr;
-			break;
-		case 1:
-			sContent += "  |  pw: ";
-			sContent += (sCurrentValue.size() > 0) ? sCurrentValue : "none";
-			break;
-		case 2:
-			sContent += "  |  elim: ";
-			sContent += sCurrentValueOrErr;
-			break;
-		case 3:
-			sContent += "  |  timelimit: ";
-			sContent += sCurrentValueOrErr;
-			break;
-		case 4:
-			sContent += "  |  maxclients: ";
-			sContent += sCurrentValueOrErr;
-			break;
-		}
-		++field;
-	}
-	
-	if (WaitForSingleObject(hExitEvent, 0) == WAIT_OBJECT_0)
-		return -2;
-	
-	SetWindowText(gWindows.hStaticServerInfo, sContent.c_str());
+		SetWindowText(gWindows.hStaticServerInfo, display_text.c_str());
 
-	HRGN hRegion = CreateRectRgn(0,0,0,0);
-	GetWindowRgn(gWindows.hStaticServerInfo, hRegion);
-	RedrawWindow(gWindows.hWinMain, NULL, hRegion, RDW_ERASE | RDW_INVALIDATE);
-	DeleteObject(hRegion);
-	return 1;
+		HRGN hRegion = CreateRectRgn(0, 0, 0, 0);
+		GetWindowRgn(gWindows.hStaticServerInfo, hRegion);
+		RedrawWindow(gWindows.hWinMain, NULL, hRegion, RDW_ERASE | RDW_INVALIDATE);
+		DeleteObject(hRegion);
+	});
 }
 
-void MainWindowRefreshThread(LPVOID lpKey)
+void MainWindowRefreshThread(LPVOID param)
 {
-	int iKey = *((int*)lpKey);
-	delete (int*)lpKey;
+	size_t thread_uid = reinterpret_cast<size_t>(param);
 	
-	HANDLE hExitEvent = g_mRefreshThreads.at(iKey);
+	HANDLE hExitEvent = g_mRefreshThreads.at(thread_uid);
 	g_iAutoReloadThreadTimeWaitedMsecs = 0;
 	
-	if (g_vSavedServers.size() == 0)
-	{
-		// TODO - mutex?
-		MainWindowWriteConsole("There are no servers in your server list.");
+	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	if (!server) {
 		return;
 	}
-	
-	MainWindowLoadPlayers(hExitEvent);
+
+	MainWindowUpdateServerInfo(*server);
 		
-	if (MainWindowRefreshThreadExitIfSignaled(iKey)) return;
-	
-	MainWindowLoadServerInfo(hExitEvent);
-	
-	if (MainWindowRefreshThreadExitIfSignaled(iKey)) return;
-	
-	MainWindowWriteConsole("The player list was reloaded.");
-	
+	if (MainWindowRefreshThreadExitIfSignaled(thread_uid)) return;
+
+	MainWindowUpdatePlayers(*server);
+
+	if (MainWindowRefreshThreadExitIfSignaled(thread_uid)) return;
+
+	MainWindowWriteConsole("The player list was reloaded."); // TODO: This also shows in error cases -- prevent?
+
 	SetEvent(hExitEvent);
-	MainWindowRefreshThreadExitIfSignaled (iKey);
+	MainWindowRefreshThreadExitIfSignaled (thread_uid);
 }
 
-inline bool MainWindowRefreshThreadExitIfSignaled(int iKey)
+inline bool MainWindowRefreshThreadExitIfSignaled(size_t key)
 {
 	try
 	{
-		if (WaitForSingleObject(g_mRefreshThreads.at(iKey), 0) == WAIT_OBJECT_0)
+		if (WaitForSingleObject(g_mRefreshThreads.at(key), 0) == WAIT_OBJECT_0)
 		{
-			CloseHandle(g_mRefreshThreads.at(iKey)); //Delete the Event
-			g_mRefreshThreads.erase(g_mRefreshThreads.find(iKey));
+			CloseHandle(g_mRefreshThreads.at(key)); //Delete the Event
+			g_mRefreshThreads.erase(g_mRefreshThreads.find(key));
 			return true;
 		}
 		return false;
@@ -353,83 +352,56 @@ inline bool MainWindowRefreshThreadExitIfSignaled(int iKey)
 	}
 }
 
-inline void SignalAllThreads(std::map<int, HANDLE> * m)
+inline void SignalAllThreads(std::map<size_t, HANDLE> * map)
 {
-	for (auto iterator = m->begin(); iterator != m->end(); iterator++)
-	{
-		SetEvent(iterator->second);
+	for (auto& [key, event] : *map) {
+		SetEvent(event);
 	}
 }
 
-int MainWindowLoadPlayers(HANDLE hExitEvent)
+void MainWindowUpdatePlayers(pb2lib::Server& server)
 {
+	MainWindowLogExceptionsToConsole([&]() {
+		g_vPlayers = pb2lib::get_players(server.address, server.rcon_password, gSettings.fTimeoutSecs);
+	});
+
 	ListView_DeleteAllItems(gWindows.hListPlayers);
-	
-	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-	if (selectedServerIndex == CB_ERR)
-	{
-		return -3;
-	}
 
-	int iRetVal = iPlayerStructVectorFromAddress (g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort,
-										g_vSavedServers[selectedServerIndex].sRconPassword, &g_vPlayers, gSettings.fTimeoutSecs);
-
-	if (iRetVal > 0) //add players to the listview
+	LVITEM LvItem = { 0 };
+	for(unsigned int playerIndex = 0; playerIndex < g_vPlayers.size(); playerIndex++)
 	{
-		LVITEM LvItem = { 0 };
-		std::string sItemText;
-		for(unsigned int y = 0; y < g_vPlayers.size(); y++)
+		const pb2lib::Player& player = g_vPlayers[playerIndex];
+		LvItem.mask = LVIF_TEXT | LVIF_PARAM;
+		LvItem.iItem = playerIndex;
+		LvItem.lParam = playerIndex;
+		LvItem.iSubItem = Subitems::NUMBER;
+		std::string itemText = std::to_string(player.number);
+		LvItem.pszText = (LPSTR)itemText.c_str();
+		ListView_InsertItem(gWindows.hListPlayers, &LvItem);
+
+		for (int column = 1; column < 8; column++)
 		{
-			LvItem.mask = LVIF_TEXT | LVIF_PARAM;
-			LvItem.iItem = y;
-			LvItem.iSubItem = SUBITEMS::iNumber;
-			LvItem.lParam = y;
-			sItemText = std::to_string(g_vPlayers[y].iNumber);
-			LvItem.pszText = (LPSTR) sItemText.c_str();
-			SendMessage(gWindows.hListPlayers, LVM_INSERTITEM, 0, (LPARAM) &LvItem);
-
-			for (int x = 1; x < 8; x++)
-			{
-				switch(x)
-				{
-				case SUBITEMS::iName:
-					sItemText = g_vPlayers[y].sName;
-					break;
-				case SUBITEMS::iBuild:
-					sItemText = std::to_string(g_vPlayers[y].iBuild);
-					break;
-				case SUBITEMS::iId:
-					sItemText = std::to_string(g_vPlayers[y].iId);
-					break;
-				case SUBITEMS::iOp:
-					sItemText = std::to_string(g_vPlayers[y].iOp);
-					break;
-				case SUBITEMS::iIp:
-					sItemText = g_vPlayers[y].sIp;
-					break;
-				case SUBITEMS::iPing:
-					sItemText = std::to_string(g_vPlayers[y].iPing);
-					break;
-				case SUBITEMS::iScore:
-					sItemText = std::to_string(g_vPlayers[y].iScore);
-					break;
+			itemText = [&](){
+				switch (column) {
+					case Subitems::NAME: return player.name;
+					case Subitems::BUILD: return std::to_string(player.build);
+					case Subitems::ID: return std::to_string(player.id);
+					case Subitems::OP: return std::to_string(player.op);
+					case Subitems::IP: return player.ip;
+					case Subitems::PING: return std::to_string(player.ping);
+					case Subitems::SCORE: return std::to_string(player.score);
 				}
-				LvItem.mask=LVIF_TEXT;
-				LvItem.iSubItem = x;
-				LvItem.pszText = (LPSTR) sItemText.c_str();
-				
-				if (WaitForSingleObject(hExitEvent, 0) == WAIT_OBJECT_0)
-				{
-					return -2;
-				}
-				
-				SendMessage(gWindows.hListPlayers, LVM_SETITEM, 0, (LPARAM) &LvItem);
-			}
+				assert(false);
+				return ""s;
+			}();
+			
+			LvItem.iSubItem = column;
+			LvItem.pszText = (LPSTR)itemText.c_str();
+			ListView_SetItem(gWindows.hListPlayers, &LvItem);
 		}
 	}
 	ListView_SortItems (gWindows.hListPlayers, OnMainWindowListViewSort, 0);
 	ListView_SetColumnWidth(gWindows.hListPlayers, 7, LVSCW_AUTOSIZE_USEHEADER);
-	return 1;
 }
 
 void MainWindowWriteConsole(const std::string_view str) // prints text to gWindows.hEditConsole, adds timestamp and linebreak
@@ -491,86 +463,46 @@ static int OnPlayerListCustomDraw (LPARAM lParam)
 	case CDDS_ITEMPREPAINT | CDDS_SUBITEM:		
 		switch(lplvcd->iSubItem)
 		{
-		case SUBITEMS::iNumber:
-		case SUBITEMS::iName:
-		case SUBITEMS::iBuild:
-		case SUBITEMS::iId:
-		case SUBITEMS::iOp:
-		case SUBITEMS::iIp:
-		case SUBITEMS::iScore:
+		case Subitems::NUMBER:
+		case Subitems::NAME:
+		case Subitems::BUILD:
+		case Subitems::ID:
+		case Subitems::OP:
+		case Subitems::IP:
+		case Subitems::SCORE:
 			if (!gSettings.bColorPlayers)
 			{
 				lplvcd->clrTextBk = Colors::dwWhite;
-				return CDRF_NEWFONT;
 			}
 			
-			switch (g_vPlayers.at(lplvcd->nmcd.lItemlParam).cColor)
-			{
-			case 'r':
-				lplvcd->clrTextBk = Colors::dwRed;
-				break;
-			case 'b':
-				lplvcd->clrTextBk = Colors::dwBlue;
-				break;
-			case 'p':
-				lplvcd->clrTextBk = Colors::dwPurple;
-				break;
-			case 'y':
-				lplvcd->clrTextBk = Colors::dwYellow;
-				break;
-			default:
-				lplvcd->clrTextBk = Colors::dwWhite;
-				break;
-			}
+			lplvcd->clrTextBk = ColorFromTeam(g_vPlayers.at(lplvcd->nmcd.lItemlParam).team);
 			return CDRF_NEWFONT;
 		
-		case SUBITEMS::iPing:			
+		case Subitems::PING:			
 			if (gSettings.bColorPings)
 			{
-				if (g_vPlayers.at(lplvcd->nmcd.lItemlParam).iPing == 0) //99,9% bot
+				if (g_vPlayers.at(lplvcd->nmcd.lItemlParam).ping == 0) //99,9% bot
 				{
 					lplvcd->clrTextBk = Colors::dwWhite;
 					return CDRF_NEWFONT; 
 				}
-				
-				float fRed;
-				float fGreen;
-				float fHigherQuotient;
-				
-				fRed = (float) g_vPlayers.at(lplvcd->nmcd.lItemlParam).iPing;
+
+				// TODO: Factor out				
+				float fRed = (float) g_vPlayers.at(lplvcd->nmcd.lItemlParam).ping;
 				fRed = (fRed > 255) ? 255 : fRed;
-				fGreen = 255 - fRed;
+				float fGreen = 255 - fRed;
 				
-				fHigherQuotient = fGreen / 255; //Change colors so the higher one is 255 --> middle is not 128, 128 (brown) but 255, 255 (yellow)
+				float fHigherQuotient = fGreen / 255; //Change colors so the higher one is 255 --> middle is not 128, 128 (brown) but 255, 255 (yellow)
 				fHigherQuotient = ((fRed/255) > fHigherQuotient) ? fRed/255 : fHigherQuotient;
 				
 				fRed *= (float)(1/fHigherQuotient);
 				fGreen *= (float)(1/fHigherQuotient);
 				
 				lplvcd->clrTextBk = RGB((int)fRed, (int)fGreen, 0);
-				return CDRF_NEWFONT;
 			}
 			else if (gSettings.bColorPlayers)
-			{				
-				switch (g_vPlayers.at(lplvcd->nmcd.lItemlParam).cColor)
-				{
-				case 'r':
-					lplvcd->clrTextBk = Colors::dwRed;
-					break;
-				case 'b':
-					lplvcd->clrTextBk = Colors::dwBlue;
-					break;
-				case 'p':
-					lplvcd->clrTextBk = Colors::dwPurple;
-					break;
-				case 'y':
-					lplvcd->clrTextBk = Colors::dwYellow;
-					break;
-				default:
-					lplvcd->clrTextBk = Colors::dwWhite;
-					break;
-				}
-				return CDRF_NEWFONT;
+			{
+				lplvcd->clrTextBk = ColorFromTeam(g_vPlayers.at(lplvcd->nmcd.lItemlParam).team);
 			}
 			return CDRF_NEWFONT;
 			
@@ -592,22 +524,22 @@ int CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lPa
 {
 	switch(lParamSort)
 	{
-	case SUBITEMS::iNumber:
-		return g_vPlayers[lParam1].iNumber - g_vPlayers[lParam2].iNumber;
-	case SUBITEMS::iName:
-		return strcasecmp(g_vPlayers[lParam1].sName.c_str(), g_vPlayers[lParam2].sName.c_str());
-	case SUBITEMS::iBuild:
-		return g_vPlayers[lParam1].iBuild - g_vPlayers[lParam2].iBuild;
-	case SUBITEMS::iId:
-		return g_vPlayers[lParam1].iId - g_vPlayers[lParam2].iId;
-	case SUBITEMS::iOp:
-		return g_vPlayers[lParam1].iOp - g_vPlayers[lParam2].iOp;
-	case SUBITEMS::iIp:
-		return strcasecmp(g_vPlayers[lParam1].sIp.c_str(), g_vPlayers[lParam2].sIp.c_str());
-	case SUBITEMS::iPing:
-		return g_vPlayers[lParam1].iPing - g_vPlayers[lParam2].iPing;
-	case SUBITEMS::iScore:
-		return g_vPlayers[lParam1].iScore - g_vPlayers[lParam2].iScore;
+	case Subitems::NUMBER:
+		return g_vPlayers[lParam1].number - g_vPlayers[lParam2].number;
+	case Subitems::NAME:
+		return strcasecmp(g_vPlayers[lParam1].name.c_str(), g_vPlayers[lParam2].name.c_str());
+	case Subitems::BUILD:
+		return g_vPlayers[lParam1].build - g_vPlayers[lParam2].build;
+	case Subitems::ID:
+		return g_vPlayers[lParam1].id - g_vPlayers[lParam2].id;
+	case Subitems::OP:
+		return g_vPlayers[lParam1].op - g_vPlayers[lParam2].op;
+	case Subitems::IP:
+		return strcasecmp(g_vPlayers[lParam1].ip.c_str(), g_vPlayers[lParam2].ip.c_str());
+	case Subitems::PING:
+		return g_vPlayers[lParam1].ping - g_vPlayers[lParam2].ping;
+	case Subitems::SCORE:
+		return g_vPlayers[lParam1].score - g_vPlayers[lParam2].score;
 	}
 	return 0;
 }
@@ -712,14 +644,14 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 		lvc.fmt = LVCFMT_RIGHT;
 		switch (i)
 		{
-			case SUBITEMS::iNumber: strcpy(szText, "Num\0");   break;
-			case SUBITEMS::iName:   strcpy(szText, "Name\0");  lvc.fmt = LVCFMT_LEFT; break;
-			case SUBITEMS::iBuild:  strcpy(szText, "Build\0"); break;
-			case SUBITEMS::iId:     strcpy(szText, "ID\0");    break;
-			case SUBITEMS::iOp:     strcpy(szText, "OP\0");    break;
-			case SUBITEMS::iIp:     strcpy(szText, "IP\0");    lvc.fmt = LVCFMT_LEFT; break;
-			case SUBITEMS::iPing:   strcpy(szText, "Ping\0");  break;
-			case SUBITEMS::iScore:  strcpy(szText, "Score\0"); break;
+			case Subitems::NUMBER: strcpy(szText, "Num\0");   break;
+			case Subitems::NAME:   strcpy(szText, "Name\0");  lvc.fmt = LVCFMT_LEFT; break;
+			case Subitems::BUILD:  strcpy(szText, "Build\0"); break;
+			case Subitems::ID:     strcpy(szText, "ID\0");    break;
+			case Subitems::OP:     strcpy(szText, "OP\0");    break;
+			case Subitems::IP:     strcpy(szText, "IP\0");    lvc.fmt = LVCFMT_LEFT; break;
+			case Subitems::PING:   strcpy(szText, "Ping\0");  break;
+			case Subitems::SCORE:  strcpy(szText, "Score\0"); break;
 		}
 		ListView_InsertColumn(gWindows.hListPlayers, i, &lvc);
 	}
@@ -739,14 +671,9 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	else
 		MainWindowWriteConsole("!!! Unexpected error when loading the configuration file: " + std::to_string(retVal) + " !!!");
 	
-	int * piKey;
-	HANDLE hThread;
-	
-	piKey = new int; //will be deleted as first operation in thread
-	*piKey = iGetFirstUnusedMapIntKey(g_mRefreshThreads);
-	
-	g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
-	hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
+	size_t key = GetFirstUnusedMapKey(g_mRefreshThreads);
+	g_mRefreshThreads.emplace(key, CreateEvent(NULL, TRUE, FALSE, NULL));
+	HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, (LPVOID)key, 0, NULL);
 	if (hThread == NULL) {
 		MessageBox(NULL, "Error while starting the refresh thread", "Error", MB_OK | MB_ICONERROR);
 		return false;
@@ -760,279 +687,164 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 
 void OnMainWindowForcejoin(void)
 {
-	auto iSelectedRow = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
-	if (iSelectedRow == -1)
-	{
-		MainWindowWriteConsole("Please select a player first.");
+	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
+	if (!server || !player) {
 		return;
 	}
-
-	std::string sOldName = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iName);
-	std::string sOldNumber = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iNumber);
 
 	auto iSelectedColor = DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_FORCEJOIN), gWindows.hWinMain, (DLGPROC) ForcejoinDlgProc);
 	if (iSelectedColor == -1)
 		return;
-	
-	int * piKey;
-	
-	SignalAllThreads(&g_mRefreshThreads);
-	
-	piKey = new int; //will be deleted as first operation in thread
-	*piKey = iGetFirstUnusedMapIntKey(g_mRefreshThreads);
-	
-	g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
-	MainWindowRefreshThread(piKey);
-	
-	for (unsigned int i = 0; i < g_vPlayers.size(); i++)
-	{
-		if (atoi(sOldNumber.c_str()) == g_vPlayers[i].iNumber)
-		{
-            if (sOldName == g_vPlayers[i].sName)
-			{
-				auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-					if (selectedServerIndex == CB_ERR) return;
 
-				auto& selectedServer = g_vSavedServers[selectedServerIndex];
+	MainWindowLogExceptionsToConsole([&]() {
+		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
+		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
+			return updated_player.number == player->number && updated_player.name == player->name; });
 
-				std::string sMsgBuffer = "sv forcejoin " + std::to_string(g_vPlayers[i].iNumber) + " " + (char) iSelectedColor;
-				std::string sAnswer;
-				iSelectedColor = iSendMessageToServer(selectedServer.sIp, selectedServer.iPort,
-									sMsgBuffer, &sAnswer,
-									selectedServer.sRconPassword,
-									gSettings.fTimeoutSecs);
-
-				if (iSelectedColor > 0)
-				{
-					MainWindowWriteConsole("Player was force-joined successfully.");
-					return;
-				}
-				else
-				{
-					MainWindowWriteConsole("Force-joining failed.");
-					return;
-				}
-			}
+		if (matching_updated_player_it == updated_players.end()) {
+			MainWindowWriteConsole("It seems like the player disconnected. They were not forcejoined.");
+			return;
 		}
-	}
-	MainWindowWriteConsole("It seems like the player disconnected. They were not forcejoined.");
-	MainWindowWriteConsole("The player list was reloaded.");
+
+		const std::string message = "sv forcejoin " + std::to_string(player->number) + " " + (char)iSelectedColor;
+		pb2lib::send_rcon(server->address, server->rcon_password, message, gSettings.fTimeoutSecs);
+		MainWindowWriteConsole("Player was force-joined successfully.");
+	});
 }
 
-int OnMainWindowSendRcon(void) //according to msdn functions used for threads should return sth.
+void OnMainWindowSendRcon(void)
 {
-	if (g_vSavedServers.size() == 0)
-	{
-		MainWindowWriteConsole("There are no servers in your server list.");
-		return 0;
+	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	if (!server) {
+		return;
 	}
-	std::string sAnswer;
-	int iBufferSize = GetWindowTextLength(gWindows.hComboRcon) + 1;
-	std::vector<char> commandBuffer(iBufferSize);
-	GetWindowText(gWindows.hComboRcon, commandBuffer.data(), iBufferSize);
 
-	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-	if (selectedServerIndex == CB_ERR)
-	{
-		return 0;
-	}
-	auto& selectedServer = g_vSavedServers[selectedServerIndex];
-	
-	//send the content of gWindows.hComboRcon to the server and receive the answer
-	if (iSendMessageToServer(selectedServer.sIp, selectedServer.iPort, commandBuffer.data(), &sAnswer, selectedServer.sRconPassword, gSettings.fTimeoutSecs) > 0)
-	{
-		MainWindowWriteConsole("Got answer from Server:\r\n" + sAnswer); //print the answer to the console
-	}
-	else
-	{
-		MainWindowWriteConsole("Server did not answer.");
-	}
-	
-	return 1;
+	int buffer_size = GetWindowTextLength(gWindows.hComboRcon) + 1;
+	std::vector<char> command_buffer(buffer_size);
+	GetWindowText(gWindows.hComboRcon, command_buffer.data(), buffer_size);
+
+	MainWindowLogExceptionsToConsole([&]() {
+		std::string answer = pb2lib::send_rcon(server->address, server->rcon_password, command_buffer.data(), gSettings.fTimeoutSecs);
+		MainWindowWriteConsole("Got answer from Server:\r\n" + answer);
+	});
+
+	return;
 }
 
 void OnMainWindowJoinServer(void)
 {
-	if (g_vSavedServers.size() == 0)
-	{
-		MainWindowWriteConsole("There are no servers in your server list.");
+	const auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	if (!server) {
 		return;
 	}
 
-	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-	if (selectedServerIndex == CB_ERR)
-		return;
-
-	std::string sArgs = "+connect "
-		+ g_vSavedServers.at(selectedServerIndex).sIp
-		+ ":"
-		+ std::to_string(g_vSavedServers.at(selectedServerIndex).iPort);
-
-	std::optional<std::string> pb2Path = GetPb2InstallPath();
-	if (!pb2Path) {
+	const std::optional<std::string> pb2_path = GetPb2InstallPath();
+	if (!pb2_path) {
 		MainWindowWriteConsole("Could not find the path of your DP:PB2 install directory in the registry.");
 		return;
 	}
 
-	std::string pb2Executable = pb2Path.value() + "\\paintball2.exe";
-	auto ret = (INT_PTR) ShellExecute(0, "open", pb2Executable.c_str(), sArgs.c_str(), 0, 1); //start it
-	if (ret <= 32)
-	{
-		MainWindowWriteConsole("Error while starting:\r\n" + pb2Executable + "\r\nShellExecute returned: " + std::to_string(ret));
+	const std::string args = "+connect " + server->address.ip + ":" + std::to_string(server->address.port);
+	const std::string pb2_executable = pb2_path.value() + "\\paintball2.exe";
+
+	auto ret = (INT_PTR) ShellExecute(0, "open", pb2_executable.c_str(), args.c_str(), 0, 1); //start it
+	if (ret <= 32) {
+		MainWindowWriteConsole("Error while starting:\r\n" + pb2_executable + "\r\nShellExecute returned: " + std::to_string(ret));
 	}
 }
 
 void OnMainWindowOpenWhois(void)
 {
-	auto iSelectedRow = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
-	if (iSelectedRow == -1)
-	{
-		MainWindowWriteConsole("Please select a player first.");
+	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
+	if (!player) {
 		return;
 	}
 
-	std::string sPlayerIp = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iIp);
-
-	std::string sUrl = "https://www.utrace.me/?query=" + sPlayerIp;
+	std::string sUrl = "https://www.utrace.me/?query=" + player->ip;
 	ShellExecute(0, "open", sUrl.c_str(), 0, 0, 1);
 }
 
 void OnMainWindowOpenDPLogin(void)
 {
-	auto iSelectedRow = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
-	if (iSelectedRow == -1)
-	{
-		MainWindowWriteConsole("Please select a player first.");
+	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
+	if (!player) {
 		return;
 	}
 
-	std::string sPlayerId = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iId);
-	std::string sPlayerName = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iName);
-
-	std::string sUrl;
-	if (sPlayerId == "0")
-	{
-		sUrl = "http://dplogin.com/index.php?action=displaymembers&search=" + sPlayerName;
-	}
-	else
-	{
-		sUrl = "http://dplogin.com/index.php?action=viewmember&playerid=" + sPlayerId;
+	std::string url = "http://dplogin.com/index.php?action=viewmember&playerid=" + std::to_string(player->id);
+	if (player->id == 0) {
+		url = "http://dplogin.com/index.php?action=displaymembers&search=" + player->name;
 	}
 
-	ShellExecute(0, "open", sUrl.c_str(), 0, 0, 1);
+	ShellExecute(0, "open", url.c_str(), 0, 0, 1);
 }
 
 void OnMainWindowKickPlayer(void)
 {
-	auto iSelectedRow = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
-
-	if (iSelectedRow == -1)
-	{
-		MainWindowWriteConsole("Please select a player first.");
+	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
+	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	if (!player || !server) {
 		return;
 	}
 
-	std::string sOldName = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iName);
-	std::string sOldNumber = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iNumber);
+	// TODO: Duplicated with OnMainWindowForcejoin -- factor out a function that
+	// 1. gets the currently selected player
+	// 2. reloads the players
+	// 3. checks if the player is still connected, and if they are
+	// 4. returns the player (otherwise some kind of null?)
+	// NOTE: This doesn't actually need to refresh the main window, we could just get the current players and match without any GUI interaction
+	// probably a better idea? User didn't want the reload, might lose data -> Its just a hidden check -> no UI modifications
+	// Although, if we get a mismatch, we might want to have an option that automatically triggers a UI reload in that case
 
-	int * piKey;
-	
-	SignalAllThreads(&g_mRefreshThreads);
-	
-	piKey = new int; //will be deleted as first operation in thread
-	*piKey = iGetFirstUnusedMapIntKey(g_mRefreshThreads);
-	
-	g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
-	MainWindowRefreshThread(piKey);
-			
-	for (unsigned int i = 0; i < g_vPlayers.size(); i++)
-	{		
-		if (atoi(sOldNumber.c_str()) == g_vPlayers[i].iNumber)
-		{
-            if (sOldName == g_vPlayers[i].sName)
-			{
-				auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-				if (selectedServerIndex == CB_ERR) return;
-				std::string sMsg = "kick " + std::to_string(g_vPlayers[i].iNumber);
-				std::string sAnswer;
-					
-				int iRetVal = iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort,
-									sMsg, &sAnswer,
-									g_vSavedServers[selectedServerIndex].sRconPassword,
-									gSettings.fTimeoutSecs);
+	MainWindowLogExceptionsToConsole([&]() {
+		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
+		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
+			return updated_player.number == player->number && updated_player.name == player->name; });
 
-				if (iRetVal > 0)
-				{
-					MainWindowWriteConsole("Player was kicked successfully.");
-					MainWindowWriteConsole("The server answered: " + sAnswer);
-					return;
-				}
-				else
-				{
-					MainWindowWriteConsole("Kicking failed.");
-					return;
-				}
-			}
-			else
-				MainWindowWriteConsole("It seems like the player changed his name or another player"
-							"joined his slot. The player was not kicked.");
-				MainWindowWriteConsole("The player list was reloaded.");
+		if (matching_updated_player_it == updated_players.end()) {
+			MainWindowWriteConsole("It seems like the player disconnected. They were not kicked.");
 			return;
 		}
-	}
-	MainWindowWriteConsole("It seems like the player disconnected. He was not kicked.");
-	MainWindowWriteConsole("The player list was reloaded.");
+
+		const std::string message = "kick " + std::to_string(player->number);
+		pb2lib::send_rcon(server->address, server->rcon_password, message, gSettings.fTimeoutSecs);
+		MainWindowWriteConsole("Player was kicked successfully.");
+	});
 }
 
 void OnMainWindowBanIP(void)
 {
-	auto iSelectedRow = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
-	if (iSelectedRow == -1)
-	{
-		MainWindowWriteConsole("Please select a player first.");
+	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
+	if (!server || !player) {
 		return;
 	}
 
-	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-	if (selectedServerIndex == CB_ERR)
-		return;
+	// TODO: Maybe instead just craft the command and act as if user pressed the send_rcon button?
 
-	std::string sIp = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iIp);
-	std::string sMsg = "sv addip " + sIp;
+	std::string command = "sv addip " + player->ip;
 
-	std::string sAnswer;
-	int iRetVal = iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg, &sAnswer,
-						g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
-	
-	if (iRetVal > 0) {
-		MainWindowWriteConsole("The IP " + sIp + " was successfully added to servers ban list.");
-	}
-	else {
-		MainWindowWriteConsole("An error occurred. The IP was not banned.");
-	}
+	MainWindowLogExceptionsToConsole([&]() {
+		pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
+		MainWindowWriteConsole("The IP " + player->ip + " was added to the server's ban list.");
+	});
 }
 
 void OnMainWindowBanID(void)
 {
-	auto iSelectedRow = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1,LVNI_SELECTED);
-
-	if (iSelectedRow == -1)
-	{
-		MainWindowWriteConsole("Please select a player first.");
+	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
+	if (!player) {
 		return;
 	}
 
-	std::string sPlayerId = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iId);
-	if (sPlayerId == "0")
-	{
-		std::string sPlayerName = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedRow), SUBITEMS::iName);
-		g_vBannedPlayers.emplace_back(Ban::Type::NAME, sPlayerName);
-		MainWindowWriteConsole("Name " + std::string(sPlayerName) + " was banned");
+	if (player->id == 0) {
+		g_vBannedPlayers.emplace_back(Ban::Type::NAME, player->name);
+		MainWindowWriteConsole("Name " + player->name + " was banned");
 	}
-	else
-	{
-		g_vBannedPlayers.emplace_back(Ban::Type::ID, sPlayerId);
-		MainWindowWriteConsole("ID " + std::string(sPlayerId) + " was banned");
+	else {
+		g_vBannedPlayers.emplace_back(Ban::Type::ID, std::to_string(player->id));
+		MainWindowWriteConsole("ID " + std::to_string(player->id) + " was banned");
 	}
 }
 
@@ -1066,8 +878,6 @@ void OnMainWindowDestroy(HWND hwnd)
 		TerminateThread(g_hSendRconThread, 0);
 		CloseHandle(g_hSendRconThread);
 	}
-	
-	ShutdownWinsock();
 
 	DeleteObject(g_hConsoleBackgroundBrush);
 	DeleteObject(g_hFont);
@@ -1098,18 +908,13 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			}
 			if (hwndCtl == gWindows.hButtonReload)
 			{
-				int * piKey;
-				HANDLE hThread;
 				EnumWindows(MainWindowEnumChildProc, 0); //Send reload message to all child windows
 				
 				SignalAllThreads(&g_mRefreshThreads);
 				
-				// TODO: Happens multiple times -- pass ints directly without heap allocation
-				piKey = new int; //will be deleted as first operation in thread
-				*piKey = iGetFirstUnusedMapIntKey(g_mRefreshThreads);
-				
-				g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
-				hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
+				size_t key = GetFirstUnusedMapKey(g_mRefreshThreads);
+				g_mRefreshThreads.emplace(key, CreateEvent(NULL, TRUE, FALSE, NULL));
+				HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, (LPVOID)key, 0, NULL);
 				CloseHandle(hThread);
 			}
 			if (hwndCtl == gWindows.hButtonKick) OnMainWindowKickPlayer();
@@ -1137,17 +942,12 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			
 			else if (hwndCtl == gWindows.hComboServer)
 			{
-				int * piKey;
-				HANDLE hThread;
 				EnumWindows(MainWindowEnumChildProc, 0); //Send reload message to all child windows
-				
 				SignalAllThreads(&g_mRefreshThreads);
 				
-				piKey = new int; //will be deleted as first operation in thread
-				*piKey = iGetFirstUnusedMapIntKey(g_mRefreshThreads);
-				
-				g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
-				hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
+				size_t key = GetFirstUnusedMapKey(g_mRefreshThreads);
+				g_mRefreshThreads.emplace(key, CreateEvent(NULL, TRUE, FALSE, NULL));
+				HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, (LPVOID)key, 0, NULL);
 				CloseHandle(hThread);
 			}
 			break;
@@ -1242,15 +1042,15 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
 {
-    if (nmh->hwndFrom == gWindows.hListPlayers)
-	{
-		switch (nmh->code)
-		{
+    if (nmh->hwndFrom == gWindows.hListPlayers) {
+		auto* player = MainWindowGetSelectedPlayerOrNull();
+		switch (nmh->code) {
 			case NM_CLICK:
 			{
-				auto iSelectedItem = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
-				std::string sPlayerId = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedItem), SUBITEMS::iId);
-				if (sPlayerId == "0")
+				if (!player) {
+					break;
+				}
+				if (player->id == 0)
 					SetWindowText(gWindows.hButtonBanID, "Ban Name");
 				else
 					SetWindowText(gWindows.hButtonBanID, "Ban ID");
@@ -1267,37 +1067,17 @@ int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
 			case LVN_COLUMNCLICK:
 			{
 				NMLISTVIEW* pNmListview = (NMLISTVIEW*)nmh;
-				ListView_SortItems (gWindows.hListPlayers, OnMainWindowListViewSort, pNmListview->iSubItem);
+				ListView_SortItems(gWindows.hListPlayers, OnMainWindowListViewSort, pNmListview->iSubItem);
 				FORWARD_WM_NOTIFY(hwnd, id, nmh, DefWindowProc);
 				break;
 			}
 			
 			case NM_RCLICK:
 			{
-				auto iSelectedItem = SendMessage(gWindows.hListPlayers, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
-				if (iSelectedItem == -1)
-					break;
-				
-				std::string sIp = ListView_CustomGetItemText(gWindows.hListPlayers, static_cast<int>(iSelectedItem), SUBITEMS::iIp);
-				
-				HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, sIp.size() + 1);
-				if (hMem == NULL) {
-					return 0;
-				}
-
-				LPVOID pLocked = GlobalLock(hMem);
-				if (pLocked == NULL) {
-					return 0;
-				}
-
-				memcpy(pLocked, sIp.c_str(), sIp.size() + 1);
-				GlobalUnlock(hMem);
-				OpenClipboard(gWindows.hWinMain);
-				EmptyClipboard();
-				SetClipboardData(CF_TEXT, hMem);
-				CloseClipboard();
-				
-				MainWindowWriteConsole ("IP was copied to clipboard.");
+				if (player) {
+					SetClipboardContent(player->ip);
+					MainWindowWriteConsole("IP was copied to clipboard.");
+				}			
 				break;
 			}
 		
@@ -1371,14 +1151,14 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
 
 #pragma warning(push)
 #pragma warning(disable:26451)  // We're not computing large numbers here
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iNumber, 17*iMW);                   //num
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iName,   cx - 218*iMW);             //name
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iBuild,  18*iMW);                   //build
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iId,     27*iMW);                   //ID
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iOp,     15*iMW);                   //OP
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iIp,     47*iMW);                   //IP
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iPing,   17*iMW);                   //Ping
-	ListView_SetColumnWidth(gWindows.hListPlayers, SUBITEMS::iScore,  20*iMW);                   //Score
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NUMBER, 17*iMW);                   //num
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME,   cx - 218*iMW);             //name
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::BUILD,  18*iMW);                   //build
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::ID,     27*iMW);                   //ID
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::OP,     15*iMW);                   //OP
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::IP,     47*iMW);                   //IP
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::PING,   17*iMW);                   //Ping
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::SCORE,  20*iMW);                   //Score
 	ListView_SetColumnWidth(gWindows.hListPlayers, 7,                 LVSCW_AUTOSIZE_USEHEADER);
 #pragma warning(pop)
 
@@ -1690,58 +1470,62 @@ LRESULT CALLBACK ProgramSettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, 
 
 void LoadRotationToListbox(HWND hListBox)
 {
-	SendMessage(hListBox, LB_RESETCONTENT, 0, 0);
-	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-	if (selectedServerIndex == CB_ERR)
+	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	if (!server) {
 		return;
-
-	std::string sAnswer;
-	
-	iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, "sv maplist", &sAnswer,
-							g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
-
-	std::string::const_iterator start = sAnswer.begin();
-	std::string::const_iterator end = sAnswer.end();
-	std::regex rx (R"(^\d+ (.*?)$)");
-	std::smatch MatchResults;
-	while (std::regex_search(start, end, MatchResults, rx))
-	{
-		std::string sMap (MatchResults[1]);
-		SendMessage(hListBox, LB_ADDSTRING, 0, (LPARAM) sMap.c_str());
-		start = MatchResults[0].second;
 	}
+	
+	MainWindowLogExceptionsToConsole([&]() {
+		std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv maplist", gSettings.fTimeoutSecs);
+
+		SendMessage(hListBox, LB_RESETCONTENT, 0, 0);
+		std::string::const_iterator start = response.begin();
+		std::string::const_iterator end = response.end();
+		std::regex rx(R"(^\d+ (.*?)$)");
+		std::smatch matches;
+		while (std::regex_search(start, end, matches, rx))
+		{
+			start = matches[0].second;
+			std::string map = matches[1];
+			ListBox_AddString(hListBox, map.c_str());
+		}
+	});
 }
 
 BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 {
-	std::string sAnswer;
-	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
+	OnManageRotationReloadContent(hwnd);
+	return TRUE;
+}
 
+
+void OnManageRotationReloadContent(HWND hwnd)
+{
+	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	if (!server) {
+		return;
+	}
+
+	// TODO: Might log two times -- probably ok?
 	LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
 
-	if (selectedServerIndex == CB_ERR)
-		return TRUE;
-
-	iVarContentFromName(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, g_vSavedServers[selectedServerIndex].sRconPassword,
-						"rot_file", &sAnswer, gSettings.fTimeoutSecs);
-
-	SetDlgItemText(hwnd, IDC_MROT_EDITFILE, sAnswer.c_str());
+	MainWindowLogExceptionsToConsole([&]() {
+		std::string answer = pb2lib::get_cvar(server->address, server->rcon_password, "rot_file", gSettings.fTimeoutSecs);
+		SetDlgItemText(hwnd, IDC_MROT_EDITFILE, answer.c_str());
+	});
 
 	std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
 	if (!pb2InstallPath)
-		return TRUE;
+		return;
 
 	std::string sMapshot = pb2InstallPath.value() + "\\pball\\pics\\mapshots\\-no-preview-.jpg";
-	std::wstring sWideMapshot (sMapshot.begin(), sMapshot.end());
-	
+	std::wstring sWideMapshot(sMapshot.begin(), sMapshot.end());
+
 	g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
 
 	RECT rc;
 	GetClientRect(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &rc);
-	g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(),
-								rc.right - rc.left, rc.bottom - rc.top);
-
-	return TRUE;
+	g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(), rc.right - rc.left, rc.bottom - rc.top);
 }
 
 
@@ -1775,18 +1559,20 @@ void OnManageRotationClose(HWND hwnd)
 void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 {
 	auto executeSubcommandOnSelectedServer = [&](std::string subcommand) {
-		auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-		if (selectedServerIndex == CB_ERR)
+		auto* server = MainWindowGetSelectedServerOrLoggedNull();
+		if (!server) {
 			return std::string();
+		}
 
-		std::string sMsg{ "sv rotation " };
-		sMsg += subcommand;
+		std::string command = "sv rotation " + subcommand;
+		std::string answer;
 
-		std::string sAnswer;
-		iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg, &sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
+		MainWindowLogExceptionsToConsole([&]() {
+			answer = pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
+		});
+
 		LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
-
-		return sAnswer;
+		return answer;
 	};
 
 	auto executeMapSubcommandOnSelectedServer = [&](std::string mapSubcommand) {
@@ -1895,21 +1681,6 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	}
 }
 
-void OnManageRotationReloadContent(HWND hwnd)
-{
-	LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
-
-	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-	if (selectedServerIndex == CB_ERR)
-		return;
-
-	std::string sRotationFile;
-	iVarContentFromName(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, g_vSavedServers[selectedServerIndex].sRconPassword, "rot_file", &sRotationFile, gSettings.fTimeoutSecs);
-
-	SetDlgItemText(hwnd, IDC_MROT_EDITFILE, sRotationFile.c_str());
-	return;
-}
-
 LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
     switch (Msg)
@@ -1989,7 +1760,7 @@ LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPA
 
 void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has to delete its argument
 {
-	int iKey = static_cast<LoadServersArgs *>(lpArgumentStruct)->iKey;
+	size_t uid = static_cast<LoadServersArgs *>(lpArgumentStruct)->uid;
 	HWND hwndListbox = static_cast<LoadServersArgs *>(lpArgumentStruct)->hwnd;
 	delete static_cast<LoadServersArgs *>(lpArgumentStruct);
 	
@@ -1999,24 +1770,30 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 	
 	std::string sServerlist = GetHttpResponse(gSettings.sServerlistAddress);
 
-	std::smatch MatchResults;
+	std::smatch matches;
 	std::regex rx (R"((\d+\.\d+\.\d+\.\d+):(\d{2,5}))");
-
 	std::string::const_iterator start = sServerlist.begin();
 	std::string::const_iterator end   = sServerlist.end();
 
-	while (std::regex_search(start, end, MatchResults, rx)) //add all servers who answer to the listbox
+	while (std::regex_search(start, end, matches, rx)) //add all servers that answer to the listbox
 	{
-		std::string sIp(MatchResults[1]);
-		std::string sPort(MatchResults[2]);
-		start = MatchResults[0].second;
+		start = matches[0].second;
 
-		Server tempserver(sIp, std::stoi(sPort));
-		tempserver.retrieveAndSetHostname(gSettings.fAllServersTimeoutSecs);
+		pb2lib::Server server;
+		server.address.ip = matches[1];
+		server.address.port = std::stoi(matches[2]);
+		// TODO: Asynchronous
+		auto hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fAllServersTimeoutSecs);
+		if (hostname) {
+			server.hostname = hostname.value();
+			g_vAllServers.push_back(server);
+			auto index = SendMessage(hwndListbox, LB_ADDSTRING, 0, (LPARAM)server.hostname.c_str());
+			SendMessage(hwndListbox, LB_SETITEMDATA, index, g_vAllServers.size() - 1);
+		}
 		
 		try
 		{
-			if (WaitForSingleObject(g_mLoadServersThreads.at(iKey), 0) == WAIT_OBJECT_0)
+			if (WaitForSingleObject(g_mLoadServersThreads.at(uid), 0) == WAIT_OBJECT_0)
 			{
 				bExit = true;
 				break;
@@ -2027,17 +1804,10 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 			// todo
 			return;
 		}
-		
-		if (tempserver.sHostname.compare("COULD NOT GET HOSTNAME") != 0)
-		{
-			g_vAllServers.push_back(tempserver);
-			auto index = SendMessage(hwndListbox, LB_ADDSTRING, 0, (LPARAM)tempserver.sHostname.c_str());
-			SendMessage(hwndListbox, LB_SETITEMDATA, index, g_vAllServers.size() - 1);
-		}
 	}
 
-	CloseHandle(g_mLoadServersThreads.at(iKey)); //Delete the Event
-	g_mLoadServersThreads.erase(g_mLoadServersThreads.find(iKey));
+	CloseHandle(g_mLoadServersThreads.at(uid)); //Delete the Event
+	g_mLoadServersThreads.erase(g_mLoadServersThreads.find(uid));
 	if (!bExit) MainWindowWriteConsole("Done.");
 }
 
@@ -2051,7 +1821,7 @@ void OnManageServersDestroy(HWND hwnd)
 	SendMessage(gWindows.hComboServer, CB_RESETCONTENT, 0, 0);
 	for (unsigned int i = 0; i < g_vSavedServers.size(); i++)
 	{
-		auto index = SendMessage(gWindows.hComboServer, CB_ADDSTRING, 0, (LPARAM) g_vSavedServers[i].sHostname.c_str());
+		auto index = SendMessage(gWindows.hComboServer, CB_ADDSTRING, 0, (LPARAM) g_vSavedServers[i].hostname.c_str());
 		SendMessage(gWindows.hComboServer, CB_SETITEMDATA, index, i);
 	}
 	SendMessage(gWindows.hComboServer, CB_SETCURSEL, 0, 0);
@@ -2065,16 +1835,16 @@ void OnManageServersDestroy(HWND hwnd)
 BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
 	for(unsigned int i = 0; i < g_vSavedServers.size(); i++) { //Add servers to the lists
-		auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM)g_vSavedServers[i].sHostname.c_str());
+		auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM)g_vSavedServers[i].hostname.c_str());
 		SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, i);
 	}
 	
 	LoadServersArgs * lpArgumentsStruct = new LoadServersArgs;
 	
-	lpArgumentsStruct->iKey = iGetFirstUnusedMapIntKey(g_mLoadServersThreads);
+	lpArgumentsStruct->uid = GetFirstUnusedMapKey(g_mLoadServersThreads);
 	lpArgumentsStruct->hwnd = GetDlgItem(hwnd, IDC_DM_LISTLEFT);
 	
-	g_mLoadServersThreads.insert(std::pair<int, HANDLE>(lpArgumentsStruct->iKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
+	g_mLoadServersThreads.emplace(lpArgumentsStruct->uid, CreateEvent(NULL, TRUE, FALSE, NULL));
 	
 	HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) &LoadServersToListbox, lpArgumentsStruct, 0, NULL);
 	if (hThread == NULL) {
@@ -2100,38 +1870,38 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		}
 		case IDC_DM_BUTTONADD:
 		{
-			int iBufferSize = 16; //"255.255.255.255\0" at least
+			int iBufferSize = 16; //"255.255.255.255\0
 			int iRconPWLength = GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPW)) + 1;
 			iBufferSize = (iRconPWLength > iBufferSize) ? iRconPWLength : iBufferSize;
 			std::vector<char> buffer(iBufferSize);
 
-			Server tempserver;
+			pb2lib::Server server;
 
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
-			tempserver.iPort = atoi(buffer.data());
+			server.address.port = atoi(buffer.data());
 
 			DWORD dwIP = 0;
 			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_GETADDRESS, 0, (LPARAM) &dwIP);
-			tempserver.sIp = std::to_string(FIRST_IPADDRESS(dwIP)) + "." +
+			server.address.ip = std::to_string(FIRST_IPADDRESS(dwIP)) + "." +
 							 std::to_string(SECOND_IPADDRESS(dwIP)) + "." +
 							 std::to_string(THIRD_IPADDRESS(dwIP)) + "." +
 							 std::to_string(FOURTH_IPADDRESS(dwIP));
 
+			// TODO: Deduplicate with initialization from config file.
+
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
-			tempserver.sRconPassword = buffer.data();
-			
-			tempserver.retrieveAndSetHostname(gSettings.fAllServersTimeoutSecs);
+			server.rcon_password = buffer.data();
+			server.hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fTimeoutSecs).value_or(unreachable_hostname);
 
-			g_vSavedServers.push_back(tempserver);
+			g_vSavedServers.push_back(server);
 
-			auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING,
-									 0, (LPARAM) tempserver.sHostname.c_str());
-			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA,
-						index, g_vSavedServers.size() - 1);
+			auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM) server.hostname.c_str());
+			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, g_vSavedServers.size() - 1);
 			return;
 		}
 		case IDC_DM_BUTTONREMOVE:
 		{
+			// TODO: Use helpers
 			//Get position of selected server in g_vSavedServers
 			auto iCurSel = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETCURSEL, 0, 0);
 			if (iCurSel == LB_ERR) return;
@@ -2139,10 +1909,12 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (iServerIndex == LB_ERR) return;
 			g_vSavedServers.erase(g_vSavedServers.begin() + iServerIndex);
 
+
+			// TODO: Remove instead of clear + rebuild -- or, at least, factor this out
 			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_RESETCONTENT, 0, 0); //Reload right listbox
 			for(unsigned int i = 0; i < g_vSavedServers.size(); i++) {
 				auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING,
-										 0, (LPARAM)g_vSavedServers[i].sHostname.c_str());
+										 0, (LPARAM)g_vSavedServers[i].hostname.c_str());
 				SendMessage (GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, i);
 			}
 			return;
@@ -2165,23 +1937,23 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			}
 
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
-			g_vSavedServers[iRet].iPort = atoi(buffer.data());
+			g_vSavedServers[iRet].address.port = atoi(buffer.data());
 
 			DWORD dwIP = 0;
 			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_GETADDRESS, 0, (LPARAM) &dwIP);
 			snprintf(buffer.data(), iBufferSize, "%lu.%lu.%lu.%lu", FIRST_IPADDRESS(dwIP), SECOND_IPADDRESS(dwIP),
 					THIRD_IPADDRESS(dwIP), FOURTH_IPADDRESS(dwIP));
-			g_vSavedServers[iRet].sIp = buffer.data();
+			g_vSavedServers[iRet].address.ip = buffer.data();
 
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, iBufferSize, (LPARAM)buffer.data());
-			g_vSavedServers[iRet].sRconPassword = buffer.data();
+			g_vSavedServers[iRet].rcon_password = buffer.data();
 
-			g_vSavedServers[iRet].retrieveAndSetHostname(gSettings.fAllServersTimeoutSecs);
+			g_vSavedServers[iRet].hostname = pb2lib::get_hostname_or_nullopt(g_vSavedServers[iRet].address, gSettings.fAllServersTimeoutSecs).value_or(unreachable_hostname);
 
 			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_RESETCONTENT, 0, 0); //reload right listbox
 			for(size_t i = 0; i < g_vSavedServers.size(); i++)
 			{
-				auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM)g_vSavedServers[i].sHostname.c_str());
+				auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM)g_vSavedServers[i].hostname.c_str());
 				SendMessage (GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, i);
 			}
 			
@@ -2198,7 +1970,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 						0);
 			if (selectedServerIndex == LB_ERR) return;
 
-			strcpy (szIpBuffer, g_vAllServers[selectedServerIndex].sIp.c_str());
+			strcpy (szIpBuffer, g_vAllServers[selectedServerIndex].address.ip.c_str());
 
 			BYTE b0, b1, b2, b3;
 			SplitIpAddressToBytes(szIpBuffer, &b0, &b1, &b2, &b3);
@@ -2206,7 +1978,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 #pragma warning (suppress : 26451)
 			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_SETTEXT,
-						0, (LPARAM) (std::to_string(g_vAllServers[selectedServerIndex].iPort)).c_str());
+						0, (LPARAM) (std::to_string(g_vAllServers[selectedServerIndex].address.port)).c_str());
 
 			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETCURSEL,  -1, 0);
 			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONREMOVE), FALSE);
@@ -2221,16 +1993,16 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (selectedSavedServerIndex == LB_ERR) return;
 
 			char szIpBuffer[16] = {'\0'};
-			strcpy (szIpBuffer, g_vSavedServers[selectedSavedServerIndex].sIp.c_str());
+			strcpy (szIpBuffer, g_vSavedServers[selectedSavedServerIndex].address.ip.c_str());
 			BYTE b0, b1, b2, b3;
 			SplitIpAddressToBytes(szIpBuffer, &b0, &b1, &b2, &b3);
 
 #pragma warning (suppress : 26451)
 			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_SETTEXT,
-						0, (LPARAM) (std::to_string(g_vSavedServers[selectedSavedServerIndex].iPort)).c_str());
+						0, (LPARAM) (std::to_string(g_vSavedServers[selectedSavedServerIndex].address.port)).c_str());
 			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_SETTEXT,
-						0, (LPARAM) g_vSavedServers[selectedSavedServerIndex].sRconPassword.c_str());
+						0, (LPARAM) g_vSavedServers[selectedSavedServerIndex].rcon_password.c_str());
 			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTLEFT), LB_SETCURSEL,  -1, 0);
 			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONREMOVE), TRUE);
 			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONSAVE), TRUE);
@@ -2491,26 +2263,26 @@ LRESULT CALLBACK ManageIDsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 
 void LoadBannedIPsToListbox(HWND hListBox)
 {
-	SendMessage(hListBox, LB_RESETCONTENT, 0, 0);
-	auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-	if (selectedServerIndex == CB_ERR)
+	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	if (!server) {
 		return;
-
-	std::string sAnswer;
-
-	iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, "sv listip", &sAnswer,
-							g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
-
-	std::string::const_iterator start = sAnswer.begin();
-	std::string::const_iterator end = sAnswer.end();
-	std::regex rx (R"(\s*\d+\.\s*\d+\.\s*\d+\.\s*\d+)");
-	std::smatch MatchResults;
-	while (std::regex_search(start, end, MatchResults, rx))
-	{
-		std::string sIp (MatchResults[0]);
-		SendMessage(hListBox, LB_ADDSTRING, 0, (LPARAM) sIp.c_str());
-		start = MatchResults[0].second;
 	}
+
+	MainWindowLogExceptionsToConsole([&]() {
+		std::string answer = pb2lib::send_rcon(server->address, server->rcon_password, "sv listip", gSettings.fTimeoutSecs);
+
+		ListBox_ResetContent(hListBox);
+		std::string::const_iterator start = answer.begin();
+		std::string::const_iterator end = answer.end();
+		std::regex rx(R"(\s*\d+\.\s*\d+\.\s*\d+\.\s*\d+)");
+		std::smatch matches;
+		while (std::regex_search(start, end, matches, rx))
+		{
+			start = matches[0].second;
+			std::string ip = matches[0];
+			ListBox_AddString(hListBox, ip.c_str());
+		}
+	});
 }
 
 BOOL OnManageIPsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
@@ -2527,59 +2299,40 @@ void OnManageIPsClose(HWND hwnd)
 
 void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 {
+	auto helper_run_rcon_command_with_current_ip = [&](std::string command) {
+		auto* server = MainWindowGetSelectedServerOrLoggedNull();
+		if (!server) {
+			return;
+		}
+
+		DWORD ip = 0;
+		SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_GETADDRESS, 0, (LPARAM)&ip);
+
+		command += std::to_string(FIRST_IPADDRESS(ip)) + "." + std::to_string(SECOND_IPADDRESS(ip))
+			+ "." + std::to_string(THIRD_IPADDRESS(ip)) + "." + std::to_string(FOURTH_IPADDRESS(ip));
+
+		MainWindowLogExceptionsToConsole([&]() {
+			pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
+		});
+
+		LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
+	};
 
 	switch(id)
 	{
 		case IDC_MIPS_BUTTONADD:
-		{
-			auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-			if (selectedServerIndex == CB_ERR)
-				return;
-	
-			DWORD dwIP = 0;
-			SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_GETADDRESS, 0, (LPARAM) &dwIP);
-			std::string sMsg ("sv addip ");
-			sMsg += std::to_string(FIRST_IPADDRESS(dwIP)) + "." + std::to_string(SECOND_IPADDRESS(dwIP))
-					+ "." + std::to_string(THIRD_IPADDRESS(dwIP)) + "." + std::to_string(FOURTH_IPADDRESS(dwIP));
-
-			std::string sAnswer;
-			iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg,
-									&sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
-
-			LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
-			return;
-		}
+			return helper_run_rcon_command_with_current_ip("sv addip ");
 	
 		case IDC_MIPS_BUTTONREMOVE:
-		{
-			auto selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-			if (selectedServerIndex == CB_ERR)
-				return;
-	
-			std::string sMsg ("sv removeip ");
-
-			DWORD dwIP = 0;
-			SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_GETADDRESS, 0, (LPARAM) &dwIP);
-			sMsg += std::to_string(FIRST_IPADDRESS(dwIP)) + "." + std::to_string(SECOND_IPADDRESS(dwIP))
-					+ "." + std::to_string(THIRD_IPADDRESS(dwIP)) + "." + std::to_string(FOURTH_IPADDRESS(dwIP));
-
-			std::string sAnswer;
-			iSendMessageToServer(g_vSavedServers[selectedServerIndex].sIp, g_vSavedServers[selectedServerIndex].iPort, sMsg,
-									&sAnswer, g_vSavedServers[selectedServerIndex].sRconPassword, gSettings.fTimeoutSecs);
-
-			LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
-			return;
-		}
+			return helper_run_rcon_command_with_current_ip("sv removeip ");
 	
 		case IDC_MIPS_BUTTONOK:
-		{
-			SendMessage(hwnd, WM_CLOSE, 0, 0); //Make sure to clear the handle so a new one is opened next time
+			SendMessage(hwnd, WM_CLOSE, 0, 0);
 			return;
-		}
 		
 		case IDC_MIPS_LIST:
 		{
-			if (codeNotify == LBN_SELCHANGE) // set content of ip control
+			if (codeNotify == LBN_SELCHANGE)
 			{
 				char szBuffer[16] = { 0 };
 				BYTE b0, b1, b2, b3;
@@ -2590,7 +2343,6 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 #pragma warning (suppress : 26451)
 				SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
 			}
-			return;
 		}
 	}
 }
@@ -2622,14 +2374,14 @@ LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 // Other functions                                                                                 |
 //{-------------------------------------------------------------------------------------------------
 
-std::string GetHttpResponse(std::string url)
+std::string GetHttpResponse(const std::string& url)
 {
 	const char* user_agent = ""; // TODO?
 	HINTERNET hInternet = InternetOpen(user_agent, INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 	HINTERNET hFile = InternetOpenUrl(hInternet, url.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
 
 	std::string response;
-	std::vector<char> buffer(MTU);
+	std::vector<char> buffer(1024*1024);
 	while(true)
 	{
 		DWORD bytes_read;
@@ -2644,6 +2396,27 @@ std::string GetHttpResponse(std::string url)
 	InternetCloseHandle(hInternet);
 
 	return response;
+}
+
+void SetClipboardContent(const std::string& content) {
+	// TODO: Does this leak?
+
+	HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, content.size() + 1);
+	if (hMem == NULL) {
+		return;
+	}
+
+	LPVOID pLocked = GlobalLock(hMem);
+	if (pLocked == NULL) {
+		return;
+	}
+
+	memcpy(pLocked, content.c_str(), content.size() + 1);
+	GlobalUnlock(hMem);
+	OpenClipboard(gWindows.hWinMain);
+	EmptyClipboard();
+	SetClipboardData(CF_TEXT, hMem);
+	CloseClipboard();
 }
 
 void Edit_ReduceLines(HWND hEdit, int iLines)
@@ -2720,24 +2493,6 @@ void ListView_SetImage(HWND hListview, std::string_view sImagePath)
 	}
 }
 
-std::string ListView_CustomGetItemText(HWND hListView, int iItemIndex, int iSubItem) {
-	std::vector<char> buffer(MAX_PATH / 2);
-
-	LVITEM LvItem = { 0 };
-	LvItem.iSubItem = iSubItem;
-	LvItem.pszText = buffer.data();
-
-	LRESULT iRet;
-	do {
-		buffer.resize(buffer.size() * 2);
-		LvItem.pszText = buffer.data();
-		LvItem.cchTextMax = static_cast<int>(buffer.size());
-		iRet = SendMessage(gWindows.hListPlayers, LVM_GETITEMTEXT, iItemIndex, (LPARAM)&LvItem);
-	} while (iRet >= static_cast<LRESULT>(buffer.size() - 1));
-
-	return std::string{ buffer.data() };
-}
-
 void StartServerbrowser(void)
 {
 	std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
@@ -2756,9 +2511,9 @@ void StartServerbrowser(void)
 
 void BanThreadFunction()  // function that's started as thread to regularly check servers for banned players / players with a too high ping and to kick them
 {
-	std::vector <Server> servers;
+	std::vector <pb2lib::Server> servers;
 	std::vector <Ban> bans;
-	std::vector <Player> players;
+	std::vector <pb2lib::Player> players;
 	std::string sMsgBuffer;
 	std::string sReturnBuffer;
 
@@ -2777,38 +2532,34 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 
         for (const auto& server : servers)
 		{
-            iPlayerStructVectorFromAddress(server.sIp, server.iPort, server.sRconPassword, &players, gSettings.fTimeoutSecs);
+			players = pb2lib::get_players(server.address, server.rcon_password, gSettings.fTimeoutSecs);
 			
             for (const auto& player : players)
 			{
-				if (gSettings.iMaxPingMsecs != 0 && player.iPing > gSettings.iMaxPingMsecs)
+				if (gSettings.iMaxPingMsecs != 0 && player.ping > gSettings.iMaxPingMsecs)
 				{
-					sMsgBuffer = "kick ";
-					sMsgBuffer += std::to_string(player.iNumber);
-						
-					iSendMessageToServer(server.sIp, server.iPort, sMsgBuffer, &sReturnBuffer,
-										server.sRconPassword, gSettings.fTimeoutSecs);
-					
-					MainWindowWriteConsole("Player " + player.sName + " on server " + server.sHostname + "had a too high ping.");
-					MainWindowWriteConsole("Server answered to kick message: " + sReturnBuffer);
+					MainWindowLogExceptionsToConsole([&]() {
+						std::string command = "kick " + std::to_string(player.number);
+						auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
+						MainWindowWriteConsole("Player " + player.name + " on server " + server.hostname + "had a too high ping and was kicked.");
+					});
+					continue;
 				}
 
-                for (auto& ban : bans)
-				{
-                    if ((ban.tType == Ban::Type::NAME && strcasecmp (player.sName.c_str(), ban.sText.c_str()) == 0)
-						|| (ban.tType == Ban::Type::ID && player.iId == std::stoi(ban.sText)))
-					{
-						sMsgBuffer = "kick ";
-						sMsgBuffer += std::to_string(player.iNumber);
-							
-						iSendMessageToServer(server.sIp, server.iPort,
-											sMsgBuffer, &sReturnBuffer,
-											server.sRconPassword, gSettings.fTimeoutSecs);
-						
-						MainWindowWriteConsole("Found banned player " + player.sName + " on server " + server.sHostname);
-						MainWindowWriteConsole("Server answered to kick message: " + sReturnBuffer);
-					}
+				auto ban_it = std::ranges::find_if(bans, [&](const Ban& ban) {
+					return (ban.tType == Ban::Type::NAME && strcasecmp(player.name.c_str(), ban.sText.c_str()) == 0)
+						|| (ban.tType == Ban::Type::ID && player.id == std::stoi(ban.sText));
+				});
+
+				if (ban_it == bans.end()) {
+					continue;
 				}
+
+				MainWindowLogExceptionsToConsole([&]() {
+					std::string command = "kick " + std::to_string(player.number);
+					auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
+					MainWindowWriteConsole("Found and kicked banned player " + player.name + " on server " + server.hostname);
+				});
 			}
 		}
 		MainWindowWriteConsole("Checked servers for banned players.");
@@ -2842,22 +2593,16 @@ void AutoReloadThreadFunction(void)
 		
 		if (g_iAutoReloadThreadTimeWaitedMsecs >= gSettings.iAutoReloadDelaySecs * 1000)
 		{
-			int * piKey;
-			HANDLE hThread;
-			
 			SignalAllThreads(&g_mRefreshThreads);
-			
-			piKey = new int; //will be deleted as first operation in thread
-			*piKey = iGetFirstUnusedMapIntKey(g_mRefreshThreads);
-			
+
 			// TODO: Maybe have one thread running all the time and just signal it with a flag/condition_variable/whatever
-			g_mRefreshThreads.insert(std::pair<int, HANDLE>(*piKey, CreateEvent(NULL, TRUE, FALSE, NULL)));
-			hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, piKey, 0, NULL);
+			size_t key = GetFirstUnusedMapKey(g_mRefreshThreads);
+			g_mRefreshThreads.emplace(key, CreateEvent(NULL, TRUE, FALSE, NULL));
+			HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainWindowRefreshThread, (LPVOID)key, 0, NULL);
 			if (hThread == NULL) {
 				MessageBox(NULL, "Failed to create thread to refresh main window", "Error", MB_OK | MB_ICONERROR);
 			}
-			else
-			{
+			else {
 				CloseHandle(hThread);
 			}
 		}
@@ -2952,15 +2697,18 @@ int LoadConfig() // loads the servers and settings from the config file
 		sprintf(szKeyBuffer, "%d", i);
 		GetPrivateProfileString("ip", szKeyBuffer, "0.0.0.0\0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
 		GetPrivateProfileString("port", szKeyBuffer, "00000\0", szPortBuffer, 6, path.c_str());
-		Server tempServer(szReadBuffer, atoi(szPortBuffer));
+		pb2lib::Server server;
+		server.address.ip = szReadBuffer;
+		server.address.port = atoi(szPortBuffer);
 
-		tempServer.retrieveAndSetHostname(gSettings.fTimeoutSecs);
+		// TODO: Run asynchronously
+		server.hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fTimeoutSecs).value_or(unreachable_hostname);
 
 		GetPrivateProfileString("pw", szKeyBuffer, "\0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
-		tempServer.sRconPassword = szReadBuffer;
+		server.rcon_password = szReadBuffer;
 
-		g_vSavedServers.push_back(tempServer);
-		auto index = SendMessage(gWindows.hComboServer, CB_ADDSTRING, 0, (LPARAM)tempServer.sHostname.c_str());
+		g_vSavedServers.push_back(server);
+		auto index = SendMessage(gWindows.hComboServer, CB_ADDSTRING, 0, (LPARAM)server.hostname.c_str());
 		SendMessage (gWindows.hComboServer, CB_SETITEMDATA, index, g_vSavedServers.size() - 1);
 	}
 	SendMessage(gWindows.hComboServer, CB_SETCURSEL, 0, 0);
@@ -3008,9 +2756,9 @@ void SaveConfig() // Saves all servers and settings in the config file
 	for (unsigned int i = 0; i< g_vSavedServers.size(); i++) //write servers to it
 	{
 		std::string sKeyBuffer = std::to_string(i);
-		std::string sPortBuffer = std::to_string(g_vSavedServers[i].iPort);
-		WritePrivateProfileString("ip", sKeyBuffer.c_str(), g_vSavedServers[i].sIp.c_str(), path.c_str());
-		WritePrivateProfileString("pw", sKeyBuffer.c_str(), g_vSavedServers[i].sRconPassword.c_str(), path.c_str());
+		std::string sPortBuffer = std::to_string(g_vSavedServers[i].address.port);
+		WritePrivateProfileString("ip", sKeyBuffer.c_str(), g_vSavedServers[i].address.ip.c_str(), path.c_str());
+		WritePrivateProfileString("pw", sKeyBuffer.c_str(), g_vSavedServers[i].rcon_password.c_str(), path.c_str());
 		WritePrivateProfileString("port", sKeyBuffer.c_str(), sPortBuffer.c_str(), path.c_str());
 	}
 
@@ -3054,12 +2802,12 @@ void SaveConfig() // Saves all servers and settings in the config file
 	}
 }
 
-int iGetFirstUnusedMapIntKey (const std::map<int, HANDLE>& m)
+size_t GetFirstUnusedMapKey (const std::map<size_t, HANDLE>& m)
 {	
-	for (int iKey = 0; iKey <= m.size() + 1; iKey++)
+	for (size_t key = 0; key <= m.size() + 1; key++)
 	{
-		if (!m.contains(iKey))
-			return iKey;
+		if (!m.contains(key))
+			return key;
 	}
 	assert(false);
 	return -1;

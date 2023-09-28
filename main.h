@@ -77,6 +77,20 @@ struct Colors
 	static constexpr DWORD dwWhite  = RGB(255, 255, 255);
 };
 
+DWORD ColorFromTeam(pb2lib::Team team) {
+	switch (team) {
+		case pb2lib::Team::BLUE: return Colors::dwBlue;
+		case pb2lib::Team::RED: return Colors::dwRed;
+		case pb2lib::Team::PURPLE: return Colors::dwPurple;
+		case pb2lib::Team::YELLOW: return Colors::dwYellow;
+		case pb2lib::Team::OBSERVER: return Colors::dwWhite;
+		case pb2lib::Team::AUTO: return Colors::dwWhite;
+	}
+
+	assert(false);
+	return Colors::dwWhite;
+}
+
 struct Ban
 {
 	enum class Type {
@@ -90,12 +104,17 @@ struct Ban
 
 struct LoadServersArgs
 {
-	int iKey = 0;
+	size_t uid = 0;
 	HWND hwnd = NULL;
 };
 
+// TODO: Mark stuff as noexcept
+// TODO: Clang format, clang tidy
+
+static const std::string unreachable_hostname = "Server did not respond -- Offline?";
+
 std::unique_ptr<Gdiplus::Bitmap> CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int width, unsigned int height);
-int iGetFirstUnusedMapIntKey(const std::map<int, HANDLE>& m);
+size_t GetFirstUnusedMapKey(const std::map<size_t, HANDLE>& m);
 
 std::string ConfigLocation(void);
 int  LoadConfig(void);
@@ -104,18 +123,19 @@ void DeleteConfig(void);
 
 void AutoReloadThreadFunction(void);
 void BanThreadFunction(void);
-std::string GetHttpResponse(std::string url);
+std::string GetHttpResponse(const std::string& url);
+void SetClipboardContent(const std::string& content);
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
 std::optional<std::string>  GetPb2InstallPath(void);
 void MainWindowRefreshThread(LPVOID lpArgument);
-inline bool MainWindowRefreshThreadExitIfSignaled(int iUID);
-int  MainWindowLoadPlayers(HANDLE hExitEvent);
-int  MainWindowLoadServerInfo(HANDLE hExitEvent);
-inline void SignalAllThreads(std::map<int, HANDLE> * m);
+bool MainWindowRefreshThreadExitIfSignaled(size_t uid);
+void MainWindowUpdatePlayers(pb2lib::Server& server);
+void MainWindowUpdateServerInfo(const pb2lib::Server& server);
+void SignalAllThreads(std::map<size_t, HANDLE> * map);
+pb2lib::Server* MainWindowGetSelectedServerOrLoggedNull() noexcept;
 void MainWindowWriteConsole(std::string_view);
 void ListView_SetImage(HWND hListview, std::string_view sImagePath);
-std::string ListView_CustomGetItemText(HWND hListView, int iItemIndex, int iSubItem);
 void LoadBannedIPsToListbox(HWND hListBox);
 void LoadRotationToListbox(HWND hListBox);
 void LoadServersToListbox(LPVOID lpArgumentStruct);
@@ -143,7 +163,7 @@ int  CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lP
 int  OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh);
 void OnMainWindowOpenDPLogin(void);
 void OnMainWindowOpenWhois(void);
-int  OnMainWindowSendRcon(void); //according to msdn functions used for threads should return sth.
+void OnMainWindowSendRcon(void);
 void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy);
 
 //--------------------------------------------------------------------------------------------------

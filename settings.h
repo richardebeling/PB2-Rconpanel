@@ -17,18 +17,18 @@
 	If not, see <http://www.gnu.org/licenses/>.
 */
 
-namespace SUBITEMS
-{
-	static const int iNumber = 0;
-	static const int iName = 1;
-	static const int iBuild = 2;
-	static const int iId = 3;
-	static const int iOp = 4;
-	static const int iIp = 5;
-	static const int iScore = 6;
-	static const int iPing = 7;
-}
+namespace Subitems {
+static constexpr int NUMBER = 0;
+static constexpr int NAME = 1;
+static constexpr int BUILD = 2;
+static constexpr int ID = 3;
+static constexpr int OP = 4;
+static constexpr int IP = 5;
+static constexpr int SCORE = 6;
+static constexpr int PING = 7;
+};
 
+// TODO: Remove -- make the deafult of struct Settings the default
 namespace DEFAULTSETTINGS
 {
 	static const     bool  bRunAutoReloadThread   = false;
@@ -46,7 +46,7 @@ namespace DEFAULTSETTINGS
 	static const std::string sServerlistAddress	  = "http://www.dplogin.com/serverlist.php";
 }
 
-struct SETTINGS
+struct Settings
 {
 	bool  bRunAutoReloadThread = false;		// signals for threads to exit.
 	bool  bRunBanThread = false;			//

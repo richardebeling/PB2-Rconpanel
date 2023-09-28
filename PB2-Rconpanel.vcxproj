@@ -183,11 +183,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="rconfunctions.cpp" />
+    <ClCompile Include="pb2lib.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="main.h" />
-    <ClInclude Include="rconfunctions.h" />
+    <ClInclude Include="pb2lib.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="settings.h" />
     <ClInclude Include="version.h" />
