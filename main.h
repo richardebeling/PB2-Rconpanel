@@ -44,32 +44,30 @@
 
 #include <Gdiplus.h>
 
-struct WindowHandles
-{
-	HWND hDlgManageRotation;
-	HWND hDlgManageIds;
-	HWND hDlgManageIps;
-	HWND hDlgSettings;
-	HWND hDlgRconCommands;
-	HWND hWinMain;
-	HWND hComboServer;
-	HWND hListPlayers;
-	HWND hButtonKick;
-	HWND hButtonBanID;
-	HWND hButtonBanIP;
-	HWND hButtonReload;
-	HWND hButtonDPLoginProfile;
-	HWND hButtonWhois;
-	HWND hButtonForcejoin;
-	HWND hEditConsole;
-	HWND hComboRcon;
-	HWND hButtonSend;
-	HWND hButtonJoin;
-	HWND hStaticServerInfo;
+struct WindowHandles {
+	HWND hDlgManageRotation = NULL;
+	HWND hDlgManageIds = NULL;
+	HWND hDlgManageIps = NULL;
+	HWND hDlgSettings = NULL;
+	HWND hDlgRconCommands = NULL;
+	HWND hWinMain = NULL;
+	HWND hComboServer = NULL;
+	HWND hListPlayers = NULL;
+	HWND hButtonKick = NULL;
+	HWND hButtonBanID = NULL;
+	HWND hButtonBanIP = NULL;
+	HWND hButtonReload = NULL;
+	HWND hButtonDPLoginProfile = NULL;
+	HWND hButtonWhois = NULL;
+	HWND hButtonForcejoin = NULL;
+	HWND hEditConsole = NULL;
+	HWND hComboRcon = NULL;
+	HWND hButtonSend = NULL;
+	HWND hButtonJoin = NULL;
+	HWND hStaticServerInfo = NULL;
 };
 
-struct Colors
-{
+struct Colors {
 	static constexpr DWORD dwRed    = RGB(255, 100, 60);
 	static constexpr DWORD dwBlue   = RGB(100, 150, 255);
 	static constexpr DWORD dwPurple = RGB(225, 0,   225);
@@ -91,8 +89,7 @@ DWORD ColorFromTeam(pb2lib::Team team) {
 	return Colors::dwWhite;
 }
 
-struct Ban
-{
+struct Ban {
 	enum class Type {
 		ID = 0,
 		NAME = 1,
@@ -102,8 +99,7 @@ struct Ban
     std::string sText;
 };
 
-struct LoadServersArgs
-{
+struct LoadServersArgs {
 	size_t uid = 0;
 	HWND hwnd = NULL;
 };

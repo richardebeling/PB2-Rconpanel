@@ -72,20 +72,15 @@ std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmapResized;
 
 int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpszArgument, int nCmdShow)
 {
-	MSG messages;
-	WNDCLASSEX wincl = { 0 };
-	CHAR szClassName[ ] = "Rconpanel\0";
-	INITCOMMONCONTROLSEX icex = { 0 };			//needed for list view control
+	INITCOMMONCONTROLSEX icex = { 0 }; // needed for list view control
+	icex.dwICC = ICC_LISTVIEW_CLASSES;
+	InitCommonControlsEx(&icex);
 
 	WM_RELOADCONTENT =  RegisterWindowMessage("RCONPANEL_RELOADCONTENT");
-	if (!WM_RELOADCONTENT)
-	{
+	if (!WM_RELOADCONTENT) {
 		MessageBox(NULL, "Could not register RELOADCONTENT message", NULL, MB_OK | MB_ICONERROR);
 		exit(-1);
 	}
-
-	icex.dwICC = ICC_LISTVIEW_CLASSES;
-	InitCommonControlsEx(&icex);
 	
 	if (OleInitialize(NULL) != S_OK) {
 		MessageBox(NULL, "OleInitialize returned non-ok status", NULL, MB_OK | MB_ICONERROR);
@@ -95,8 +90,10 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 	Gdiplus::GdiplusStartupInput gsi;
 	Gdiplus::GdiplusStartup(&g_gdiplusStartupToken, &gsi, NULL);
 
+	const char* classname = "Rconpanel";
+	WNDCLASSEX wincl = { 0 };
 	wincl.hInstance = hThisInstance;
-	wincl.lpszClassName = szClassName;
+	wincl.lpszClassName = classname;
 	wincl.lpfnWndProc = WindowProcedure;
 	wincl.style = CS_DBLCLKS;
 	wincl.cbSize = sizeof (WNDCLASSEX);
@@ -108,15 +105,14 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 	wincl.cbWndExtra = 0;
 	wincl.hbrBackground = (HBRUSH) (COLOR_WINDOW);
 
-	if (!RegisterClassEx (&wincl))
-	{
+	if (!RegisterClassEx (&wincl)) {
 		MessageBox(NULL, "Could not register window class. Will now exit.", NULL, MB_OK | MB_ICONERROR);
 		exit(-1);
 	}
 
 	DWORD dwBaseUnits = GetDialogBaseUnits();
 	gWindows.hWinMain = CreateWindowEx (0,
-						szClassName, "DP:PB2 Rconpanel\0",
+						classname, "DP:PB2 Rconpanel\0",
 						WS_OVERLAPPEDWINDOW,
 						CW_USEDEFAULT, CW_USEDEFAULT,
 						MulDiv(285, LOWORD(dwBaseUnits), 4),
@@ -125,17 +121,12 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 						LoadMenu (hThisInstance, MAKEINTRESOURCE(IDM)),
 						hThisInstance, NULL);
 	
-	gWindows.hDlgManageRotation = NULL;
-	gWindows.hDlgManageIds = NULL;
-	gWindows.hDlgManageIps = NULL;
-	gWindows.hDlgSettings = NULL;
-	gWindows.hDlgRconCommands = NULL;
-	
 	ShowWindow(gWindows.hWinMain, nCmdShow);
 						
-	//All other windows will be created in OnMainWindowCreate
+	// All other windows will be created in OnMainWindowCreate
 
-	while (GetMessage (&messages, NULL, 0, 0))
+	MSG messages;
+	while (GetMessage(&messages, NULL, 0, 0))
 	{
 		TranslateMessage(&messages);
 		DispatchMessage(&messages);
@@ -694,8 +685,9 @@ void OnMainWindowForcejoin(void)
 	}
 
 	auto iSelectedColor = DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_FORCEJOIN), gWindows.hWinMain, (DLGPROC) ForcejoinDlgProc);
-	if (iSelectedColor == -1)
+	if (iSelectedColor == -1) {
 		return;
+	}
 
 	MainWindowLogExceptionsToConsole([&]() {
 		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
@@ -728,8 +720,6 @@ void OnMainWindowSendRcon(void)
 		std::string answer = pb2lib::send_rcon(server->address, server->rcon_password, command_buffer.data(), gSettings.fTimeoutSecs);
 		MainWindowWriteConsole("Got answer from Server:\r\n" + answer);
 	});
-
-	return;
 }
 
 void OnMainWindowJoinServer(void)
@@ -787,15 +777,6 @@ void OnMainWindowKickPlayer(void)
 	if (!player || !server) {
 		return;
 	}
-
-	// TODO: Duplicated with OnMainWindowForcejoin -- factor out a function that
-	// 1. gets the currently selected player
-	// 2. reloads the players
-	// 3. checks if the player is still connected, and if they are
-	// 4. returns the player (otherwise some kind of null?)
-	// NOTE: This doesn't actually need to refresh the main window, we could just get the current players and match without any GUI interaction
-	// probably a better idea? User didn't want the reload, might lose data -> Its just a hidden check -> no UI modifications
-	// Although, if we get a mismatch, we might want to have an option that automatically triggers a UI reload in that case
 
 	MainWindowLogExceptionsToConsole([&]() {
 		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
@@ -1801,7 +1782,7 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 		}
 		catch (const std::out_of_range&)
 		{
-			// todo
+			// todo -- this should work differently. A thread should get all hostnames, then the UI should be updated (synchronously)
 			return;
 		}
 	}
