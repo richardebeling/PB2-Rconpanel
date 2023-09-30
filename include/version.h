@@ -22,7 +22,7 @@ namespace AutoVersion{
 	//Miscellaneous Version Types
 	static const long BUILDS_COUNT  = 457;
 	#define RC_FILEVERSION 1,3,2,0
-	#define RC_FILEVERSION_STRING "1, 3, 2, 0\0"
+	#define RC_FILEVERSION_STRING "1, 3, 2, 0"
 	static const char FULLVERSION_STRING [] = "1.3.2.0";
 	
 	//These values are to keep track of your versioning state, don't modify them.

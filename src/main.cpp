@@ -43,13 +43,13 @@ using namespace std::chrono_literals;
 
 std::vector<pb2lib::Player> g_vPlayers;			// players on the current server, shown in the listview
 
-std::vector<pb2lib::Server> g_vSavedServers;	//used to store servers in the combo box
-std::vector<pb2lib::Server> g_vAllServers;		//used to fill server list in the "Manage servers" dialog
-std::vector<Ban> 			g_vBannedPlayers;	//stores either ID or name of a banned player as string
+std::vector<pb2lib::Server> g_vSavedServers;	// used to store servers in the combo box
+std::vector<pb2lib::Server> g_vAllServers;		// used to fill server list in the "Manage servers" dialog
+std::vector<AutoKickEntry> 	g_vAutoKickEntries;
 
 AsyncRepeatedTimer g_AutoReloadTimer;
+AsyncRepeatedTimer g_AutoKickTimer;
 
-HANDLE g_hBanThread         = 0; // TODO
 HANDLE g_hSendRconThread    = 0; // TODO
 
 std::map <size_t, HANDLE> g_mLoadServersThreads;	//contains UID and ExitEvent for every reload thread
@@ -108,15 +108,11 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 	}
 
 	DWORD dwBaseUnits = GetDialogBaseUnits();
-	gWindows.hWinMain = CreateWindowEx (0,
-						classname, "DP:PB2 Rconpanel\0",
-						WS_OVERLAPPEDWINDOW,
-						CW_USEDEFAULT, CW_USEDEFAULT,
-						MulDiv(285, LOWORD(dwBaseUnits), 4),
-						MulDiv(290, HIWORD(dwBaseUnits), 8),
-						HWND_DESKTOP,
-						LoadMenu (hThisInstance, MAKEINTRESOURCE(IDM)),
-						hThisInstance, NULL);
+	CreateWindowEx (0, classname, "DP:PB2 Rconpanel",
+					WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+					MulDiv(285, LOWORD(dwBaseUnits), 4), MulDiv(290, HIWORD(dwBaseUnits), 8),
+					HWND_DESKTOP, LoadMenu (hThisInstance, MAKEINTRESOURCE(IDM)),
+					hThisInstance, NULL);
 	// All other windows will be created in OnMainWindowCreate
 
 	ShowWindow(gWindows.hWinMain, nCmdShow);
@@ -135,6 +131,15 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 //{-------------------------------------------------------------------------------------------------
 
 // TODO: Namespacing instead of function name prefixing
+
+void MainWindowUpdateAutoKickState() noexcept {
+	HMENU menu = GetMenu(gWindows.hWinMain);
+
+	CheckMenuItem(menu, IDM_AUTOKICK_ENABLE, gSettings.bAutoKickCheckEnable ? MF_CHECKED : MF_UNCHECKED);
+	g_AutoKickTimer.set_interval(gSettings.bAutoKickCheckEnable ? gSettings.iAutoKickCheckDelay : 0);
+
+	CheckMenuItem(menu, IDM_AUTOKICK_SETPING, gSettings.iAutoKickCheckMaxPingMsecs != 0 ? MF_CHECKED : MF_UNCHECKED);
+}
 
 pb2lib::Server* MainWindowGetSelectedServerOrLoggedNull() noexcept {
 	if (g_vSavedServers.size() == 0) {
@@ -321,41 +326,32 @@ void MainWindowUpdatePlayersListview() noexcept
 
 void MainWindowWriteConsole(const std::string_view str) // prints text to gWindows.hEditConsole, adds timestamp and linebreak
 {
-	// TODO: Sometimes flickers
+	// TODO: If two threads call this simultaneously, it will intermangle output -> static mutex + lock_guard?
+	// TODO: Sometimes flickers, loses focus of players listview
+	auto const time = std::chrono::time_point_cast<std::chrono::seconds>(
+		std::chrono::current_zone()->to_local(std::chrono::system_clock::now())
+	);
+	std::string formatted = std::format("[{:%H:%M:%S}] {}", time, str); 
 
-	time_t rawtime;
-	struct tm * timeinfo;
-	char szBuffer[12];
-	std::string sFinalString;
-	DWORD start = 0, end = 0;
+	if (formatted.ends_with('\n')) {
+		formatted = formatted.substr(0, formatted.find_last_not_of('\n') + 1); // remove trailing newlines
+	}
+	formatted = std::regex_replace(formatted, std::regex{"\n"}, "\n---------> "); // indent text after line ending
+	formatted = std::regex_replace(formatted, std::regex{"\n"}, "\r\n");
 
-	time(&rawtime);
-	timeinfo = localtime (&rawtime);
-
-	//create timestamp
-	sprintf (szBuffer, "[%02d:%02d:%02d] ", timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
-	sFinalString = szBuffer;
-
-	//append text
-	sFinalString += str;
-	sFinalString = std::regex_replace(sFinalString, std::regex{"\n"}, "\n---------> "); //indent text after line ending
-
-	while (sFinalString.ends_with("\n"))
-		sFinalString = sFinalString.substr(0, sFinalString.length() - 1);
-
-	sFinalString = std::regex_replace(sFinalString, std::regex{"\n"}, "\r\n");
-
-	//add linebreak (if its not the first line) and the the text to the end of gWindows.hEditConsole
+	// add linebreak (if its not the first line) and the the text to the end of gWindows.hEditConsole
 	SendMessage(gWindows.hEditConsole, EM_SETSEL, -2, -2);
-	SendMessage(gWindows.hEditConsole, EM_GETSEL, (WPARAM) &start, (LPARAM)&end);
+	DWORD start = 0, end = 0;
+	SendMessage(gWindows.hEditConsole, EM_GETSEL, (WPARAM)&start, (LPARAM)&end);
 	if (start != 0)
-		SendMessage(gWindows.hEditConsole, EM_REPLACESEL, 0,(LPARAM) "\r\n");
+		SendMessage(gWindows.hEditConsole, EM_REPLACESEL, 0, (LPARAM)"\r\n");
 
-	//Add new text
-	SendMessage(gWindows.hEditConsole, EM_REPLACESEL, 0,(LPARAM) sFinalString.c_str());
+	// Add new text
+	SendMessage(gWindows.hEditConsole, EM_REPLACESEL, 0, (LPARAM)formatted.c_str());
 
 	//remove first line until linecount is equal to gSettings.iMaxConsoleLineCount
-	if (gSettings.bLimitConsoleLineCount) Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
+	if (gSettings.bLimitConsoleLineCount)
+		Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
 
 	//Scroll to the bottom of gWindows.hEditConsole so the user directly sees what has just been added
 	Edit_ScrollToEnd(gWindows.hEditConsole);
@@ -388,8 +384,7 @@ static int OnPlayerListCustomDraw (LPARAM lParam)
 		case Subitems::OP:
 		case Subitems::IP:
 		case Subitems::SCORE:
-			if (!gSettings.bColorPlayers)
-			{
+			if (!gSettings.bColorPlayers) {
 				lplvcd->clrTextBk = Colors::dwWhite;
 			}
 			
@@ -467,11 +462,14 @@ int CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lPa
 BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 {
 	g_AutoReloadTimer.set_trigger_action([hwnd]() { PostMessage(hwnd, WM_REFETCHPLAYERS, 0, 0); });
+	g_AutoKickTimer.set_trigger_action(AutoKickTimerFunction);
 
 	//{ Create Controls
 	DWORD dwBaseUnits = GetDialogBaseUnits();
 
-	HWND hStaticServer = CreateWindowEx(0, "STATIC\0", "Server: \0",
+	gWindows.hWinMain = hwnd;
+
+	HWND hStaticServer = CreateWindowEx(0, "STATIC", "Server: ",
 						SS_SIMPLE | WS_CHILD | WS_VISIBLE,
 						MulDiv(3  , LOWORD(dwBaseUnits), 4), // Units to Pixel
 						MulDiv(4  , HIWORD(dwBaseUnits), 8),
@@ -480,52 +478,52 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						hwnd, NULL, NULL, NULL);
 
 	//The following controls will be resized when the window is shown and HandleResize is called.
-	gWindows.hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX\0", "\0",
+	gWindows.hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX", "",
 						CBS_DROPDOWNLIST | CBS_SORT | WS_CHILD | WS_VISIBLE,
 						0, 0, 0, CW_USEDEFAULT,	//automatically adapt to content
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hStaticServerInfo = CreateWindowEx(0, WC_STATIC, "\0",
+	gWindows.hStaticServerInfo = CreateWindowEx(0, WC_STATIC, "",
 						SS_LEFTNOWORDWRAP | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hListPlayers = CreateWindowEx(WS_EX_CLIENTEDGE | WS_EX_RIGHTSCROLLBAR, WC_LISTVIEW, "\0",
+	gWindows.hListPlayers = CreateWindowEx(WS_EX_CLIENTEDGE | WS_EX_RIGHTSCROLLBAR, WC_LISTVIEW, "",
 						LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonJoin = CreateWindowEx(0, WC_BUTTON, "&Join\0", WS_CHILD | WS_VISIBLE , 0, 0, 0, 0,
+	gWindows.hButtonJoin = CreateWindowEx(0, WC_BUTTON, "&Join", WS_CHILD | WS_VISIBLE , 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonReload = CreateWindowEx(0, WC_BUTTON, "&Reload\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonReload = CreateWindowEx(0, WC_BUTTON, "&Reload", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonKick = CreateWindowEx(0, WC_BUTTON, "&Kick\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonKick = CreateWindowEx(0, WC_BUTTON, "&Kick", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonBanID = CreateWindowEx(0, WC_BUTTON, "Ban I&D / Name\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonAutoKick = CreateWindowEx(0, WC_BUTTON, "&AutoKick", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonBanIP = CreateWindowEx(0, WC_BUTTON, "Ban I&P\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonBanIP = CreateWindowEx(0, WC_BUTTON, "&Ban IP", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "&DPLogin Profile\0", WS_CHILD | WS_VISIBLE,
+	gWindows.hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "&DPLogin Profile", WS_CHILD | WS_VISIBLE,
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonWhois = CreateWindowEx(0, WC_BUTTON, "&Whois IP\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonWhois = CreateWindowEx(0, WC_BUTTON, "&Whois IP", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonForcejoin = CreateWindowEx(0, WC_BUTTON, "&Forcejoin\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonForcejoin = CreateWindowEx(0, WC_BUTTON, "&Forcejoin", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hComboRcon = CreateWindowEx(WS_EX_CLIENTEDGE, WC_COMBOBOX, "\0",
+	gWindows.hComboRcon = CreateWindowEx(WS_EX_CLIENTEDGE, WC_COMBOBOX, "",
 						CBS_AUTOHSCROLL | CBS_SIMPLE | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonSend = CreateWindowEx(0, WC_BUTTON, "&Send Rcon\0", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonSend = CreateWindowEx(0, WC_BUTTON, "&Send Rcon", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hEditConsole = CreateWindowEx(WS_EX_CLIENTEDGE, WC_EDIT, "\0",
+	gWindows.hEditConsole = CreateWindowEx(WS_EX_CLIENTEDGE, WC_EDIT, "",
 						WS_VSCROLL | ES_AUTOVSCROLL | ES_MULTILINE | ES_READONLY | WS_CHILD | WS_VISIBLE,
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
@@ -536,8 +534,8 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	LONG lfHeight = -MulDiv(9, GetDeviceCaps(hdc, LOGPIXELSY), 72);
 	ReleaseDC(NULL, hdc);
 
-	static DeleteObjectRAIIWrapper<HFONT> font(CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "MS Shell Dlg\0"));
-	static DeleteObjectRAIIWrapper<HFONT> consoleFont(CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "Courier New\0"));
+	static DeleteObjectRAIIWrapper<HFONT> font(CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "MS Shell Dlg"));
+	static DeleteObjectRAIIWrapper<HFONT> consoleFont(CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "Courier New"));
 
 	WPARAM fontWparam = (WPARAM)(HFONT)font;
 	WPARAM fontConsoleWparam = (WPARAM)(HFONT)consoleFont;
@@ -548,7 +546,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	SendMessage(gWindows.hListPlayers		  , WM_SETFONT, fontWparam, true);
 	SendMessage(gWindows.hButtonJoin		  , WM_SETFONT, fontWparam, true);
 	SendMessage(gWindows.hButtonKick		  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonBanID		  , WM_SETFONT, fontWparam, true);
+	SendMessage(gWindows.hButtonAutoKick	  , WM_SETFONT, fontWparam, true);
 	SendMessage(gWindows.hButtonBanIP		  , WM_SETFONT, fontWparam, true);
 	SendMessage(gWindows.hButtonReload		  , WM_SETFONT, fontWparam, true);
 	SendMessage(gWindows.hButtonDPLoginProfile, WM_SETFONT, fontWparam, true);
@@ -570,14 +568,14 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 		lvc.fmt = LVCFMT_RIGHT;
 		switch (i)
 		{
-			case Subitems::NUMBER: strcpy(szText, "Num\0");   break;
-			case Subitems::NAME:   strcpy(szText, "Name\0");  lvc.fmt = LVCFMT_LEFT; break;
-			case Subitems::BUILD:  strcpy(szText, "Build\0"); break;
-			case Subitems::ID:     strcpy(szText, "ID\0");    break;
-			case Subitems::OP:     strcpy(szText, "OP\0");    break;
-			case Subitems::IP:     strcpy(szText, "IP\0");    lvc.fmt = LVCFMT_LEFT; break;
-			case Subitems::PING:   strcpy(szText, "Ping\0");  break;
-			case Subitems::SCORE:  strcpy(szText, "Score\0"); break;
+			case Subitems::NUMBER: strcpy(szText, "Num");   break;
+			case Subitems::NAME:   strcpy(szText, "Name");  lvc.fmt = LVCFMT_LEFT; break;
+			case Subitems::BUILD:  strcpy(szText, "Build"); break;
+			case Subitems::ID:     strcpy(szText, "ID");    break;
+			case Subitems::OP:     strcpy(szText, "OP");    break;
+			case Subitems::IP:     strcpy(szText, "IP");    lvc.fmt = LVCFMT_LEFT; break;
+			case Subitems::PING:   strcpy(szText, "Ping");  break;
+			case Subitems::SCORE:  strcpy(szText, "Score"); break;
 		}
 		ListView_InsertColumn(gWindows.hListPlayers, i, &lvc);
 	}
@@ -591,7 +589,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	if (retVal == -1)
 		MainWindowWriteConsole("No configuration file found, the program will save it's settings when you close it.");
 	else if (retVal == -2)
-		MainWindowWriteConsole("Error while reading bans from config file.");
+		MainWindowWriteConsole("Error while reading AutoKick entries from config file.");
 	else if (retVal == 1)
 		MainWindowWriteConsole("Success.");
 	else
@@ -750,7 +748,7 @@ void OnMainWindowBanIP(void)
 	});
 }
 
-void OnMainWindowBanID(void)
+void OnMainWindowAutoKick(void)
 {
 	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
 	if (!player) {
@@ -758,31 +756,23 @@ void OnMainWindowBanID(void)
 	}
 
 	if (player->id) {
-		g_vBannedPlayers.emplace_back(Ban::Type::ID, std::to_string(*player->id));
-		MainWindowWriteConsole("ID " + std::to_string(*player->id) + " was banned");
+		g_vAutoKickEntries.emplace_back(AutoKickEntry::Type::ID, std::to_string(*player->id));
+		MainWindowWriteConsole("AutoKick entry added for ID " + std::to_string(*player->id));
 	}
 	else {
-		g_vBannedPlayers.emplace_back(Ban::Type::NAME, player->name);
-		MainWindowWriteConsole("Name " + player->name + " was banned");
+		g_vAutoKickEntries.emplace_back(AutoKickEntry::Type::NAME, player->name);
+		MainWindowWriteConsole("AutoKick entry added for name " + player->name);
 	}
 }
 
 void OnMainWindowDestroy(HWND hwnd)
 {
 	SaveConfig();
-	
-	gSettings.bRunBanThread = 0;
 
-	HANDLE rHandles[3] = {g_hBanThread, g_hSendRconThread};
-	WaitForMultipleObjects(3, rHandles, TRUE, 10000);
+	HANDLE rHandles[3] = {g_hSendRconThread};
+	WaitForMultipleObjects(1, rHandles, TRUE, 10000);
 	
 	// TODO -- remove these? Threads should cooperate.
-
-	if (g_hBanThread != INVALID_HANDLE_VALUE)
-	{
-		TerminateThread(g_hBanThread, 0);
-		CloseHandle(g_hBanThread);
-	}
 	if (g_hSendRconThread != INVALID_HANDLE_VALUE)
 	{
 		TerminateThread(g_hSendRconThread, 0);
@@ -814,7 +804,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			}
 			if (hwndCtl == gWindows.hButtonReload) PostMessage(hwnd, WM_REFETCHPLAYERS, 0, 0);
 			if (hwndCtl == gWindows.hButtonKick) OnMainWindowKickPlayer();
-			if (hwndCtl == gWindows.hButtonBanID) OnMainWindowBanID();
+			if (hwndCtl == gWindows.hButtonAutoKick) OnMainWindowAutoKick();
 			if (hwndCtl == gWindows.hButtonBanIP) OnMainWindowBanIP();
 			if (hwndCtl == gWindows.hButtonDPLoginProfile) OnMainWindowOpenDPLogin();
 			if (hwndCtl == gWindows.hButtonWhois) OnMainWindowOpenWhois();
@@ -858,7 +848,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			{
 				int iResult = MessageBoxA(gWindows.hWinMain, "This will delete every information "
 										"stored in this program, including server IPs, ports and "
-										"passwords as well as ID bans.\n"
+										"passwords as well as AutoKick entries.\n"
 										"Are you sure you want to continue?",
 										"Are you sure?",
 										MB_ICONQUESTION | MB_YESNO);
@@ -874,44 +864,30 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (!gWindows.hDlgManageRotation)
 				gWindows.hDlgManageRotation = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, (DLGPROC) ManageRotationDlgProc);
 			else
-				SetForegroundWindow(gWindows.hDlgManageRotation);
-			
+				SetForegroundWindow(gWindows.hDlgManageRotation);			
 			break;
-		case IDM_BANS_ENABLE:
-		{
-			if (GetMenuState(GetMenu(hwnd), IDM_BANS_ENABLE, MF_BYCOMMAND) == SW_SHOWNA) {
-				gSettings.bRunBanThread = 0;
-				CheckMenuItem(GetMenu(hwnd), IDM_BANS_ENABLE, MF_UNCHECKED);
-			} else {
-				gSettings.bRunBanThread = 1;
-				CheckMenuItem(GetMenu(hwnd), IDM_BANS_ENABLE, MF_CHECKED);
-	
-				if (g_hBanThread == INVALID_HANDLE_VALUE || WaitForSingleObject(g_hBanThread, 0) != WAIT_TIMEOUT) {
-					if (g_hBanThread != NULL) {
-						CloseHandle(g_hBanThread);
-					}
-					g_hBanThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) BanThreadFunction, NULL, 0, NULL);
-				}
-			}
+		case IDM_SERVER_BANNEDIPS:
+			if (!gWindows.hDlgManageIps)
+				gWindows.hDlgManageIps = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, (DLGPROC)ManageIPsDlgProc);
+			else
+				SetForegroundWindow(gWindows.hDlgManageIps);
+			break;
+		case IDM_AUTOKICK_ENABLE: {
+			gSettings.bAutoKickCheckEnable = GetMenuState(GetMenu(gWindows.hWinMain), IDM_AUTOKICK_ENABLE, MF_BYCOMMAND) != SW_SHOWNA;
+			MainWindowUpdateAutoKickState();
 			break;
 		}
-		case IDM_BANS_SETPING:
+		case IDM_AUTOKICK_SETPING:
 			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SETPING), hwnd, (DLGPROC) SetPingDlgProc);
 			break;
-		case IDM_BANS_MANAGEIDS:
+		case IDM_AUTOKICK_MANAGEIDS:
 			if (!gWindows.hDlgManageIds)
 				gWindows.hDlgManageIds = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIDS), hwnd, (DLGPROC) ManageIDsDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgManageIds);
 			break;
-		case IDM_BANS_MANAGEIPS:
-			if (!gWindows.hDlgManageIps)
-				gWindows.hDlgManageIps = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, (DLGPROC) ManageIPsDlgProc);
-			else
-				SetForegroundWindow(gWindows.hDlgManageIps);
-			break;
 		case IDM_HELP_DPLOGIN:
-			ShellExecute(NULL, "open", "http://www.DPLogin.com\0", NULL, NULL, SW_SHOWNORMAL);
+			ShellExecute(NULL, "open", "http://www.DPLogin.com", NULL, NULL, SW_SHOWNORMAL);
 			break;
 		case IDM_HELP_RCONCOMMANDS:
 			if (!gWindows.hDlgRconCommands)
@@ -932,20 +908,7 @@ int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
 {
     if (nmh->hwndFrom == gWindows.hListPlayers) {
 		auto* player = MainWindowGetSelectedPlayerOrNull();
-		switch (nmh->code) {
-			case NM_CLICK:
-			{
-				if (!player) {
-					break;
-				}
-				if (player->id)
-					SetWindowText(gWindows.hButtonBanID, "Ban ID");
-				else
-					SetWindowText(gWindows.hButtonBanID, "Ban Name");
-
-				break;
-			}
-			
+		switch (nmh->code) {			
 			case NM_DBLCLK:
 			{
 				ShowPlayerInfo(hwnd);
@@ -1028,7 +991,7 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
 		ShowWindow(gWindows.hEditConsole, SW_SHOW);
 	}
 
-	MoveWindow(gWindows.hButtonBanID		 , cx - 45*iMW, 54 *iMH, 43*iMW, 12*iMH, FALSE); //Move all buttons to left / right
+	MoveWindow(gWindows.hButtonAutoKick		 , cx - 45*iMW, 54 *iMH, 43*iMW, 12*iMH, FALSE); //Move all buttons to left / right
 	MoveWindow(gWindows.hButtonBanIP		 , cx - 45*iMW, 67 *iMH, 43*iMW, 12*iMH, FALSE);
 	MoveWindow(gWindows.hButtonDPLoginProfile, cx - 45*iMW, 83 *iMH, 43*iMW, 12*iMH, FALSE);
 	MoveWindow(gWindows.hButtonForcejoin	 , cx - 45*iMW, 115*iMH, 43*iMW, 12*iMH, FALSE);
@@ -1201,7 +1164,7 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
 BOOL OnSetPingInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
-	std::string sMaxPing = std::to_string(gSettings.iMaxPingMsecs);
+	std::string sMaxPing = std::to_string(gSettings.iAutoKickCheckMaxPingMsecs);
 	SetDlgItemText(hwnd, IDC_SP_EDIT, sMaxPing.c_str());
 	return TRUE;
 }
@@ -1220,12 +1183,8 @@ void OnSetPingCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_SP_EDIT)) + 1;
 			std::vector<char> maxPingBuffer(iBufferSize);
 			GetDlgItemText(hwnd, IDC_SP_EDIT, maxPingBuffer.data(), iBufferSize);
-			gSettings.iMaxPingMsecs = atoi(maxPingBuffer.data());
-			
-			if (gSettings.iMaxPingMsecs == 0)
-				CheckMenuItem(GetMenu(gWindows.hWinMain), IDM_BANS_SETPING, MF_UNCHECKED);
-			else
-				CheckMenuItem(GetMenu(gWindows.hWinMain), IDM_BANS_SETPING, MF_CHECKED);
+			gSettings.iAutoKickCheckMaxPingMsecs = atoi(maxPingBuffer.data());
+			MainWindowUpdateAutoKickState();
 
 			EndDialog(hwnd, 1);
 			return;
@@ -1272,8 +1231,8 @@ BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 	sprintf (szBuffer, "%.2f s", gSettings.fAllServersTimeoutSecs);
 	SetDlgItemText(hwnd, IDC_PS_STATICOTHERSERVERS, szBuffer);
 	
-	sBuffer = std::to_string(gSettings.iBanCheckDelaySecs);
-	SetDlgItemText(hwnd, IDC_PS_EDITBANINTERVAL, sBuffer.c_str());
+	sBuffer = std::to_string(gSettings.iAutoKickCheckDelay);
+	SetDlgItemText(hwnd, IDC_PS_EDITAUTOKICKINTERVAL, sBuffer.c_str());
 	
 	sBuffer = std::to_string(gSettings.iAutoReloadDelaySecs);
 	SetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, sBuffer.c_str());
@@ -1345,13 +1304,14 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			pos = SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_GETPOS, 0, 0);
 			gSettings.fAllServersTimeoutSecs = (float)pos/(float)20;
 			
-			auto iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITBANINTERVAL)) + 1;
+			auto iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITAUTOKICKINTERVAL)) + 1;
 			iBufferSize = max(iBufferSize, GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITAUTORELOAD)) + 1);
 			iBufferSize = max(iBufferSize, GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT)) + 1);
 			std::vector<char> buffer(iBufferSize);
 			
-			GetDlgItemText(hwnd, IDC_PS_EDITBANINTERVAL, buffer.data(), static_cast<int>(buffer.size()));
-			gSettings.iBanCheckDelaySecs = atoi (buffer.data());
+			GetDlgItemText(hwnd, IDC_PS_EDITAUTOKICKINTERVAL, buffer.data(), static_cast<int>(buffer.size()));
+			gSettings.iAutoKickCheckDelay = atoi(buffer.data());
+			MainWindowUpdateAutoKickState();
 			
 			GetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, buffer.data(), static_cast<int>(buffer.size()));
 			gSettings.iAutoReloadDelaySecs = atoi (buffer.data());
@@ -1985,12 +1945,12 @@ LRESULT CALLBACK ManageServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPA
 
 BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[r] Red\0");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[b] Blue\0");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[p] Purple\0");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[y] Yellow\0");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[a] Automatic\0");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[o] Observer\0");
+	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[r] Red");
+	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[b] Blue");
+	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[p] Purple");
+	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[y] Yellow");
+	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[a] Automatic");
+	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[o] Observer");
 	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_SETCURSEL, 0, 0);
 	return TRUE;
 }
@@ -2073,8 +2033,8 @@ LRESULT CALLBACK ForcejoinDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 
 BOOL OnManageIDsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
-	for (size_t i = 0; i<g_vBannedPlayers.size(); i++) {
-		auto index = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_ADDSTRING, 0, (LPARAM) g_vBannedPlayers[i].sText.c_str());
+	for (size_t i = 0; i<g_vAutoKickEntries.size(); i++) {
+		auto index = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_ADDSTRING, 0, (LPARAM) g_vAutoKickEntries[i].sText.c_str());
 		SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_SETITEMDATA, index, i);
 	}
 	SendMessage(GetDlgItem(hwnd, IDC_MIDS_RADIOID), BM_SETCHECK, BST_CHECKED, 1);
@@ -2091,8 +2051,8 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 {
 	auto refillListbox = [&]() {
 		SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_RESETCONTENT, 0, 0);
-		for (size_t i = 0; i < g_vBannedPlayers.size(); i++) {
-			auto index = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_ADDSTRING, 0, (LPARAM)g_vBannedPlayers[i].sText.c_str());
+		for (size_t i = 0; i < g_vAutoKickEntries.size(); i++) {
+			auto index = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_ADDSTRING, 0, (LPARAM)g_vAutoKickEntries[i].sText.c_str());
 			SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_SETITEMDATA, index, i);
 		}
 	};
@@ -2101,11 +2061,11 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	{
 		case IDC_MIDS_BUTTONADD:
 		{
-			Ban tempban;
+			AutoKickEntry entry;
 			std::vector<char> buffer(static_cast<size_t>(GetWindowTextLength(GetDlgItem(hwnd, IDC_MIDS_EDIT))) + 1);
 
 			SendMessage (GetDlgItem(hwnd, IDC_MIDS_EDIT), WM_GETTEXT, buffer.size(), (LPARAM) buffer.data()); //set text
-			tempban.sText = buffer.data();
+			entry.sText = buffer.data();
 
 			if (IsDlgButtonChecked(hwnd, IDC_MIDS_RADIOID)) //Set ID / NAME flag
 			{
@@ -2116,14 +2076,14 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 					MessageBox(gWindows.hWinMain, "The ID you have entered is not valid.", "Error: Invalid ID", MB_OK | MB_ICONERROR);
 					return ;
 				}
-				tempban.tType = Ban::Type::ID;
+				entry.tType = AutoKickEntry::Type::ID;
 			}
 			else {
 				assert(IsDlgButtonChecked(hwnd, IDC_MIDS_RADIONAME));
-				tempban.tType = Ban::Type::NAME;
+				entry.tType = AutoKickEntry::Type::NAME;
 			}
 
-			g_vBannedPlayers.push_back(tempban);
+			g_vAutoKickEntries.push_back(entry);
 
 			refillListbox();
 			return;
@@ -2142,7 +2102,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 						0);
 			if (selectedPlayerIndex == LB_ERR) return;
 
-			g_vBannedPlayers.erase(g_vBannedPlayers.begin() + selectedPlayerIndex); //delete the ban
+			g_vAutoKickEntries.erase(g_vAutoKickEntries.begin() + selectedPlayerIndex); //delete the entry
 
 			refillListbox();
 			return;
@@ -2157,7 +2117,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_MIDS_EDIT)) + 1;
 			std::vector<char> buffer(iBufferSize);
 			SendMessage (GetDlgItem(hwnd, IDC_MIDS_EDIT), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
-			g_vBannedPlayers[selectedPlayerIndex].sText = buffer.data();
+			g_vAutoKickEntries[selectedPlayerIndex].sText = buffer.data();
 
 			if (IsDlgButtonChecked(hwnd, IDC_MIDS_RADIOID))
 			{
@@ -2167,11 +2127,11 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 					MessageBoxA(gWindows.hWinMain, "The ID you have entered is not valid.", "Error: Invalid ID", MB_OK | MB_ICONERROR);
 					return;
 				}
-				g_vBannedPlayers[selectedPlayerIndex].tType = Ban::Type::ID;
+				g_vAutoKickEntries[selectedPlayerIndex].tType = AutoKickEntry::Type::ID;
 			}
 			else {
 				assert(IsDlgButtonChecked(hwnd, IDC_MIDS_RADIONAME));
-				g_vBannedPlayers[selectedPlayerIndex].tType = Ban::Type::NAME;
+				g_vAutoKickEntries[selectedPlayerIndex].tType = AutoKickEntry::Type::NAME;
 			}
 
 			refillListbox();
@@ -2186,9 +2146,9 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 						SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETCURSEL, 0, 0),
 						0);
 				if (selectedPlayerIndex == LB_ERR) return;
-				SendMessage(GetDlgItem(hwnd, IDC_MIDS_EDIT), WM_SETTEXT,  0, (LPARAM) g_vBannedPlayers[selectedPlayerIndex].sText.c_str());
+				SendMessage(GetDlgItem(hwnd, IDC_MIDS_EDIT), WM_SETTEXT,  0, (LPARAM) g_vAutoKickEntries[selectedPlayerIndex].sText.c_str());
 				
-				if (g_vBannedPlayers[selectedPlayerIndex].tType == Ban::Type::ID)
+				if (g_vAutoKickEntries[selectedPlayerIndex].tType == AutoKickEntry::Type::ID)
 				{
 					SendMessage(GetDlgItem(hwnd, IDC_MIDS_RADIOID), BM_SETCHECK, BST_CHECKED, 1);
 					SendMessage(GetDlgItem(hwnd, IDC_MIDS_RADIONAME), BM_SETCHECK, BST_UNCHECKED, 1);
@@ -2479,73 +2439,44 @@ void StartServerbrowser(void)
 	}
 }
 
-void BanThreadFunction()  // function that's started as thread to regularly check servers for banned players / players with a too high ping and to kick them
-{
-	std::vector <pb2lib::Server> servers;
-	std::vector <Ban> bans;
-	std::vector <pb2lib::Player> players;
-	std::string sMsgBuffer;
-	std::string sReturnBuffer;
+void AutoKickTimerFunction() noexcept {
+	// todo: mutex -- currently race condition
+	std::vector <pb2lib::Server> servers = g_vSavedServers;
+	std::vector <AutoKickEntry> autokick_entries = g_vAutoKickEntries;
 
-	while (true)
+    for (const auto& server : servers)
 	{
-		// TODO: Make std::threads, use proper wait + stop mechanic (condition variable, mutex, bool flag?)
-		if (!gSettings.bRunBanThread)
-		{
-            g_hBanThread = INVALID_HANDLE_VALUE;
-            return;
-		}
-
-		// todo: mutex -- currently race condition
-        servers = g_vSavedServers;
-        bans = g_vBannedPlayers;
-
-        for (const auto& server : servers)
-		{
-			players = pb2lib::get_players(server.address, server.rcon_password, gSettings.fTimeoutSecs);
+		std::vector <pb2lib::Player> players = pb2lib::get_players(server.address, server.rcon_password, gSettings.fTimeoutSecs);
 			
-            for (const auto& player : players)
+        for (const auto& player : players)
+		{
+			if (gSettings.iAutoKickCheckMaxPingMsecs != 0 && player.ping > gSettings.iAutoKickCheckMaxPingMsecs)
 			{
-				if (gSettings.iMaxPingMsecs != 0 && player.ping > gSettings.iMaxPingMsecs)
-				{
-					MainWindowLogPb2LibExceptionsToConsole([&]() {
-						std::string command = "kick " + std::to_string(player.number);
-						auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
-						MainWindowWriteConsole("Player " + player.name + " on server " + server.hostname + "had a too high ping and was kicked.");
-					});
-					continue;
-				}
-
-				auto ban_it = std::ranges::find_if(bans, [&](const Ban& ban) {
-					return (ban.tType == Ban::Type::NAME && strcasecmp(player.name.c_str(), ban.sText.c_str()) == 0)
-						|| (ban.tType == Ban::Type::ID && player.id == std::stoi(ban.sText));
-				});
-
-				if (ban_it == bans.end()) {
-					continue;
-				}
-
 				MainWindowLogPb2LibExceptionsToConsole([&]() {
 					std::string command = "kick " + std::to_string(player.number);
 					auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
-					MainWindowWriteConsole("Found and kicked banned player " + player.name + " on server " + server.hostname);
+					MainWindowWriteConsole("Player " + player.name + " on server " + server.hostname + " had a too high ping and was kicked.");
 				});
+				continue;
 			}
-		}
-		MainWindowWriteConsole("Checked servers for banned players.");
-		
-		int iBanThreadTimeWaited = 0;
-		while (iBanThreadTimeWaited <= gSettings.iBanCheckDelaySecs  * 1000)
-		{
-			Sleep(100);
-			iBanThreadTimeWaited += 100;
-			if (!gSettings.bRunBanThread)
-			{
-				g_hBanThread = INVALID_HANDLE_VALUE;
-				return;
+
+			auto autokick_it = std::ranges::find_if(autokick_entries, [&](const AutoKickEntry& entry) {
+				return (entry.tType == AutoKickEntry::Type::NAME && strcasecmp(player.name.c_str(), entry.sText.c_str()) == 0)
+					|| (entry.tType == AutoKickEntry::Type::ID && player.id == std::stoi(entry.sText));
+			});
+
+			if (autokick_it == autokick_entries.end()) {
+				continue;
 			}
+
+			MainWindowLogPb2LibExceptionsToConsole([&]() {
+				std::string command = "kick " + std::to_string(player.number);
+				auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
+				MainWindowWriteConsole("Found and kicked player " + player.name + " on server " + server.hostname);
+			});
 		}
 	}
+	MainWindowWriteConsole("AutoKick checked all servers.");
 }
 
 std::string ConfigLocation() {
@@ -2606,30 +2537,23 @@ int LoadConfig() // loads the servers and settings from the config file
 	GetPrivateProfileString("general", "serverlistAddress", defaults.sServerlistAddress.c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.sServerlistAddress = szReadBuffer;
 	
-	GetPrivateProfileString("bans", "runBanThread", std::to_string(defaults.bRunBanThread).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bRunBanThread  = atoi(szReadBuffer);
-	if (gSettings.bRunBanThread)
-	{
-		CheckMenuItem(GetMenu(gWindows.hWinMain), IDM_BANS_ENABLE, MF_CHECKED);
-		if (WaitForSingleObject(g_hBanThread, 0) != WAIT_TIMEOUT)
-		{
-			CloseHandle(g_hBanThread);
-			g_hBanThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) BanThreadFunction, NULL, 0, NULL);
-		}
-	}
-	GetPrivateProfileString("bans", "delay", std::to_string(defaults.iBanCheckDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.iBanCheckDelaySecs = atoi(szReadBuffer);
+	GetPrivateProfileString("bans", "runBanThread", std::to_string(defaults.bAutoKickCheckEnable).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	gSettings.bAutoKickCheckEnable = atoi(szReadBuffer);
+	
+	GetPrivateProfileString("bans", "delay", std::to_string(defaults.iAutoKickCheckDelay).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	gSettings.iAutoKickCheckDelay = atoi(szReadBuffer);
+	MainWindowUpdateAutoKickState();
 
 	char szCount[10];
-	GetPrivateProfileString("server", "count", "-1\0", szCount, sizeof(szCount), path.c_str());
+	GetPrivateProfileString("server", "count", "-1", szCount, sizeof(szCount), path.c_str());
 	if (strcmp (szCount, "-1") == 0 && GetLastError() == 0x2) return -1; //File not Found
 	for (int i = 0; i < atoi(szCount); i++) //load servers
 	{
 		char szKeyBuffer[512] = { 0 };
 		char szPortBuffer[6] = { 0 };
 		sprintf(szKeyBuffer, "%d", i);
-		GetPrivateProfileString("ip", szKeyBuffer, "0.0.0.0\0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
-		GetPrivateProfileString("port", szKeyBuffer, "00000\0", szPortBuffer, 6, path.c_str());
+		GetPrivateProfileString("ip", szKeyBuffer, "0.0.0.0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
+		GetPrivateProfileString("port", szKeyBuffer, "00000", szPortBuffer, 6, path.c_str());
 		pb2lib::Server server;
 		server.address.ip = szReadBuffer;
 		server.address.port = atoi(szPortBuffer);
@@ -2637,7 +2561,7 @@ int LoadConfig() // loads the servers and settings from the config file
 		// TODO: Run asynchronously -- immediately add the servers to the combobox, but asynchronously add their hostnames once retrieved.
 		server.hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fTimeoutSecs).value_or(unreachable_hostname);
 
-		GetPrivateProfileString("pw", szKeyBuffer, "\0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
+		GetPrivateProfileString("pw", szKeyBuffer, "", szReadBuffer, sizeof(szReadBuffer), path.c_str());
 		server.rcon_password = szReadBuffer;
 
 		g_vSavedServers.push_back(server);
@@ -2646,17 +2570,17 @@ int LoadConfig() // loads the servers and settings from the config file
 	}
 	SendMessage(gWindows.hComboServer, CB_SETCURSEL, 0, 0);
 
-	GetPrivateProfileString("bans", "count", "0\0", szCount, sizeof(szCount), path.c_str());
-	for (int i = 0; i < atoi(szCount); i++) //load bans
+	GetPrivateProfileString("bans", "count", "0", szCount, sizeof(szCount), path.c_str());
+	for (int i = 0; i < atoi(szCount); i++)
 	{
 		char szKeyBuffer[512];
 		sprintf(szKeyBuffer, "%d", i);
-		GetPrivateProfileString("bans", szKeyBuffer, "\0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
+		GetPrivateProfileString("bans", szKeyBuffer, "", szReadBuffer, sizeof(szReadBuffer), path.c_str());
 		if (strcmp(szReadBuffer, "") == 0) {
 			return -2;
 		}
 
-		Ban ban;
+		AutoKickEntry ban;
 		ban.sText = szReadBuffer;
 
 		sprintf(szKeyBuffer, "%dtype", i);
@@ -2664,25 +2588,28 @@ int LoadConfig() // loads the servers and settings from the config file
 		if (strcmp(szReadBuffer, "-1") == 0) {
 			return -2;
 		}
-		ban.tType = (Ban::Type)atoi(szReadBuffer);
-		g_vBannedPlayers.push_back(ban);
+		ban.tType = (AutoKickEntry::Type)atoi(szReadBuffer);
+		g_vAutoKickEntries.push_back(ban);
 	}
 	return 1;
 }
 
 void SaveConfig() // Saves all servers and settings in the config file
 {
+	// TODO: Store and reload max ping for auto-kick?
+	// TODO: Update ini paths with renamed program terminology (e.g. ban vs autokick)
+
 	MainWindowWriteConsole("Saving configuration file...");
 	auto path = ConfigLocation();
 
 	//clear old config so servers & bans that are not used anymore are not occupying any disk space:
-	WritePrivateProfileString("ip\0", NULL, NULL, path.c_str());
-	WritePrivateProfileString("pw\0", NULL, NULL, path.c_str());
-	WritePrivateProfileString("port\0", NULL, NULL, path.c_str());
-	WritePrivateProfileString("bans\0", NULL, NULL, path.c_str());
+	WritePrivateProfileString("ip", NULL, NULL, path.c_str());
+	WritePrivateProfileString("pw", NULL, NULL, path.c_str());
+	WritePrivateProfileString("port", NULL, NULL, path.c_str());
+	WritePrivateProfileString("bans", NULL, NULL, path.c_str());
 	
 	std::string sWriteBuffer = std::to_string(g_vSavedServers.size());
-	if (!WritePrivateProfileString("server\0", "count\0", sWriteBuffer.c_str(), path.c_str()))
+	if (!WritePrivateProfileString("server", "count", sWriteBuffer.c_str(), path.c_str()))
 		return;
 
 	for (unsigned int i = 0; i< g_vSavedServers.size(); i++) //write servers to it
@@ -2695,39 +2622,39 @@ void SaveConfig() // Saves all servers and settings in the config file
 	}
 
 	sWriteBuffer = std::to_string(gSettings.fTimeoutSecs);
-	WritePrivateProfileString("general\0", "timeout\0", sWriteBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("general", "timeout", sWriteBuffer.c_str(), path.c_str());
 	sWriteBuffer = std::to_string(gSettings.fAllServersTimeoutSecs);
-	WritePrivateProfileString("general\0", "timeoutForNonRconServers\0", sWriteBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("general", "timeoutForNonRconServers", sWriteBuffer.c_str(), path.c_str());
 	sWriteBuffer = std::to_string(gSettings.iMaxConsoleLineCount);
-	WritePrivateProfileString("general\0", "maxConsoleLineCount\0", sWriteBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("general", "maxConsoleLineCount", sWriteBuffer.c_str(), path.c_str());
 	sWriteBuffer = std::to_string(gSettings.bLimitConsoleLineCount);
-	WritePrivateProfileString("general\0", "limitConsoleLineCount\0", sWriteBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("general", "limitConsoleLineCount", sWriteBuffer.c_str(), path.c_str());
 	sWriteBuffer = std::to_string(gSettings.iAutoReloadDelaySecs);
-	WritePrivateProfileString("general\0", "autoReloadDelay\0", sWriteBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("general", "autoReloadDelay", sWriteBuffer.c_str(), path.c_str());
 	sWriteBuffer = std::to_string(gSettings.bColorPlayers);
-	WritePrivateProfileString("general\0", "colorPlayers\0", sWriteBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("general", "colorPlayers", sWriteBuffer.c_str(), path.c_str());
 	sWriteBuffer = std::to_string(gSettings.bColorPings);
-	WritePrivateProfileString("general\0", "colorPings\0", sWriteBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("general", "colorPings", sWriteBuffer.c_str(), path.c_str());
 	sWriteBuffer = std::to_string(gSettings.bDisableConsole);
-	WritePrivateProfileString("general\0", "disableConsole\0", sWriteBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("general", "disableConsole", sWriteBuffer.c_str(), path.c_str());
 	
-	WritePrivateProfileString("general\0", "serverlistAddress\0", gSettings.sServerlistAddress.c_str(), path.c_str());
+	WritePrivateProfileString("general", "serverlistAddress", gSettings.sServerlistAddress.c_str(), path.c_str());
 	
-	sWriteBuffer = std::to_string(gSettings.bRunBanThread);
-	WritePrivateProfileString("bans\0", "runBanThread\0", sWriteBuffer.c_str(), path.c_str());
-	sWriteBuffer = std::to_string(gSettings.iBanCheckDelaySecs);
-	WritePrivateProfileString("bans\0", "delay\0", sWriteBuffer.c_str(), path.c_str());
+	sWriteBuffer = std::to_string(gSettings.bAutoKickCheckEnable);
+	WritePrivateProfileString("bans", "runBanThread", sWriteBuffer.c_str(), path.c_str());
+	sWriteBuffer = std::to_string(gSettings.iAutoKickCheckDelay);
+	WritePrivateProfileString("bans", "delay", sWriteBuffer.c_str(), path.c_str());
 
-	std::string sKeyBuffer = std::to_string(g_vBannedPlayers.size());
+	std::string sKeyBuffer = std::to_string(g_vAutoKickEntries.size());
 	WritePrivateProfileString("bans", "count", sKeyBuffer.c_str(), path.c_str());
 
-	for (unsigned int i = 0; i < g_vBannedPlayers.size(); i++)
+	for (unsigned int i = 0; i < g_vAutoKickEntries.size(); i++)
 	{
 		sKeyBuffer = std::to_string(i);
-		WritePrivateProfileString("bans", sKeyBuffer.c_str(), g_vBannedPlayers[i].sText.c_str(), path.c_str());
+		WritePrivateProfileString("bans", sKeyBuffer.c_str(), g_vAutoKickEntries[i].sText.c_str(), path.c_str());
 
 		sKeyBuffer = std::to_string(i) + "type";
-		sWriteBuffer = std::to_string(static_cast<int>(g_vBannedPlayers[i].tType));
+		sWriteBuffer = std::to_string(static_cast<int>(g_vAutoKickEntries[i].tType));
 		WritePrivateProfileString("bans", sKeyBuffer.c_str(), sWriteBuffer.c_str(), path.c_str());
 	}
 }

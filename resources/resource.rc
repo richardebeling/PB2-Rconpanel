@@ -41,14 +41,13 @@ IDM MENU
 	{
 		MENUITEM "Manage &Servers...", IDM_SERVER_MANAGE
 		MENUITEM "Manage &Rotation...", IDM_SERVER_ROTATION
-		//MENUITEM "&Change serversettings", IDM_SERVER_CVARS
+		MENUITEM "Manage &Banned IPs...", IDM_SERVER_BANNEDIPS
 	}
-	POPUP "&Ban / Kick Management"
+	POPUP "&AutoKick"
 	{
-		MENUITEM "&Enable Automated Kicks", IDM_BANS_ENABLE
-		MENUITEM "&Set Maximum Ping...", IDM_BANS_SETPING
-		MENUITEM "Manage Banned I&Ds...", IDM_BANS_MANAGEIDS
-		MENUITEM "Manage Banned I&Ps...", IDM_BANS_MANAGEIPS
+		MENUITEM "&Enable AutoKick", IDM_AUTOKICK_ENABLE
+		MENUITEM "&Set Maximum Ping...", IDM_AUTOKICK_SETPING
+		MENUITEM "Manage &AutoKick IDs/Names...", IDM_AUTOKICK_MANAGEIDS
 	}
 	POPUP "&Help"
 	{
@@ -104,16 +103,16 @@ FONT 8, "Ms Shell Dlg"
 
 IDD_MANAGEIDS DIALOG 0, 0, 177, 154
 STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
-CAPTION "Manage Banned IDs / Names"
+CAPTION "Manage AutoKick IDs / Names"
 FONT 8, "Ms Shell Dlg"
 {
     LISTBOX         IDC_MIDS_LIST, 7, 7, 97, 140, WS_TABSTOP | WS_VSCROLL | LBS_NOINTEGRALHEIGHT | LBS_SORT | LBS_NOTIFY
     EDITTEXT        IDC_MIDS_EDIT, 109, 7, 61, 14, ES_AUTOHSCROLL
     AUTORADIOBUTTON "name", IDC_MIDS_RADIONAME, 137, 26, 33, 8
     AUTORADIOBUTTON "ID", IDC_MIDS_RADIOID, 109, 26, 23, 8
-    PUSHBUTTON      "Add ban", IDC_MIDS_BUTTONADD, 120, 39, 50, 14
-    PUSHBUTTON      "Remove ban", IDC_MIDS_BUTTONREMOVE, 120, 58, 50, 14
-    PUSHBUTTON      "Save ban", IDC_MIDS_BUTTONSAVE, 120, 77, 50, 14
+    PUSHBUTTON      "Add", IDC_MIDS_BUTTONADD, 120, 39, 50, 14
+    PUSHBUTTON      "Remove", IDC_MIDS_BUTTONREMOVE, 120, 58, 50, 14
+    PUSHBUTTON      "Save", IDC_MIDS_BUTTONSAVE, 120, 77, 50, 14
     DEFPUSHBUTTON   "OK", IDC_MIDS_BUTTONOK, 120, 133, 50, 14
 }
 
@@ -161,8 +160,8 @@ FONT 8, "Ms Shell Dlg"
     LTEXT           "1.000 s", IDC_PS_STATICOTHERSERVERS, 243, 33, 24, 8, SS_LEFT, WS_EX_LEFT
     
     GROUPBOX        "Intervals", 1, 7, 60, 266, 51, 0, WS_EX_LEFT
-    LTEXT           "Checking interval for ID ban thread (if active):", IDC_STATIC, 13, 71, 144, 8, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        IDC_PS_EDITBANINTERVAL, 160, 68, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
+    LTEXT           "Checking interval for AutoKick (if active):", IDC_STATIC, 13, 71, 144, 8, SS_LEFT, WS_EX_LEFT
+    EDITTEXT        IDC_PS_EDITAUTOKICKINTERVAL, 160, 68, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
     LTEXT           "seconds", 2, 201, 71, 28, 8, SS_LEFT, WS_EX_LEFT
 	LTEXT           "Automatically refresh players after (0 = disabled):", IDC_STATIC, 13, 90, 145, 8, SS_LEFT, WS_EX_LEFT
     EDITTEXT        IDC_PS_EDITAUTORELOAD, 160, 87, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
@@ -211,8 +210,8 @@ VS_VERSION_INFO VERSIONINFO
 	{
 		BLOCK "040904E4"
 		{
-			VALUE "LegalCopyright", "Copyright (C) 2014 'Richard'\0"
-			VALUE "OriginalFilename", "Rconpanel.exe\0"
+			VALUE "LegalCopyright", "Copyright (C) 2014 'Richard'"
+			VALUE "OriginalFilename", "Rconpanel.exe"
 		}
 	}
 	BLOCK "VarFileInfo"

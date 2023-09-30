@@ -69,7 +69,7 @@ struct WindowHandles {
 	HWND hComboServer = NULL;
 	HWND hListPlayers = NULL;
 	HWND hButtonKick = NULL;
-	HWND hButtonBanID = NULL;
+	HWND hButtonAutoKick = NULL;
 	HWND hButtonBanIP = NULL;
 	HWND hButtonReload = NULL;
 	HWND hButtonDPLoginProfile = NULL;
@@ -104,7 +104,7 @@ DWORD ColorFromTeam(pb2lib::Team team) {
 	return Colors::dwWhite;
 }
 
-struct Ban {
+struct AutoKickEntry {
 	enum class Type {
 		ID = 0,
 		NAME = 1,
@@ -147,7 +147,8 @@ void PostMessageToAllWindows(UINT message);  // TODO: Maybe only to windows of o
 std::optional<std::string> GetPb2InstallPath(void);
 void StartServerbrowser(void);
 
-void BanThreadFunction(void);
+void AutoKickTimerFunction() noexcept;
+void MainWindowUpdateAutoKickState() noexcept;
 void MainWindowUpdatePlayersListview() noexcept;
 void SignalAllThreads(std::map<size_t, HANDLE> * map);
 pb2lib::Server* MainWindowGetSelectedServerOrLoggedNull() noexcept;
@@ -162,7 +163,7 @@ void ShowPlayerInfo(HWND hwnd);
 // Callback Main Window                                                                            |
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK WindowProcedure (HWND, UINT, WPARAM, LPARAM);
-void OnMainWindowBanID(void);
+void OnMainWindowAutoKick(void);
 void OnMainWindowBanIP(void);
 void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct);
