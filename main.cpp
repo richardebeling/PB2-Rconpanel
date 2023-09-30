@@ -18,9 +18,9 @@
 */
 
 //TODO: Add: Modifiable messages that will be said as console before players are kicked.
-//TODO: Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server (IDD_MANAGECVARS is the current placeholder)
+//TODO: Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server
 //TODO: Fix ip addresses not being shown sometimes (because assignment of information to the player fails?)
-//TODO: Option to draw nothing instead of a 0 in the listview when no information is given.
+//TODO: Draw nothing instead of a 0 in the listview when no information is given.
 //TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin / ip whois?)
 //TODO: Disable "Ban IP" button when the IP was not loaded correctly
 
@@ -328,7 +328,6 @@ void MainWindowUpdatePlayersListview() noexcept
 
 void MainWindowWriteConsole(const std::string_view str) // prints text to gWindows.hEditConsole, adds timestamp and linebreak
 {
-	// TODO: Reset scroll position / selection sometimes broken
 	// TODO: Sometimes flickers
 
 	time_t rawtime;
@@ -604,7 +603,6 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	else
 		MainWindowWriteConsole("!!! Unexpected error when loading the configuration file: " + std::to_string(retVal) + " !!!");
 	
-	// TODO: Aktiven Server entfernen verursacht "Error why trying to get selected server" spam
 	SendMessage(hwnd, WM_SERVERCHANGED, 0, 0);
 
 	trigger_regular_player_refetch_thread = std::jthread([&](std::stop_token stop_token, HWND window) {
@@ -1377,6 +1375,7 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			gSettings.iAutoReloadDelaySecs = atoi (buffer.data());
 			trigger_regular_player_refetch_thread_cv.notify_all();
 			
+			// TODO: Also use 0 = unlimited semantics?
 			GetDlgItemText(hwnd, IDC_PS_EDITLINECOUNT, buffer.data(), static_cast<int>(buffer.size()));
 			gSettings.iMaxConsoleLineCount = atoi (buffer.data());
 			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKLINECOUNT) == BST_CHECKED)
@@ -1869,6 +1868,9 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		}
 		case IDC_DM_BUTTONREMOVE:
 		{
+			// TODO: Removing the selected server causes "Error why trying to get selected server" spam by the auto-reload-thread
+			// -- select one of the remaining ones if current one was removed?
+
 			// TODO: Use helpers
 			//Get position of selected server in g_vSavedServers
 			auto iCurSel = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETCURSEL, 0, 0);
@@ -2413,9 +2415,9 @@ void Edit_ReduceLines(HWND hEdit, int iLines)
 
 void Edit_ScrollToEnd(HWND hEdit)
 {
-	int iMaxVert, iMaxHorz;
-	GetScrollRange(hEdit, SB_VERT, &iMaxHorz, &iMaxVert);
-	SetScrollPos(hEdit, SB_VERT, iMaxVert, TRUE);
+	auto text_length = Edit_GetTextLength(hEdit);
+	Edit_SetSel(hEdit, text_length, text_length);
+	Edit_ScrollCaret(hEdit);
 }
 
 void SplitIpAddressToBytes(char * szIp, BYTE * pb0, BYTE * pb1, BYTE * pb2, BYTE * pb3)

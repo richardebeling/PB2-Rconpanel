@@ -120,7 +120,6 @@ struct LoadServersArgs {
 
 // TODO: Mark stuff as noexcept
 // TODO: Clang format, clang tidy
-// TODO: Remove functions that were removed in .cpp
 
 static const std::string unreachable_hostname = "Server did not respond -- Offline?";
 
