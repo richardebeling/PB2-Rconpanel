@@ -25,7 +25,7 @@
 
 LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 IDA_APP_ICON		ICON		"console.ico"
-1					RT_MANIFEST	"Rconpanel.exe.manifest"
+1					RT_MANIFEST	"common-controls-6.manifest"
 
 
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
