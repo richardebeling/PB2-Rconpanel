@@ -2589,35 +2589,37 @@ int LoadConfig() // loads the servers and settings from the config file
 	char szReadBuffer[4096];
 	auto path = ConfigLocation();
 
-	GetPrivateProfileString("general", "timeout", std::to_string(DEFAULTSETTINGS::fTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	Settings defaults;
+
+	GetPrivateProfileString("general", "timeout", std::to_string(defaults.fTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.fTimeoutSecs = (float) atof(szReadBuffer);
 	
-	GetPrivateProfileString("general", "timeoutForNonRconServers", std::to_string(DEFAULTSETTINGS::fAllServersTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("general", "timeoutForNonRconServers", std::to_string(defaults.fAllServersTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.fAllServersTimeoutSecs = (float) atof(szReadBuffer);
 	
-	GetPrivateProfileString("general", "maxConsoleLineCount", std::to_string(DEFAULTSETTINGS::iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("general", "maxConsoleLineCount", std::to_string(defaults.iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.iMaxConsoleLineCount = atoi(szReadBuffer);
 	
-	GetPrivateProfileString("general", "limitConsoleLineCount", std::to_string(DEFAULTSETTINGS::iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("general", "limitConsoleLineCount", std::to_string(defaults.iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.bLimitConsoleLineCount = atoi(szReadBuffer);
 	
-	GetPrivateProfileString("general", "colorPlayers", std::to_string(DEFAULTSETTINGS::bColorPlayers).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("general", "colorPlayers", std::to_string(defaults.bColorPlayers).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.bColorPlayers = atoi(szReadBuffer);
 	
-	GetPrivateProfileString("general", "colorPings", std::to_string(DEFAULTSETTINGS::bColorPings).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("general", "colorPings", std::to_string(defaults.bColorPings).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.bColorPings = atoi(szReadBuffer);
 	
-	GetPrivateProfileString("general", "disableConsole", std::to_string(DEFAULTSETTINGS::bDisableConsole).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("general", "disableConsole", std::to_string(defaults.bDisableConsole).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.bDisableConsole = atoi(szReadBuffer);
 	
-	GetPrivateProfileString("general", "autoReloadDelay", std::to_string(DEFAULTSETTINGS::iAutoReloadDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("general", "autoReloadDelay", std::to_string(defaults.iAutoReloadDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.iAutoReloadDelaySecs = atoi(szReadBuffer);
 	trigger_regular_player_refetch_thread_cv.notify_all();
 	
-	GetPrivateProfileString("general", "serverlistAddress", DEFAULTSETTINGS::sServerlistAddress.c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("general", "serverlistAddress", defaults.sServerlistAddress.c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.sServerlistAddress = szReadBuffer;
 	
-	GetPrivateProfileString("bans", "runBanThread", std::to_string(DEFAULTSETTINGS::bRunBanThread).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("bans", "runBanThread", std::to_string(defaults.bRunBanThread).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.bRunBanThread  = atoi(szReadBuffer);
 	if (gSettings.bRunBanThread)
 	{
@@ -2628,7 +2630,7 @@ int LoadConfig() // loads the servers and settings from the config file
 			g_hBanThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) BanThreadFunction, NULL, 0, NULL);
 		}
 	}
-	GetPrivateProfileString("bans", "delay", std::to_string(DEFAULTSETTINGS::iBanCheckDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	GetPrivateProfileString("bans", "delay", std::to_string(defaults.iBanCheckDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.iBanCheckDelaySecs = atoi(szReadBuffer);
 
 	char szCount[10];
@@ -2660,24 +2662,23 @@ int LoadConfig() // loads the servers and settings from the config file
 	GetPrivateProfileString("bans", "count", "0\0", szCount, sizeof(szCount), path.c_str());
 	for (int i = 0; i < atoi(szCount); i++) //load bans
 	{
-		Ban tempban;
 		char szKeyBuffer[512];
 		sprintf(szKeyBuffer, "%d", i);
 		GetPrivateProfileString("bans", szKeyBuffer, "\0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
-		if (strcmp(szReadBuffer, "") == 0)
-		{
+		if (strcmp(szReadBuffer, "") == 0) {
 			return -2;
 		}
-		tempban.sText = szReadBuffer;
+
+		Ban ban;
+		ban.sText = szReadBuffer;
 
 		sprintf(szKeyBuffer, "%dtype", i);
 		GetPrivateProfileString("bans", szKeyBuffer, "-1", szReadBuffer, 6, path.c_str());
-		if (strcmp(szReadBuffer, "-1") == 0)
-		{
+		if (strcmp(szReadBuffer, "-1") == 0) {
 			return -2;
 		}
-		tempban.tType = (Ban::Type)atoi(szReadBuffer);
-		g_vBannedPlayers.push_back(tempban);
+		ban.tType = (Ban::Type)atoi(szReadBuffer);
+		g_vBannedPlayers.push_back(ban);
 	}
 	return 1;
 }

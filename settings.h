@@ -28,23 +28,6 @@ static constexpr int SCORE = 6;
 static constexpr int PING = 7;
 };
 
-// TODO: Remove -- make the deafult of struct Settings the default
-namespace DEFAULTSETTINGS
-{
-	static const     bool  bRunBanThread          = false;
-	static const     bool  bLimitConsoleLineCount = true;
-	static const     float fTimeoutSecs           = 0.5f;
-	static const     float fAllServersTimeoutSecs = 1.0f;
-	static const     int   iBanCheckDelaySecs     = 60;
-	static const     int   iMaxConsoleLineCount   = 500;
-	static const     int   iMaxPingMsecs          = 0;
-	static const     bool  bColorPings            = false;
-	static const     bool  bColorPlayers          = true;
-	static const	 bool  bDisableConsole		  = false;
-	static const     int   iAutoReloadDelaySecs   = 0;
-	static const std::string sServerlistAddress	  = "http://www.dplogin.com/serverlist.php";
-}
-
 struct Settings
 {
 	bool  bRunBanThread = false;					// signals for threads to exit
