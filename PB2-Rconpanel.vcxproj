@@ -189,6 +189,7 @@
     <None Include="README.md" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="include\async_repeated_timer.h" />
     <ClInclude Include="include\main.h" />
     <ClInclude Include="include\pb2lib.h" />
     <ClInclude Include="include\resource.h" />

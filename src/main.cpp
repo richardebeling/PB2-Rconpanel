@@ -32,6 +32,7 @@
 #define strcasecmp _stricmp
 #endif
 
+#include "async_repeated_timer.h"
 #include "pb2lib.h"
 #include "resource.h"
 #include "main.h"
