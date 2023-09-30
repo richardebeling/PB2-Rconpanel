@@ -50,11 +50,7 @@ std::vector<pb2lib::Server> g_vSavedServers;	//used to store servers in the comb
 std::vector<pb2lib::Server> g_vAllServers;		//used to fill server list in the "Manage servers" dialog
 std::vector<Ban> 			g_vBannedPlayers;	//stores either ID or name of a banned player as string
 
-std::jthread trigger_regular_player_refetch_thread;
-std::condition_variable_any trigger_regular_player_refetch_thread_cv;
-std::mutex trigger_regular_player_refetch_thread_mutex;
-
-std::atomic<std::chrono::steady_clock::time_point> players_last_refetched_at;
+AsyncRepeatedTimer g_AutoReloadTimer;
 
 HANDLE g_hBanThread         = 0; // TODO
 HANDLE g_hSendRconThread    = 0; // TODO
@@ -124,10 +120,9 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpsz
 						HWND_DESKTOP,
 						LoadMenu (hThisInstance, MAKEINTRESOURCE(IDM)),
 						hThisInstance, NULL);
-	
-	ShowWindow(gWindows.hWinMain, nCmdShow);
-						
 	// All other windows will be created in OnMainWindowCreate
+
+	ShowWindow(gWindows.hWinMain, nCmdShow);
 
 	MSG messages;
 	while (GetMessage(&messages, NULL, 0, 0))
@@ -181,8 +176,9 @@ pb2lib::Player* MainWindowGetSelectedPlayerOrLoggedNull() noexcept {
 	return result;
 }
 
+// TODO: additional string argument describing the attempted action
 template <typename FuncT>
-auto MainWindowLogExceptionsToConsole(FuncT&& functor) {
+auto MainWindowLogPb2LibExceptionsToConsole(FuncT&& functor) {
 	try {
 		functor();
 	}
@@ -474,6 +470,8 @@ int CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lPa
 
 BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 {
+	g_AutoReloadTimer.set_trigger_action([hwnd]() { PostMessage(hwnd, WM_REFETCHPLAYERS, 0, 0); });
+
 	//{ Create Controls
 	DWORD dwBaseUnits = GetDialogBaseUnits();
 
@@ -605,29 +603,6 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	
 	SendMessage(hwnd, WM_SERVERCHANGED, 0, 0);
 
-	trigger_regular_player_refetch_thread = std::jthread([&](std::stop_token stop_token, HWND window) {
-		std::unique_lock<std::mutex> lock(trigger_regular_player_refetch_thread_mutex);
-		while (!stop_token.stop_requested()) {
-			auto interval = gSettings.iAutoReloadDelaySecs.load();
-			if (interval == 0) {
-				trigger_regular_player_refetch_thread_cv.wait(lock, stop_token, [&]() {
-					return gSettings.iAutoReloadDelaySecs.load() != 0;
-				});
-			}
-
-			// wait() above terminated, so at some point, interval was set to non-zero. We can thus refetch once.
-			PostMessage(window, WM_REFETCHPLAYERS, 0, 0);
-			players_last_refetched_at = std::chrono::steady_clock::now();
-
-			// Now wait for signal(interval changed), stop requested, or timeout before repeating.
-			auto wait_until = players_last_refetched_at.load() + std::chrono::duration<double>(interval);
-			trigger_regular_player_refetch_thread_cv.wait_until(lock, stop_token, wait_until, [&](){
-				return interval != gSettings.iAutoReloadDelaySecs.load();
-			});
-		}
-	}, hwnd);
-
-
 	return true;
 	//Will make the window procedure return 0 because the message cracker changes the return value:
 	//#define HANDLE_WM_CREATE(hwnd,wParam,lParam,fn) (LRESULT)((fn)((hwnd),(LPCREATESTRUCT)(lParam)) ? 0 : -1)
@@ -646,7 +621,7 @@ void OnMainWindowForcejoin(void)
 		return;
 	}
 
-	MainWindowLogExceptionsToConsole([&]() {
+	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
 		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
 			return updated_player.number == player->number && updated_player.name == player->name; });
@@ -673,7 +648,7 @@ void OnMainWindowSendRcon(void)
 	std::vector<char> command_buffer(buffer_size);
 	GetWindowText(gWindows.hComboRcon, command_buffer.data(), buffer_size);
 
-	MainWindowLogExceptionsToConsole([&]() {
+	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		std::string answer = pb2lib::send_rcon(server->address, server->rcon_password, command_buffer.data(), gSettings.fTimeoutSecs);
 		MainWindowWriteConsole("Got answer from Server:\r\n" + answer);
 	});
@@ -735,7 +710,7 @@ void OnMainWindowKickPlayer(void)
 		return;
 	}
 
-	MainWindowLogExceptionsToConsole([&]() {
+	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
 		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
 			return updated_player.number == player->number && updated_player.name == player->name; });
@@ -763,7 +738,7 @@ void OnMainWindowBanIP(void)
 
 	std::string command = "sv addip " + player->ip;
 
-	MainWindowLogExceptionsToConsole([&]() {
+	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
 		MainWindowWriteConsole("The IP " + player->ip + " was added to the server's ban list.");
 	});
@@ -792,9 +767,6 @@ void OnMainWindowDestroy(HWND hwnd)
 	
 	gSettings.bRunBanThread = 0;
 
-	trigger_regular_player_refetch_thread.request_stop();
-	trigger_regular_player_refetch_thread.join();
-	
 	HANDLE rHandles[3] = {g_hBanThread, g_hSendRconThread};
 	WaitForMultipleObjects(3, rHandles, TRUE, 10000);
 	
@@ -1127,7 +1099,7 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
 	// TODO: Move into callback function -- make variables globals?
 	if (message == WM_REFETCHPLAYERS || message == WM_SERVERCHANGED) {
-		players_last_refetched_at = std::chrono::steady_clock::now();
+		g_AutoReloadTimer.reset_current_timeout();
 
 		fetch_players_thread.request_stop();
 		if (fetch_players_thread.joinable()) {
@@ -1179,7 +1151,7 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 	if (message == WM_PLAYERSREADY) {
 		// Message might be from an outdated / older thread -> only process if the current future is ready
 		if (fetched_players_future.valid() && fetched_players_future.wait_for(0s) != std::future_status::timeout) {
-			MainWindowLogExceptionsToConsole([&]() {
+			MainWindowLogPb2LibExceptionsToConsole([&]() {
 				g_vPlayers = fetched_players_future.get();
 				MainWindowUpdatePlayersListview();
 				MainWindowWriteConsole("The player list was reloaded.");
@@ -1191,18 +1163,22 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 	if (message == WM_SERVERCVARSREADY) {
 		if (fetched_servercvars_future.valid() && fetched_servercvars_future.wait_for(0s) != std::future_status::timeout) {
 			std::vector<std::string> values;
-			MainWindowLogExceptionsToConsole([&]() { values = fetched_servercvars_future.get(); });
+
+			std::string display_text = "Error";
 
 			// TODO: Cvar names and value access are now separated, they could start mismatching. Do something about that?
 			// Maybe some ServerCvars struct that is returned in the promise, the thread handles all strings and assigns compile-time names?
 
-			std::string display_text = "map: " + values[0];
-			display_text += " | pw: " + (values[1].size() > 0 ? values[1] : "none");
-			display_text += " | elim: " + values[2];
-			display_text += " | timelimit: " + values[3];
-			display_text += " | maxclients: " + values[4];
-			SetWindowText(gWindows.hStaticServerInfo, display_text.c_str());
+			MainWindowLogPb2LibExceptionsToConsole([&]() {
+				values = fetched_servercvars_future.get();
+				display_text = "map: " + values[0];
+				display_text += " | pw: " + (values[1].size() > 0 ? values[1] : "none");
+				display_text += " | elim: " + values[2];
+				display_text += " | timelimit: " + values[3];
+				display_text += " | maxclients: " + values[4];
+			});
 
+			SetWindowText(gWindows.hStaticServerInfo, display_text.c_str());
 			DeleteObjectRAIIWrapper<HRGN> region(CreateRectRgn(0, 0, 0, 0));
 			GetWindowRgn(gWindows.hStaticServerInfo, region);
 			RedrawWindow(gWindows.hWinMain, NULL, region, RDW_ERASE | RDW_INVALIDATE);
@@ -1373,7 +1349,7 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			
 			GetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, buffer.data(), static_cast<int>(buffer.size()));
 			gSettings.iAutoReloadDelaySecs = atoi (buffer.data());
-			trigger_regular_player_refetch_thread_cv.notify_all();
+			g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
 			
 			// TODO: Also use 0 = unlimited semantics?
 			GetDlgItemText(hwnd, IDC_PS_EDITLINECOUNT, buffer.data(), static_cast<int>(buffer.size()));
@@ -1443,7 +1419,7 @@ void LoadRotationToListbox(HWND hListBox)
 		return;
 	}
 	
-	MainWindowLogExceptionsToConsole([&]() {
+	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv maplist", gSettings.fTimeoutSecs);
 
 		SendMessage(hListBox, LB_RESETCONTENT, 0, 0);
@@ -1477,7 +1453,7 @@ void OnManageRotationReloadContent(HWND hwnd)
 	// TODO: Might log two times -- probably ok?
 	LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
 
-	MainWindowLogExceptionsToConsole([&]() {
+	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		std::string answer = pb2lib::get_cvar(server->address, server->rcon_password, "rot_file", gSettings.fTimeoutSecs);
 		SetDlgItemText(hwnd, IDC_MROT_EDITFILE, answer.c_str());
 	});
@@ -1535,7 +1511,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		std::string command = "sv rotation " + subcommand;
 		std::string answer;
 
-		MainWindowLogExceptionsToConsole([&]() {
+		MainWindowLogPb2LibExceptionsToConsole([&]() {
 			answer = pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
 		});
 
@@ -1795,14 +1771,15 @@ void OnManageServersDestroy(HWND hwnd)
 	SendMessage(gWindows.hComboServer, CB_SETCURSEL, 0, 0);
 	
 	SignalAllThreads(&g_mLoadServersThreads);
-	MainWindowWriteConsole("Aborting.");
+	MainWindowWriteConsole("Aborting.");  // TODO: Not always correct
 	
 	g_vAllServers.clear();
 }
 
 BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
-	for(unsigned int i = 0; i < g_vSavedServers.size(); i++) { //Add servers to the lists
+	// TODO: Maybe initially list servers as their IPs, replace by hostname once retrieved
+	for(unsigned int i = 0; i < g_vSavedServers.size(); i++) {
 		auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM)g_vSavedServers[i].hostname.c_str());
 		SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, i);
 	}
@@ -1868,15 +1845,15 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		}
 		case IDC_DM_BUTTONREMOVE:
 		{
-			// TODO: Removing the selected server causes "Error why trying to get selected server" spam by the auto-reload-thread
-			// -- select one of the remaining ones if current one was removed?
-
 			// TODO: Use helpers
 			//Get position of selected server in g_vSavedServers
 			auto iCurSel = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETCURSEL, 0, 0);
 			if (iCurSel == LB_ERR) return;
 			auto iServerIndex = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETITEMDATA, iCurSel, 0);
 			if (iServerIndex == LB_ERR) return;
+
+			// TODO: Removing the selected server causes "Error why trying to get selected server" spam by the auto-reload-thread
+			// Dialog should modify a copy, gServer should be changed on "OK"/"Save", together with updating the combobox.
 			g_vSavedServers.erase(g_vSavedServers.begin() + iServerIndex);
 
 
@@ -1887,6 +1864,8 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 										 0, (LPARAM)g_vSavedServers[i].hostname.c_str());
 				SendMessage (GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, i);
 			}
+
+
 			return;
 		}
 		case IDC_DM_BUTTONSAVE:
@@ -2238,7 +2217,7 @@ void LoadBannedIPsToListbox(HWND hListBox)
 		return;
 	}
 
-	MainWindowLogExceptionsToConsole([&]() {
+	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		std::string answer = pb2lib::send_rcon(server->address, server->rcon_password, "sv listip", gSettings.fTimeoutSecs);
 
 		ListBox_ResetContent(hListBox);
@@ -2281,7 +2260,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		command += std::to_string(FIRST_IPADDRESS(ip)) + "." + std::to_string(SECOND_IPADDRESS(ip))
 			+ "." + std::to_string(THIRD_IPADDRESS(ip)) + "." + std::to_string(FOURTH_IPADDRESS(ip));
 
-		MainWindowLogExceptionsToConsole([&]() {
+		MainWindowLogPb2LibExceptionsToConsole([&]() {
 			pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
 		});
 
@@ -2521,7 +2500,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 			{
 				if (gSettings.iMaxPingMsecs != 0 && player.ping > gSettings.iMaxPingMsecs)
 				{
-					MainWindowLogExceptionsToConsole([&]() {
+					MainWindowLogPb2LibExceptionsToConsole([&]() {
 						std::string command = "kick " + std::to_string(player.number);
 						auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
 						MainWindowWriteConsole("Player " + player.name + " on server " + server.hostname + "had a too high ping and was kicked.");
@@ -2538,7 +2517,7 @@ void BanThreadFunction()  // function that's started as thread to regularly chec
 					continue;
 				}
 
-				MainWindowLogExceptionsToConsole([&]() {
+				MainWindowLogPb2LibExceptionsToConsole([&]() {
 					std::string command = "kick " + std::to_string(player.number);
 					auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
 					MainWindowWriteConsole("Found and kicked banned player " + player.name + " on server " + server.hostname);
@@ -2614,7 +2593,7 @@ int LoadConfig() // loads the servers and settings from the config file
 	
 	GetPrivateProfileString("general", "autoReloadDelay", std::to_string(defaults.iAutoReloadDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.iAutoReloadDelaySecs = atoi(szReadBuffer);
-	trigger_regular_player_refetch_thread_cv.notify_all();
+	g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
 	
 	GetPrivateProfileString("general", "serverlistAddress", defaults.sServerlistAddress.c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.sServerlistAddress = szReadBuffer;
@@ -2647,7 +2626,7 @@ int LoadConfig() // loads the servers and settings from the config file
 		server.address.ip = szReadBuffer;
 		server.address.port = atoi(szPortBuffer);
 
-		// TODO: Run asynchronously
+		// TODO: Run asynchronously -- immediately add the servers to the combobox, but asynchronously add their hostnames once retrieved.
 		server.hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fTimeoutSecs).value_or(unreachable_hostname);
 
 		GetPrivateProfileString("pw", szKeyBuffer, "\0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
