@@ -44,6 +44,20 @@
 
 #include <Gdiplus.h>
 
+template <typename HandleT>
+class DeleteObjectRAIIWrapper {
+public:
+	DeleteObjectRAIIWrapper(HandleT handle) : handle_{ handle } {}
+	DeleteObjectRAIIWrapper(const DeleteObjectRAIIWrapper&) = delete;
+	DeleteObjectRAIIWrapper(DeleteObjectRAIIWrapper&&) = delete;
+	DeleteObjectRAIIWrapper& operator= (const DeleteObjectRAIIWrapper&) = delete;
+	DeleteObjectRAIIWrapper& operator= (DeleteObjectRAIIWrapper&&) = delete;
+	~DeleteObjectRAIIWrapper() { DeleteObject(handle_); }
+	operator HandleT() noexcept { return handle_; };
+private:
+	HandleT handle_;
+};
+
 struct WindowHandles {
 	HWND hDlgManageRotation = NULL;
 	HWND hDlgManageIds = NULL;
@@ -106,45 +120,48 @@ struct LoadServersArgs {
 
 // TODO: Mark stuff as noexcept
 // TODO: Clang format, clang tidy
+// TODO: Remove functions that were removed in .cpp
 
 static const std::string unreachable_hostname = "Server did not respond -- Offline?";
 
-std::unique_ptr<Gdiplus::Bitmap> CreateResizedBitmapClone(Gdiplus::Bitmap *bmp, unsigned int width, unsigned int height);
-size_t GetFirstUnusedMapKey(const std::map<size_t, HANDLE>& m);
+[[noreturn]] void HandleCriticalError(const std::string& message) noexcept;
 
 std::string ConfigLocation(void);
 int  LoadConfig(void);
 void SaveConfig(void);
 void DeleteConfig(void);
 
-void AutoReloadThreadFunction(void);
-void BanThreadFunction(void);
-std::string GetHttpResponse(const std::string& url);
+size_t GetFirstUnusedMapKey(const std::map<size_t, HANDLE>& m);
+
+UINT RegisterWindowMessageOrCriticalError(const std::string& message_name) noexcept;
 void SetClipboardContent(const std::string& content);
+std::string GetHttpResponse(const std::string& url);
+void SplitIpAddressToBytes(char* szIp, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3);
+std::unique_ptr<Gdiplus::Bitmap> CreateResizedBitmapClone(Gdiplus::Bitmap* bmp, unsigned int width, unsigned int height);
+
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
-std::optional<std::string>  GetPb2InstallPath(void);
-void MainWindowRefreshThread(LPVOID lpArgument);
-bool MainWindowRefreshThreadExitIfSignaled(size_t uid);
-void MainWindowUpdatePlayers(pb2lib::Server& server);
-void MainWindowUpdateServerInfo(const pb2lib::Server& server);
+void ListView_SetImage(HWND hListview, std::string_view sImagePath);
+void PostMessageToAllWindows(UINT message);  // TODO: Maybe only to windows of our process?
+
+std::optional<std::string> GetPb2InstallPath(void);
+void StartServerbrowser(void);
+
+void BanThreadFunction(void);
+void MainWindowUpdatePlayersListview() noexcept;
 void SignalAllThreads(std::map<size_t, HANDLE> * map);
 pb2lib::Server* MainWindowGetSelectedServerOrLoggedNull() noexcept;
 void MainWindowWriteConsole(std::string_view);
-void ListView_SetImage(HWND hListview, std::string_view sImagePath);
 void LoadBannedIPsToListbox(HWND hListBox);
 void LoadRotationToListbox(HWND hListBox);
 void LoadServersToListbox(LPVOID lpArgumentStruct);
 void ShowAboutDialog(HWND hwnd);
 void ShowPlayerInfo(HWND hwnd);
-void SplitIpAddressToBytes(char * szIp, BYTE * pb0, BYTE * pb1, BYTE * pb2, BYTE * pb3);
-void StartServerbrowser(void);
 
 //--------------------------------------------------------------------------------------------------
 // Callback Main Window                                                                            |
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK WindowProcedure (HWND, UINT, WPARAM, LPARAM);
-BOOL CALLBACK MainWindowEnumChildProc(HWND hwnd, LPARAM lParam);
 void OnMainWindowBanID(void);
 void OnMainWindowBanIP(void);
 void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);

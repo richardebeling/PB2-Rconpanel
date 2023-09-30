@@ -412,12 +412,21 @@ void annotate_team_from_status(std::vector<Player>* players, const Address& addr
 		const std::string team_string = matches[1];
 		const Team team = team_from_string(team_string);
 
-		const std::string concatenated_numbers = matches[2];
-		auto numbers = concatenated_numbers
+		std::string concatenated_numbers = matches[2];
+		auto number_strings = concatenated_numbers
 			| std::ranges::views::split('!')
-			| std::ranges::views::transform([](auto&& rng) { return std::stoi(std::string(rng.begin(), rng.end())); });
+			| std::ranges::views::transform([](auto&& rng) { return std::string(rng.begin(), rng.end()); })
+			| std::ranges::views::filter([](auto&& str) { return !str.empty(); });
 
-		for (int number : numbers) {
+		for (const auto& number_string : number_strings) {
+			int number;
+			try {
+				number = std::stoi(number_string);
+			}
+			catch (std::exception&) {
+				continue;
+			}
+
 			auto player_it = std::find_if(players->begin(), players->end(), [&](const Player& player) {
 				return player.number == number;
 			});

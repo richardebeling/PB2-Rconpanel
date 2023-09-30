@@ -31,7 +31,6 @@ static constexpr int PING = 7;
 // TODO: Remove -- make the deafult of struct Settings the default
 namespace DEFAULTSETTINGS
 {
-	static const     bool  bRunAutoReloadThread   = false;
 	static const     bool  bRunBanThread          = false;
 	static const     bool  bLimitConsoleLineCount = true;
 	static const     float fTimeoutSecs           = 0.5f;
@@ -42,23 +41,22 @@ namespace DEFAULTSETTINGS
 	static const     bool  bColorPings            = false;
 	static const     bool  bColorPlayers          = true;
 	static const	 bool  bDisableConsole		  = false;
-	static const     int   iAutoReloadDelaySecs   = 60;
+	static const     int   iAutoReloadDelaySecs   = 0;
 	static const std::string sServerlistAddress	  = "http://www.dplogin.com/serverlist.php";
 }
 
 struct Settings
 {
-	bool  bRunAutoReloadThread = false;		// signals for threads to exit.
-	bool  bRunBanThread = false;			//
-	bool  bLimitConsoleLineCount = false;	// Enable or disable the automatic line reduction
-	float fTimeoutSecs = .5;				// timeout used for servers you have rcon access  to
-	float fAllServersTimeoutSecs = 1;		// timeout used for servers that you  don't have rcon access to (maybe higher ping?)
-	int   iBanCheckDelaySecs = 10;			// delay between checking the servers for banned players in seconds
-	int   iMaxConsoleLineCount = 10000;		// maximum lines in the console edit
-	int   iMaxPingMsecs = 0;				// maximum ping in ms, 0 = unlimited
-	bool  bColorPings = false;				// in the listview, the background color of the pings will vary from green to red
-	bool  bColorPlayers = true;				// in the listview, players will get their teamcolor as background
-	bool  bDisableConsole = false;			// the lower part of the GUI (manual RCON communication) will not be shown.
-	int   iAutoReloadDelaySecs = 10;		// delay for auto-reloading;
-	std::string sServerlistAddress;			// address where the server list can be gotten in case it changes.
+	bool  bRunBanThread = false;					// signals for threads to exit
+	bool  bLimitConsoleLineCount = false;			// Enable or disable the automatic line reduction
+	float fTimeoutSecs = .5;						// timeout used for servers you have rcon access  to
+	float fAllServersTimeoutSecs = 1;				// timeout used for servers that you  don't have rcon access to (maybe higher ping?)
+	int   iBanCheckDelaySecs = 10;					// delay between checking the servers for banned players in seconds
+	int   iMaxConsoleLineCount = 10000;				// maximum lines in the console edit
+	int   iMaxPingMsecs = 0;						// maximum ping in ms, 0 = unlimited
+	bool  bColorPings = false;						// in the listview, the background color of the pings will vary from green to red
+	bool  bColorPlayers = true;						// in the listview, players will get their teamcolor as background
+	bool  bDisableConsole = false;					// the lower part of the GUI (manual RCON communication) will not be shown.
+	std::atomic<int> iAutoReloadDelaySecs = 0;		// delay for auto-reloading, 0 = disabled
+	std::string sServerlistAddress;					// address where the server list can be gotten in case it changes.
 };

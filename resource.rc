@@ -164,7 +164,7 @@ FONT 8, "Ms Shell Dlg"
     LTEXT           "Checking interval for ID ban thread (if active):", IDC_STATIC, 13, 71, 144, 8, SS_LEFT, WS_EX_LEFT
     EDITTEXT        IDC_PS_EDITBANINTERVAL, 160, 68, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
     LTEXT           "seconds", 2, 201, 71, 28, 8, SS_LEFT, WS_EX_LEFT
-    AUTOCHECKBOX    "Automatically reload the players every:", IDC_PS_CHECKAUTORELOAD, 14, 89, 136, 8, 0, WS_EX_LEFT
+	LTEXT           "Automatically refresh players after (0 = disabled):", IDC_STATIC, 13, 90, 145, 8, SS_LEFT, WS_EX_LEFT
     EDITTEXT        IDC_PS_EDITAUTORELOAD, 160, 87, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
     LTEXT           "seconds", 3, 201, 90, 28, 8, SS_LEFT, WS_EX_LEFT
     
