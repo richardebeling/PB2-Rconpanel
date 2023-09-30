@@ -360,7 +360,7 @@ std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std
 	return result;
 }
 
-void annotate_score_ping_port_ip_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, double timeout) {
+void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, double timeout) {
 	const std::string response = send_rcon(address, rcon_password, "status", timeout);
 
 	std::regex rx(R"((\d+)\s*(\d+)\s*(\d+)\s{0,1}(.+?)\s*(\d+|CNCT)\s*(\d+\.\d+\.\d+\.\d+):(\d{1,5})\s*(\d{2,5}))");
@@ -374,16 +374,22 @@ void annotate_score_ping_port_ip_from_rcon_status(std::vector<Player>* players, 
 
 		const std::string name = matches[4];
 		const int number = std::stoi(matches[1]);
+		if (name == "CNCT") {
+			continue;
+		}
 
+		// If the player disconnected and someone else connected in the meantime, we will annotate the new ip to the old player
+		// However, matching names doesn't work because the "you can only change your name 3 times"-limit is not reflected in the
+		// rcon status answer, so we have a name mismatch here.
 		auto player_it = std::find_if(players->begin(), players->end(), [&](const Player& player){
-			if (player.number != number) {
-				return false;
-			}
-
+			return player.number == number;
+			
+			/*  // Old name-matching code
 			return player.name.compare(0, 16, name) == 0
 				|| (player.name.starts_with("noname") && name.starts_with("noname"))
 				|| (player.name.starts_with("newbie") && name.starts_with("newbie"))
 				|| (player.name.find_first_not_of(' ') == std::string::npos && name.find_first_not_of(' ') == std::string::npos);
+			*/
 		});
 
 		if (player_it == players->end()) {
@@ -392,8 +398,7 @@ void annotate_score_ping_port_ip_from_rcon_status(std::vector<Player>* players, 
 
 		player_it->score = std::stoi(matches[2]);
 		player_it->ping = std::stoi(matches[3]);
-		player_it->port = std::stoi(matches[7]);
-		player_it->ip = matches[6];
+		player_it->address = { matches[6], std::stoi(matches[7]) };
 	}
 }
 
@@ -442,7 +447,7 @@ void annotate_team_from_status(std::vector<Player>* players, const Address& addr
 
 std::vector<Player> get_players(const Address& address, std::string_view rcon_password, double timeout) {
 	std::vector<Player> result = get_players_from_rcon_sv_players(address, rcon_password, timeout);
-	annotate_score_ping_port_ip_from_rcon_status(&result, address, rcon_password, timeout);
+	annotate_score_ping_address_from_rcon_status(&result, address, rcon_password, timeout);
 	annotate_team_from_status(&result, address, timeout);
 
 	return result;

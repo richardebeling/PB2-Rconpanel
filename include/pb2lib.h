@@ -51,25 +51,23 @@ enum class Team : char {
 	AUTO = 'a',
 };
 
+struct Address {
+	std::string ip = "";
+	int port = 0;
+};
+
 
 struct Player
 {
 	std::string name;
-	std::string ip;
-	int port = 0;
 	int number = 0;
-	int id = 0;  // TODO: Make optional (other fields as well, only keep those that are set)
-	int build = 0;
 	int op = 0;
-	int ping = 0;
-	int score = 0;
-	Team team = Team::OBSERVER;
-};
-
-
-struct Address {
-	std::string ip = "";
-	int port = 0;
+	int build = 0;  // always 0 for bots
+	std::optional<int> id = std::nullopt;  // might not be logged in
+	std::optional<Address> address = std::nullopt;  // annotation might fail
+	std::optional<int> ping = std::nullopt;  // annotation might fail
+	std::optional<int> score = std::nullopt;  // annotation might fail
+	std::optional<Team> team = std::nullopt;  // annotation might fail
 };
 
 
@@ -133,7 +131,7 @@ std::string get_cvar(const Address& address, std::string_view rcon_password, std
 std::vector<std::string> get_cvars(const Address& address, std::string_view rcon_password, const std::vector<std::string>& cvars, double timeout);
 
 std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std::string_view rcon_password, double timeout);
-void annotate_score_ping_port_ip_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, double timeout);
+void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, double timeout);
 void annotate_team_from_status(std::vector<Player>* players, const Address& address, double timeout);
 std::vector<Player> get_players(const Address& address, std::string_view rcon_password, double timeout);
 }
