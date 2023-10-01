@@ -30,7 +30,7 @@ std::vector<AutoKickEntry> 	g_vAutoKickEntries;
 AsyncRepeatedTimer g_AutoReloadTimer;
 AsyncRepeatedTimer g_AutoKickTimer;
 
-HANDLE g_hSendRconThread    = 0; // TODO
+std::vector<std::future<std::string>> g_RconResponses;
 
 std::vector<pb2lib::Server> g_vAllServers;		// used to fill server list in the "Manage servers" dialog
 std::map <size_t, HANDLE> g_mLoadServersThreads;	//contains UID and ExitEvent for every reload thread
@@ -39,6 +39,7 @@ UINT WM_REFETCHPLAYERS;
 UINT WM_SERVERCHANGED;
 UINT WM_PLAYERSREADY;
 UINT WM_SERVERCVARSREADY;
+UINT WM_RCONRESPONSEREADY;
 
 WindowHandles gWindows; // stores all window handles
 Settings gSettings;     // stores all program settings
@@ -62,6 +63,7 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 	WM_PLAYERSREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_PLAYERSREADY");
 	WM_SERVERCHANGED = RegisterWindowMessageOrCriticalError("RCONPANEL_SERVERCHANGED");
 	WM_SERVERCVARSREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_SERVERCVARSREADY");
+	WM_RCONRESPONSEREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_RCONRESPONSEREADY");
 	
 	if (OleInitialize(NULL) != S_OK) {
 		HandleCriticalError("OleInitialize returned non-ok status");
@@ -552,19 +554,17 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	}
 	SendMessage(gWindows.hListPlayers, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
-	MainWindowWriteConsole("DP:PB2 Rconpanel started, console initialized");
-	MainWindowWriteConsole("Loading configuration file...");
-
 	int retVal = LoadConfig();
 	
+	// TODO: Use exceptions and Log-Wrapper
 	if (retVal == -1)
-		MainWindowWriteConsole("No configuration file found, the program will save it's settings when you close it.");
+		MainWindowWriteConsole("No configuration file found. The program will save its settings when you close it.");
 	else if (retVal == -2)
 		MainWindowWriteConsole("Error while reading AutoKick entries from config file.");
 	else if (retVal == 1)
-		MainWindowWriteConsole("Success.");
+		MainWindowWriteConsole("Configuration loaded.");
 	else
-		MainWindowWriteConsole("!!! Unexpected error when loading the configuration file: " + std::to_string(retVal) + " !!!");
+		MainWindowWriteConsole("Unexpected error when loading the configuration file: " + std::to_string(retVal));
 	
 	SendMessage(hwnd, WM_SERVERCHANGED, 0, 0);
 
@@ -604,19 +604,32 @@ void OnMainWindowForcejoin(void)
 
 void OnMainWindowSendRcon(void)
 {
-	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	const auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
 	}
 
-	int buffer_size = GetWindowTextLength(gWindows.hComboRcon) + 1;
-	std::vector<char> command_buffer(buffer_size);
-	GetWindowText(gWindows.hComboRcon, command_buffer.data(), buffer_size);
+	const pb2lib::Address& address = server->address;
+	const std::string rcon_password = server->rcon_password;
+	const auto timeout = gSettings.fTimeoutSecs;
+	const HWND hwnd = gWindows.hWinMain;
+	std::string command(ComboBox_GetTextLength(gWindows.hComboRcon) + 1, '\0');
+	ComboBox_GetText(gWindows.hComboRcon, command.data(), static_cast<int>(command.size()));
 
-	MainWindowLogPb2LibExceptionsToConsole([&]() {
-		std::string answer = pb2lib::send_rcon(server->address, server->rcon_password, command_buffer.data(), gSettings.fTimeoutSecs);
-		MainWindowWriteConsole("Got answer from Server:\r\n" + answer);
-	});
+	std::promise<std::string> promise;
+	g_RconResponses.push_back(promise.get_future());
+
+	std::thread thread([address, rcon_password, command, timeout, hwnd](std::promise<std::string> promise) {
+		try {
+			promise.set_value(pb2lib::send_rcon(address, rcon_password, command, timeout));
+		}
+		catch (pb2lib::Exception&) {
+			promise.set_exception(std::current_exception());
+		}
+		PostMessage(hwnd, WM_RCONRESPONSEREADY, 0, 0);
+	}, std::move(promise));
+	thread.detach();
+	MainWindowWriteConsole("rcon " + command);
 }
 
 void OnMainWindowJoinServer(void)
@@ -740,16 +753,6 @@ void OnMainWindowDestroy(HWND hwnd)
 {
 	SaveConfig();
 
-	HANDLE rHandles[1] = {g_hSendRconThread};
-	WaitForMultipleObjects(1, rHandles, TRUE, 10000);
-	
-	// TODO -- remove these? Threads should cooperate.
-	if (g_hSendRconThread != INVALID_HANDLE_VALUE)
-	{
-		TerminateThread(g_hSendRconThread, 0);
-		CloseHandle(g_hSendRconThread);
-	}
-
 	OleUninitialize();
 	
 	g_pMapshotBitmap.reset();
@@ -760,20 +763,9 @@ void OnMainWindowDestroy(HWND hwnd)
 
 void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 {
-	switch (codeNotify)
-	{
-		case BN_CLICKED:
-		{
-			if (hwndCtl == gWindows.hButtonSend)
-			{
-				if (g_hSendRconThread == INVALID_HANDLE_VALUE || WaitForSingleObject(g_hSendRconThread, 0) != WAIT_TIMEOUT)
-				{
-					CloseHandle(g_hSendRconThread);
-					g_hSendRconThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) OnMainWindowSendRcon, NULL, 0, NULL);
-				}
-				else
-					MainWindowWriteConsole("Please wait for the server to answer to your last request");
-			}
+	switch (codeNotify) {
+		case BN_CLICKED: {
+			if (hwndCtl == gWindows.hButtonSend) OnMainWindowSendRcon();
 			if (hwndCtl == gWindows.hButtonReload) PostMessage(hwnd, WM_REFETCHPLAYERS, 0, 0);
 			if (hwndCtl == gWindows.hButtonKick) OnMainWindowKickPlayer();
 			if (hwndCtl == gWindows.hButtonAutoKick) OnMainWindowAutoKick();
@@ -785,28 +777,14 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			break;
 		}
 	
-		case CBN_SELENDOK:
-		{
-			if (hwndCtl == gWindows.hComboRcon)
-			{
-				if (g_hSendRconThread == INVALID_HANDLE_VALUE || WaitForSingleObject(g_hSendRconThread, 0) != WAIT_TIMEOUT)
-				{
-					CloseHandle(g_hSendRconThread);
-					g_hSendRconThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) OnMainWindowSendRcon, NULL, 0, NULL);
-				}
-				else
-					MainWindowWriteConsole ("Please wait for the server to answer to your last request");
-			}
-			else if (hwndCtl == gWindows.hComboServer) {
-				PostMessageToAllWindows(WM_SERVERCHANGED);
-			}
+		case CBN_SELENDOK: {
+			if (hwndCtl == gWindows.hComboRcon) OnMainWindowSendRcon();
+			if (hwndCtl == gWindows.hComboServer) PostMessageToAllWindows(WM_SERVERCHANGED);
 			break;
 		}
-	}
-			
+	}	
 	
-	switch (id)
-	{
+	switch (id) {
 		case IDM_FILE_EXIT:
 			SendMessage(hwnd, WM_CLOSE, 0, 0);
 			break;
@@ -831,8 +809,6 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, (DLGPROC) ManageServersDlgProc);
 			break;
 		case IDM_SERVER_ROTATION:
-			//Must be forced to only be open one time because it uses two global variables which does not work when the dialog is open two times.
-			//g_pMapshotBitmap and g_pMapshotBitmapResized
 			if (!gWindows.hDlgManageRotation)
 				gWindows.hDlgManageRotation = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, (DLGPROC) ManageRotationDlgProc);
 			else
@@ -844,11 +820,10 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			else
 				SetForegroundWindow(gWindows.hDlgManageIps);
 			break;
-		case IDM_AUTOKICK_ENABLE: {
+		case IDM_AUTOKICK_ENABLE:
 			gSettings.bAutoKickCheckEnable = GetMenuState(GetMenu(gWindows.hWinMain), IDM_AUTOKICK_ENABLE, MF_BYCOMMAND) != SW_SHOWNA;
 			MainWindowUpdateAutoKickState();
 			break;
-		}
 		case IDM_AUTOKICK_SETPING:
 			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SETPING), hwnd, (DLGPROC) SetPingDlgProc);
 			break;
@@ -859,7 +834,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				SetForegroundWindow(gWindows.hDlgManageIds);
 			break;
 		case IDM_HELP_DPLOGIN:
-			ShellExecute(NULL, "open", "http://www.DPLogin.com", NULL, NULL, SW_SHOWNORMAL);
+			ShellExecute(NULL, "open", "http://www.dplogin.com", NULL, NULL, SW_SHOWNORMAL);
 			break;
 		case IDM_HELP_RCONCOMMANDS:
 			if (!gWindows.hDlgRconCommands)
@@ -1101,6 +1076,7 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 		return NULL;
 	}
 
+	// TODO: Move into callback function
 	if (message == WM_SERVERCVARSREADY) {
 		if (fetched_servercvars_future.valid() && fetched_servercvars_future.wait_for(0s) != std::future_status::timeout) {
 			std::vector<std::string> values;
@@ -1125,6 +1101,20 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 			RedrawWindow(gWindows.hWinMain, NULL, region, RDW_ERASE | RDW_INVALIDATE);
 		}
 		return NULL;
+	}
+
+	// TODO: Move into callback function
+	if (message == WM_RCONRESPONSEREADY) {
+		for (auto& future : g_RconResponses) {
+			if (future.wait_for(0s) == std::future_status::timeout) {
+				continue;
+			}
+			MainWindowLogPb2LibExceptionsToConsole([&]() {
+				std::string response = future.get();
+				MainWindowWriteConsole(response);
+			});
+		}
+		std::erase_if(g_RconResponses, [](const auto& future) { return !future.valid(); });
 	}
 
 	return DefWindowProc(hwnd, message, wParam, lParam);
