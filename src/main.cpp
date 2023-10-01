@@ -2326,8 +2326,6 @@ std::string GetHttpResponse(const std::string& url)
 }
 
 void SetClipboardContent(const std::string& content) {
-	// TODO: Does this leak?
-
 	HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, content.size() + 1);
 	if (hMem == NULL) {
 		return;
@@ -2335,14 +2333,15 @@ void SetClipboardContent(const std::string& content) {
 
 	LPVOID pLocked = GlobalLock(hMem);
 	if (pLocked == NULL) {
+		GlobalFree(hMem);
 		return;
 	}
-
 	memcpy(pLocked, content.c_str(), content.size() + 1);
 	GlobalUnlock(hMem);
+
 	OpenClipboard(gWindows.hWinMain);
 	EmptyClipboard();
-	SetClipboardData(CF_TEXT, hMem);
+	SetClipboardData(CF_TEXT, hMem);  // transfers ownership of hMem
 	CloseClipboard();
 }
 
