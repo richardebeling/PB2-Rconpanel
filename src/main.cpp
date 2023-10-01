@@ -22,6 +22,12 @@
 using namespace std::string_literals;
 using namespace std::chrono_literals;
 
+std::jthread g_FetchServerCvarsThread;
+std::future<std::vector<std::string>> g_FetchServerCvarsFuture;
+
+std::jthread g_FetchPlayersThread;
+std::future<std::vector<pb2lib::Player>> g_FetchPlayersFuture;
+
 std::vector<pb2lib::Player> g_vPlayers;			// players on the current server, shown in the listview
 
 std::vector<pb2lib::Server> g_vSavedServers;	// used to store servers in the combo box
@@ -97,7 +103,7 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 					MulDiv(285, LOWORD(dwBaseUnits), 4), MulDiv(290, HIWORD(dwBaseUnits), 8),
 					HWND_DESKTOP, LoadMenu (hThisInstance, MAKEINTRESOURCE(IDM)),
 					hThisInstance, NULL);
-	// All other windows will be created in OnMainWindowCreate
+	// All UI elements are created in OnMainWindowCreate
 
 	ShowWindow(gWindows.hWinMain, nCmdShow);
 
@@ -267,6 +273,63 @@ inline void SignalAllThreads(std::map<size_t, HANDLE> * map)
 	}
 }
 
+void PostMessageToAllWindows(UINT message) {
+	WNDENUMPROC enum_callback = [](HWND hwnd, LPARAM lParam) -> BOOL {
+		PostMessage(hwnd, (UINT)lParam, 0, 0);
+		return TRUE;
+	};
+
+	EnumWindows(enum_callback, (LPARAM)message);
+}
+
+void MainWindowRefetchServerInfo() noexcept {
+	g_AutoReloadTimer.reset_current_timeout();
+
+	g_FetchPlayersThread.request_stop();
+	if (g_FetchPlayersThread.joinable()) {
+		g_FetchPlayersThread.detach();
+	}
+
+	g_FetchServerCvarsThread.request_stop();
+	if (g_FetchServerCvarsThread.joinable()) {
+		g_FetchServerCvarsThread.detach();
+	}
+
+	auto* server = MainWindowGetSelectedServerOrLoggedNull();
+	if (!server) {
+		return;
+	}
+
+	auto fetch_players_thread_function = [](std::promise<std::vector<pb2lib::Player>> promise, pb2lib::Server server, HWND window, double timeout) {
+		try {
+			promise.set_value(pb2lib::get_players(server.address, server.rcon_password, timeout));
+		}
+		catch (pb2lib::Exception&) {
+			promise.set_exception(std::current_exception());
+		}
+		PostMessage(window, WM_PLAYERSREADY, 0, 0);
+	};
+
+	std::promise<std::vector<pb2lib::Player>> players_promise;
+	g_FetchPlayersFuture = players_promise.get_future();
+	g_FetchPlayersThread = std::jthread(fetch_players_thread_function, std::move(players_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
+
+	auto fetch_cvars_thread_function = [](std::promise<std::vector<std::string>> promise, pb2lib::Server server, HWND window, double timeout) {
+		const std::vector<std::string> status_vars = { "mapname", "password", "elim", "timelimit", "maxclients" };
+		try {
+			promise.set_value(pb2lib::get_cvars(server.address, server.rcon_password, status_vars, gSettings.fTimeoutSecs));
+		}
+		catch (pb2lib::Exception&) {
+			promise.set_exception(std::current_exception());
+		}
+		PostMessage(window, WM_SERVERCVARSREADY, 0, 0);
+	};
+
+	std::promise<std::vector<std::string>> cvars_promise;
+	g_FetchServerCvarsFuture = cvars_promise.get_future();
+	g_FetchServerCvarsThread = std::jthread(fetch_cvars_thread_function, std::move(cvars_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
+}
+
 void MainWindowUpdatePlayersListview() noexcept
 {
 	ListView_DeleteAllItems(gWindows.hListPlayers);
@@ -398,16 +461,6 @@ static int OnPlayerListCustomDraw (LPARAM lParam)
 		}
 	}
     return CDRF_DODEFAULT;
-}
-
-void PostMessageToAllWindows(UINT message) {
-
-	WNDENUMPROC enum_callback = [](HWND hwnd, LPARAM lParam) -> BOOL {
-		PostMessage(hwnd, (UINT)lParam, 0, 0);
-		return TRUE;
-	};
-
-	EnumWindows(enum_callback, (LPARAM)message);
 }
 
 int CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort) //returns order of 2 items
@@ -749,6 +802,55 @@ void OnMainWindowAutoKick(void)
 	}
 }
 
+void OnMainWindowPlayersReady() noexcept {
+	// Message might be from an outdated / older thread -> only process if the current future is ready
+	if (g_FetchPlayersFuture.valid() && g_FetchPlayersFuture.wait_for(0s) != std::future_status::timeout) {
+		MainWindowLogPb2LibExceptionsToConsole([&]() {
+			g_vPlayers = g_FetchPlayersFuture.get();
+			MainWindowUpdatePlayersListview();
+			MainWindowWriteConsole("The player list was reloaded.");
+		});
+	}
+}
+
+void OnMainWindowServerCvarsReady() noexcept {
+	if (g_FetchServerCvarsFuture.valid() && g_FetchServerCvarsFuture.wait_for(0s) != std::future_status::timeout) {
+		std::vector<std::string> values;
+
+		std::string display_text = "Error";
+
+		// TODO: Cvar names and value access are separated, they could start mismatching. Do something about that?
+		// Maybe some ServerCvars struct that is returned in the promise, the thread handles all strings and assigns compile-time names?
+
+		MainWindowLogPb2LibExceptionsToConsole([&]() {
+			values = g_FetchServerCvarsFuture.get();
+			display_text = "map: " + values[0];
+			display_text += " | pw: " + (values[1].size() > 0 ? values[1] : "none");
+			display_text += " | elim: " + values[2];
+			display_text += " | timelimit: " + values[3];
+			display_text += " | maxclients: " + values[4];
+			});
+
+		SetWindowText(gWindows.hStaticServerInfo, display_text.c_str());
+		DeleteObjectRAIIWrapper<HRGN> region(CreateRectRgn(0, 0, 0, 0));
+		GetWindowRgn(gWindows.hStaticServerInfo, region);
+		RedrawWindow(gWindows.hWinMain, NULL, region, RDW_ERASE | RDW_INVALIDATE);
+	}
+}
+
+void OnMainWindowRconResponseReady() noexcept {
+	for (auto& future : g_RconResponses) {
+		if (future.wait_for(0s) == std::future_status::timeout) {
+			continue;
+		}
+		MainWindowLogPb2LibExceptionsToConsole([&]() {
+			std::string response = future.get();
+			MainWindowWriteConsole(response);
+			});
+	}
+	std::erase_if(g_RconResponses, [](const auto& future) { return !future.valid(); });
+}
+
 void OnMainWindowDestroy(HWND hwnd)
 {
 	SaveConfig();
@@ -1007,115 +1109,12 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 		HANDLE_MSG(hwnd, WM_CTLCOLORSTATIC, OnMainWindowCtlColorStatic);
 	}
 
-	static std::jthread fetch_players_thread;
-	static std::future<std::vector<pb2lib::Player>> fetched_players_future;
-
-	static std::jthread fetch_servercvars_thread;
-	static std::future<std::vector<std::string>> fetched_servercvars_future;
-
-	// TODO: Move into callback function -- make variables globals?
-	if (message == WM_REFETCHPLAYERS || message == WM_SERVERCHANGED) {
-		g_AutoReloadTimer.reset_current_timeout();
-
-		fetch_players_thread.request_stop();
-		if (fetch_players_thread.joinable()) {
-			fetch_players_thread.detach();
-		}
-
-		fetch_servercvars_thread.request_stop();
-		if (fetch_servercvars_thread.joinable()) {
-			fetch_servercvars_thread.detach();
-		}
-
-		auto* server = MainWindowGetSelectedServerOrLoggedNull();
-		if (!server) {
-			return NULL;
-		}
-
-		auto fetch_players_thread_function = [](std::promise<std::vector<pb2lib::Player>> promise, pb2lib::Server server, HWND window, double timeout) {
-			try {
-				promise.set_value(pb2lib::get_players(server.address, server.rcon_password, timeout));
-			} catch (pb2lib::Exception&) {
-				promise.set_exception(std::current_exception());
-			}
-			PostMessage(window, WM_PLAYERSREADY, 0, 0);
-		};
-
-		std::promise<std::vector<pb2lib::Player>> players_promise;
-		fetched_players_future = players_promise.get_future();
-		fetch_players_thread = std::jthread(fetch_players_thread_function, std::move(players_promise), *server, hwnd, gSettings.fTimeoutSecs);
-
-		auto fetch_cvars_thread_function = [](std::promise<std::vector<std::string>> promise, pb2lib::Server server, HWND window, double timeout) {
-			const std::vector<std::string> status_vars = { "mapname", "password", "elim", "timelimit", "maxclients" };
-			try {
-				promise.set_value(pb2lib::get_cvars(server.address, server.rcon_password, status_vars, gSettings.fTimeoutSecs));
-			}
-			catch (pb2lib::Exception&) {
-				promise.set_exception(std::current_exception());
-			}
-			PostMessage(window, WM_SERVERCVARSREADY, 0, 0);
-		};
-
-		std::promise<std::vector<std::string>> cvars_promise;
-		fetched_servercvars_future = cvars_promise.get_future();
-		fetch_players_thread = std::jthread(fetch_cvars_thread_function, std::move(cvars_promise), *server, hwnd, gSettings.fTimeoutSecs);
-
-		return NULL;
-	}
-
-	// TODO: Move into callback function
-	if (message == WM_PLAYERSREADY) {
-		// Message might be from an outdated / older thread -> only process if the current future is ready
-		if (fetched_players_future.valid() && fetched_players_future.wait_for(0s) != std::future_status::timeout) {
-			MainWindowLogPb2LibExceptionsToConsole([&]() {
-				g_vPlayers = fetched_players_future.get();
-				MainWindowUpdatePlayersListview();
-				MainWindowWriteConsole("The player list was reloaded.");
-			});
-		}
-		return NULL;
-	}
-
-	// TODO: Move into callback function
-	if (message == WM_SERVERCVARSREADY) {
-		if (fetched_servercvars_future.valid() && fetched_servercvars_future.wait_for(0s) != std::future_status::timeout) {
-			std::vector<std::string> values;
-
-			std::string display_text = "Error";
-
-			// TODO: Cvar names and value access are now separated, they could start mismatching. Do something about that?
-			// Maybe some ServerCvars struct that is returned in the promise, the thread handles all strings and assigns compile-time names?
-
-			MainWindowLogPb2LibExceptionsToConsole([&]() {
-				values = fetched_servercvars_future.get();
-				display_text = "map: " + values[0];
-				display_text += " | pw: " + (values[1].size() > 0 ? values[1] : "none");
-				display_text += " | elim: " + values[2];
-				display_text += " | timelimit: " + values[3];
-				display_text += " | maxclients: " + values[4];
-			});
-
-			SetWindowText(gWindows.hStaticServerInfo, display_text.c_str());
-			DeleteObjectRAIIWrapper<HRGN> region(CreateRectRgn(0, 0, 0, 0));
-			GetWindowRgn(gWindows.hStaticServerInfo, region);
-			RedrawWindow(gWindows.hWinMain, NULL, region, RDW_ERASE | RDW_INVALIDATE);
-		}
-		return NULL;
-	}
-
-	// TODO: Move into callback function
-	if (message == WM_RCONRESPONSEREADY) {
-		for (auto& future : g_RconResponses) {
-			if (future.wait_for(0s) == std::future_status::timeout) {
-				continue;
-			}
-			MainWindowLogPb2LibExceptionsToConsole([&]() {
-				std::string response = future.get();
-				MainWindowWriteConsole(response);
-			});
-		}
-		std::erase_if(g_RconResponses, [](const auto& future) { return !future.valid(); });
-	}
+#define HANDLE_CUSTOM_MSG(msg, fn) if (message == msg) {(fn)(); return NULL;}
+	HANDLE_CUSTOM_MSG(WM_REFETCHPLAYERS, MainWindowRefetchServerInfo);
+	HANDLE_CUSTOM_MSG(WM_SERVERCHANGED, MainWindowRefetchServerInfo);
+	HANDLE_CUSTOM_MSG(WM_PLAYERSREADY, OnMainWindowPlayersReady);
+	HANDLE_CUSTOM_MSG(WM_SERVERCVARSREADY, OnMainWindowServerCvarsReady);
+	HANDLE_CUSTOM_MSG(WM_RCONRESPONSEREADY, OnMainWindowRconResponseReady);
 
 	return DefWindowProc(hwnd, message, wParam, lParam);
 }

@@ -108,6 +108,8 @@ void StartServerbrowser(void);
 void AutoKickTimerFunction() noexcept;
 void MainWindowUpdateAutoKickState() noexcept;
 void MainWindowUpdatePlayersListview() noexcept;
+void MainWindowRefetchServerInfo() noexcept;
+
 void SignalAllThreads(std::map<size_t, HANDLE> * map);
 pb2lib::Server* MainWindowGetSelectedServerOrLoggedNull() noexcept;
 void MainWindowWriteConsole(std::string_view);
@@ -137,6 +139,9 @@ void OnMainWindowOpenDPLogin(void);
 void OnMainWindowOpenWhois(void);
 void OnMainWindowSendRcon(void);
 void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy);
+void OnMainWindowPlayersReady() noexcept;
+void OnMainWindowServerCvarsReady() noexcept;
+void OnMainWindowRconResponseReady() noexcept;
 
 //--------------------------------------------------------------------------------------------------
 // Callback Forcejoin Dialog                                                                       |
