@@ -116,7 +116,6 @@ UINT RegisterWindowMessageOrCriticalError(const std::string& message_name) noexc
 void SetClipboardContent(const std::string& content);
 std::string GetHttpResponse(const std::string& url);
 void SplitIpAddressToBytes(char* szIp, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3);
-std::unique_ptr<Gdiplus::Bitmap> CreateResizedBitmapClone(Gdiplus::Bitmap* bmp, unsigned int width, unsigned int height);
 
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);

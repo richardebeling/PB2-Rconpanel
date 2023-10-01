@@ -65,7 +65,6 @@ Settings gSettings;     // stores all program settings
 
 ULONG_PTR g_gdiplusStartupToken;
 std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmap;
-std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmapResized;
 
 
 //--------------------------------------------------------------------------------------------------
@@ -772,6 +771,7 @@ void OnMainWindowDestroy(HWND hwnd)
 
 	OleUninitialize();
 	
+	g_pMapshotBitmap.reset();
 	Gdiplus::GdiplusShutdown(g_gdiplusStartupToken);
 	
 	PostQuitMessage(0);
@@ -1423,28 +1423,38 @@ void OnManageRotationReloadContent(HWND hwnd)
 	std::wstring sWideMapshot(sMapshot.begin(), sMapshot.end());
 
 	g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
-
-	RECT rc;
-	GetClientRect(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &rc);
-	g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(), rc.right - rc.left, rc.bottom - rc.top);
 }
 
 
 void OnManageRotationPaint(HWND hwnd)
 {
-	HDC hdc;
 	PAINTSTRUCT ps;
-	
-	hdc = BeginPaint(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &ps);
-	
-	FillRect(hdc, &ps.rcPaint, (HBRUSH) (COLOR_WINDOW+1));
-	
-	if (g_pMapshotBitmapResized)
-	{
+	HDC hdc = BeginPaint(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &ps);
+	const RECT ui_rect = ps.rcPaint;
+	FillRect(hdc, &ui_rect, (HBRUSH) (COLOR_WINDOW));
+
+	const int ui_width = ui_rect.right - ui_rect.left;
+	const int ui_height = ui_rect.bottom - ui_rect.top;
+
+	if (g_pMapshotBitmap) {
+		const int image_width = g_pMapshotBitmap->GetWidth();
+		const int image_height = g_pMapshotBitmap->GetHeight();
+		const double image_ratio = 1.0 * image_width / image_height;
+
+		int draw_width = ui_width;
+		int draw_height = static_cast<int>((1.0 / image_ratio) * draw_width);
+		if (draw_height > ui_height) {
+			draw_height = ui_height;
+			draw_width = static_cast<int>(image_ratio * draw_height);
+		}
+
+		const int offset_x = (ui_width - draw_width) / 2;
+		const int offset_y = (ui_height - draw_height) / 2;
+
 		Gdiplus::Graphics graphics(hdc);
-		graphics.DrawImage(g_pMapshotBitmapResized.get(), 0, 0);
+		graphics.DrawImage(g_pMapshotBitmap.get(), offset_x, offset_y, draw_width, draw_height);
 	}
-	
+
 	EndPaint(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &ps);
 	DeleteDC(hdc);
 }
@@ -1572,9 +1582,6 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 				std::wstring sWideMapshot(sMapshot.begin(), sMapshot.end());
 				g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
-				g_pMapshotBitmapResized = CreateResizedBitmapClone(g_pMapshotBitmap.get(),
-					rcMapshotImageRect.right - rcMapshotImageRect.left,
-					rcMapshotImageRect.bottom - rcMapshotImageRect.top);
 
 				RedrawWindow(hwnd, NULL, NULL, RDW_UPDATENOW | RDW_INVALIDATE);
 			}
@@ -2659,24 +2666,4 @@ size_t GetFirstUnusedMapKey (const std::map<size_t, HANDLE>& m)
 	}
 	assert(false);
 	return -1;
-}
-
-std::unique_ptr<Gdiplus::Bitmap> CreateResizedBitmapClone(Gdiplus::Bitmap *source, unsigned int width, unsigned int height)
-{
-    unsigned int originalHeight = source->GetHeight();
-    unsigned int originalWidth = source->GetWidth();
-    unsigned int newWidth = width;
-    unsigned int newHeight = height;
-    
-    double ratio = (static_cast<double>(originalWidth)) / (static_cast<double>(originalHeight));
-    if (originalWidth > originalHeight) {
-	    newHeight = static_cast<unsigned int>((static_cast<double>(newWidth)) / ratio);
-    } else {
-	    newWidth = static_cast<unsigned int>(newHeight * ratio);
-    }
-    
-    auto newBitmap = std::make_unique<Gdiplus::Bitmap>(newWidth, newHeight, source->GetPixelFormat());
-    Gdiplus::Graphics graphics(newBitmap.get());
-    graphics.DrawImage(source, 0, 0, newWidth, newHeight);
-    return newBitmap;
 }
