@@ -329,8 +329,11 @@ void MainWindowUpdatePlayersListview() noexcept
 
 void MainWindowWriteConsole(const std::string_view str) // prints text to gWindows.hEditConsole, adds timestamp and linebreak
 {
-	// TODO: If two threads call this simultaneously, it will intermangle output -> static mutex + lock_guard?
-	// TODO: Sometimes flickers, loses focus of players listview
+	// may be called by multiple threads, shouldn't intermingle output
+	static std::mutex mutex;
+	std::lock_guard guard(mutex);
+
+	// TODO: Sometimes flickers, loses focus of players listview. Can we do better?
 	auto const time = std::chrono::time_point_cast<std::chrono::seconds>(
 		std::chrono::current_zone()->to_local(std::chrono::system_clock::now())
 	);
