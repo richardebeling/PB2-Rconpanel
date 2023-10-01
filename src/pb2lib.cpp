@@ -220,14 +220,15 @@ std::string send_rcon(const Address& address, std::string_view rcon_password, st
 
 
 std::string get_cvar(const Address& address, std::string_view rcon_password, std::string_view cvar, double timeout) {
-	// TODO: Remove / just make wrapper around `get_cvars`?
+	// Separate implementation from get_cvars because it doesn't have the delimiter problem
 
 	std::string response = send_rcon(address, rcon_password, cvar, timeout);
 
 	std::smatch matches;
-	if (std::regex_search(response, matches, std::regex("\".*?\" is \"(.*)\""))) {
+	if (std::regex_match(response, matches, std::regex("print\n\".*?\" is \"(.*)\"\n"))) {
 		return matches[1];
 	}
+
 
 	if (std::regex_search(response, matches, std::regex("Unknown command \".*\""))) {
 		throw Exception("Attempted to get value of undefined cvar " + std::string(cvar));
@@ -238,9 +239,8 @@ std::string get_cvar(const Address& address, std::string_view rcon_password, std
 
 
 std::vector<std::string> get_cvars(const Address& address, std::string_view rcon_password, const std::vector<std::string>& cvars, double timeout) {
-	// TODO: PB replaces "\x17" here with space?
-	//static constexpr char delimiter = '\x17'; // 0x17 == ETB / End of transmission block
-	static constexpr char delimiter = ';';
+	// PB2 rcon tokenizing (Cmd_TokenizeString) will treat any char <= 32 as a space, so we can't use ASCII End-of-transmission-block or similar.
+	static constexpr char delimiter = '\x9C'; // latin-1 "string terminator"
 
 	std::string command = "echo ";
 	for (size_t i = 0; i < cvars.size(); ++i) {
@@ -249,6 +249,10 @@ std::vector<std::string> get_cvars(const Address& address, std::string_view rcon
 
 	std::string response = send_rcon(address, rcon_password, command, timeout);
 	response = response.substr(6);  // "print\n"
+
+	if (std::ranges::count(response, delimiter) != cvars.size()) {
+		throw Exception("Delimiter ("s + delimiter + ") contained in cvar value. Can not split correctly.");
+	}
 
 	auto splits = response
 		| std::ranges::views::split(delimiter)
