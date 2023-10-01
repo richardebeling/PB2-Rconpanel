@@ -2400,26 +2400,6 @@ std::optional<std::string> GetPb2InstallPath()
 	return std::nullopt;
 }
 
-// TODO: Unused
-void ListView_SetImage(HWND hListview, std::string_view sImagePath)
-{
-	LVBKIMAGE LvBkImg = { 0 };
-
-	std::vector<char> buffer(MAX_PATH);
-	LvBkImg.pszImage = buffer.data();
-	LvBkImg.cchImageMax = static_cast<int>(buffer.size());
-
-	ListView_GetBkImage(hListview, &LvBkImg);
-	
-	if (sImagePath != LvBkImg.pszImage)
-	{
-		LvBkImg.ulFlags = LVBKIF_STYLE_NORMAL | LVBKIF_SOURCE_URL;
-		LvBkImg.pszImage = (LPSTR)sImagePath.data();
-		LvBkImg.cchImageMax = static_cast<int>(sImagePath.length());
-		ListView_SetBkImage(hListview, &LvBkImg);
-	}
-}
-
 void StartServerbrowser(void)
 {
 	std::optional<std::string> pb2InstallPath = GetPb2InstallPath();

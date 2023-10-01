@@ -119,7 +119,6 @@ void SplitIpAddressToBytes(char* szIp, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb
 
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
-void ListView_SetImage(HWND hListview, std::string_view sImagePath);
 void PostMessageToAllWindows(UINT message);  // TODO: Maybe only to windows of our process?
 
 std::optional<std::string> GetPb2InstallPath(void);
