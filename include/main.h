@@ -20,18 +20,14 @@
 #ifndef __MAIN_H_INCLUDED
 #define __MAIN_H_INCLUDED
 
+#include "pb2lib.h" // Seems like we need to include winsock2.h before defining WIN32_LEAN_AND_MEAN
+
 #define WIN32_LEAN_AND_MEAN
-#include <windowsx.h>
-
 #if _WIN32_IE < 0x401
-	#define _WIN32_IE 0x401 //needed for commctrl.h so it includes InitCommonControls (0x300) and the ability to color subitems differently (0x400)
+#define _WIN32_IE 0x401 //needed for commctrl.h so it includes InitCommonControls (0x300) and the ability to color subitems differently (0x400)
 #endif
-#include <commctrl.h>
 
-#include <shellapi.h>
-#include <wininet.h>
-
-#include <assert.h>
+#include <cassert>
 #include <ctime>
 #include <map>
 #include <optional>
@@ -42,6 +38,11 @@
 #include <sstream>
 #include <vector>
 
+#include <Windows.h>
+#include <windowsx.h>
+#include <commctrl.h>
+#include <shellapi.h>
+#include <wininet.h>
 #include <Gdiplus.h>
 
 
@@ -81,28 +82,6 @@ struct WindowHandles {
 	HWND hButtonJoin = NULL;
 	HWND hStaticServerInfo = NULL;
 };
-
-struct Colors {
-	static constexpr DWORD dwRed    = RGB(255, 100, 60);
-	static constexpr DWORD dwBlue   = RGB(100, 150, 255);
-	static constexpr DWORD dwPurple = RGB(225, 0,   225);
-	static constexpr DWORD dwYellow = RGB(240, 240, 0);
-	static constexpr DWORD dwWhite  = RGB(255, 255, 255);
-};
-
-DWORD ColorFromTeam(pb2lib::Team team) {
-	switch (team) {
-		case pb2lib::Team::BLUE: return Colors::dwBlue;
-		case pb2lib::Team::RED: return Colors::dwRed;
-		case pb2lib::Team::PURPLE: return Colors::dwPurple;
-		case pb2lib::Team::YELLOW: return Colors::dwYellow;
-		case pb2lib::Team::OBSERVER: return Colors::dwWhite;
-		case pb2lib::Team::AUTO: return Colors::dwWhite;
-	}
-
-	assert(false);
-	return Colors::dwWhite;
-}
 
 struct AutoKickEntry {
 	enum class Type {

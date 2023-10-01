@@ -28,12 +28,13 @@
 #define strcasecmp _stricmp
 #endif
 
-#include "async_repeated_timer.h"
-#include "pb2lib.h"
-#include "resource.h"
+
 #include "main.h"
+#include "color.h"
+#include "async_repeated_timer.h"
 #include "version.h"
 #include "settings.h"
+#include "resource.h"
 
 #include <thread>
 #include <future>
@@ -66,11 +67,13 @@ ULONG_PTR g_gdiplusStartupToken;
 std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmap;
 std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmapResized;
 
+
 //--------------------------------------------------------------------------------------------------
 // Program Entry Point                                                                             |
 //{-------------------------------------------------------------------------------------------------
 
-int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, LPSTR lpszArgument, int nCmdShow)
+#pragma warning (suppress : 28251)
+int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszArgument, int nCmdShow)
 {
 	INITCOMMONCONTROLSEX icex = { 0 }; // needed for list view control
 	icex.dwICC = ICC_LISTVIEW_CLASSES;
@@ -385,42 +388,27 @@ static int OnPlayerListCustomDraw (LPARAM lParam)
 		case Subitems::IP:
 		case Subitems::SCORE:
 			if (!gSettings.bColorPlayers) {
-				lplvcd->clrTextBk = Colors::dwWhite;
+				lplvcd->clrTextBk = Color::WHITE;
 			}
 			
-			lplvcd->clrTextBk = ColorFromTeam(player.team.value_or(pb2lib::Team::OBSERVER));
+			lplvcd->clrTextBk = Color::from_team(player.team.value_or(pb2lib::Team::OBSERVER));
 			return CDRF_NEWFONT;
 		
-		case Subitems::PING:			
-			if (gSettings.bColorPings)
-			{
-				if (player.build == 0 || !player.ping) // bot
-				{
-					lplvcd->clrTextBk = Colors::dwWhite;
-					return CDRF_NEWFONT; 
-				}
+		case Subitems::PING:
+			lplvcd->clrTextBk = Color::WHITE;
 
-				// TODO: Factor out				
-				float fRed = (float) *player.ping;
-				fRed = (fRed > 255) ? 255 : fRed;
-				float fGreen = 255 - fRed;
-				
-				float fHigherQuotient = fGreen / 255; //Change colors so the higher one is 255 --> middle is not 128, 128 (brown) but 255, 255 (yellow)
-				fHigherQuotient = ((fRed/255) > fHigherQuotient) ? fRed/255 : fHigherQuotient;
-				
-				fRed *= (float)(1/fHigherQuotient);
-				fGreen *= (float)(1/fHigherQuotient);
-				
-				lplvcd->clrTextBk = RGB((int)fRed, (int)fGreen, 0);
+			if (gSettings.bColorPings) {
+				if (player.ping) { // ping == nullopt when bot or attribution failure
+					lplvcd->clrTextBk = Color::from_ping(*player.ping);
+				}
 			}
-			else if (gSettings.bColorPlayers)
-			{
-				lplvcd->clrTextBk = ColorFromTeam(player.team.value_or(pb2lib::Team::OBSERVER));
+			else if (gSettings.bColorPlayers) {
+				lplvcd->clrTextBk = Color::from_team(player.team.value_or(pb2lib::Team::OBSERVER));
 			}
 			return CDRF_NEWFONT;
 			
 		default:
-			lplvcd->clrTextBk = Colors::dwWhite;
+			lplvcd->clrTextBk = Color::WHITE;
 			return CDRF_NEWFONT;
 		}
 	}
@@ -769,7 +757,7 @@ void OnMainWindowDestroy(HWND hwnd)
 {
 	SaveConfig();
 
-	HANDLE rHandles[3] = {g_hSendRconThread};
+	HANDLE rHandles[1] = {g_hSendRconThread};
 	WaitForMultipleObjects(1, rHandles, TRUE, 10000);
 	
 	// TODO -- remove these? Threads should cooperate.

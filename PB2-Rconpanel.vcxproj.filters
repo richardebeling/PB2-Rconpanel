@@ -37,6 +37,9 @@
     <ClInclude Include="include\async_repeated_timer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="include\color.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="resources\console.ico">
