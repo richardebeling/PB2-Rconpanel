@@ -166,6 +166,7 @@ pb2lib::Player* MainWindowGetSelectedPlayerOrNull() noexcept {
 
 	LVITEM item = { 0 };
 	item.iItem = iSelectedItem;
+	item.mask = LVIF_PARAM;
 	ListView_GetItem(gWindows.hListPlayers, &item);
 	size_t stored_index = item.lParam;
 
@@ -898,7 +899,6 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
 {
     if (nmh->hwndFrom == gWindows.hListPlayers) {
-		auto* player = MainWindowGetSelectedPlayerOrNull();
 		switch (nmh->code) {			
 			case NM_DBLCLK:
 			{
@@ -916,6 +916,7 @@ int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
 			
 			case NM_RCLICK:
 			{
+				auto* player = MainWindowGetSelectedPlayerOrNull();
 				if (player && player->address) {
 					SetClipboardContent(player->address->ip);
 					MainWindowWriteConsole("IP was copied to clipboard.");
