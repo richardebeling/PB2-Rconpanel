@@ -1,22 +1,3 @@
-/*
-	Copyright (C) 2015 Richard Ebeling
-
-	This file is part of "DP:PB2 Rconpanel".
-	"DP:PB2 Rconpanel" is free software: you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation, either version 3 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program (Filename: COPYING).
-	If not, see <http://www.gnu.org/licenses/>.
-*/
-
 //TODO: Add: Modifiable messages that will be said as console before players are kicked.
 //TODO: Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server
 //TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin / ip whois?)
@@ -27,7 +8,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define strcasecmp _stricmp
 #endif
-
 
 #include "main.h"
 #include "color.h"
@@ -45,7 +25,6 @@ using namespace std::chrono_literals;
 std::vector<pb2lib::Player> g_vPlayers;			// players on the current server, shown in the listview
 
 std::vector<pb2lib::Server> g_vSavedServers;	// used to store servers in the combo box
-std::vector<pb2lib::Server> g_vAllServers;		// used to fill server list in the "Manage servers" dialog
 std::vector<AutoKickEntry> 	g_vAutoKickEntries;
 
 AsyncRepeatedTimer g_AutoReloadTimer;
@@ -53,6 +32,7 @@ AsyncRepeatedTimer g_AutoKickTimer;
 
 HANDLE g_hSendRconThread    = 0; // TODO
 
+std::vector<pb2lib::Server> g_vAllServers;		// used to fill server list in the "Manage servers" dialog
 std::map <size_t, HANDLE> g_mLoadServersThreads;	//contains UID and ExitEvent for every reload thread
 
 UINT WM_REFETCHPLAYERS;
@@ -1820,9 +1800,8 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (iServerIndex == LB_ERR) return;
 
 			// TODO: Removing the selected server causes "Error why trying to get selected server" spam by the auto-reload-thread
-			// Dialog should modify a copy, gServer should be changed on "OK"/"Save", together with updating the combobox.
+			//	-> Lock + immediately update combobox (content + selection) in main window
 			g_vSavedServers.erase(g_vSavedServers.begin() + iServerIndex);
-
 
 			// TODO: Remove instead of clear + rebuild -- or, at least, factor this out
 			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_RESETCONTENT, 0, 0); //Reload right listbox

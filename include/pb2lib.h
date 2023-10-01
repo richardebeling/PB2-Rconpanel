@@ -1,24 +1,5 @@
-/*
-	Copyright (C) 2023 Richard Ebeling
-
-	This file is part of "DP:PB2 Rconpanel".
-	"DP:PB2 Rconpanel" is free software: you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation, either version 3 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program (Filename: COPYING).
-	If not, see <http://www.gnu.org/licenses/>.
-*/
-
-#ifndef PB2LIB_H_INCLUDED
-#define PB2LIB_H_INCLUDED
+#ifndef __PB2LIB_H_INCLUDED
+#define __PB2LIB_H_INCLUDED
 
 #include <winsock2.h>
 
@@ -136,4 +117,4 @@ void annotate_team_from_status(std::vector<Player>* players, const Address& addr
 std::vector<Player> get_players(const Address& address, std::string_view rcon_password, double timeout);
 }
 
-#endif // PB2LIB_H_INCLUDED
+#endif // __PB2LIB_H_INCLUDED

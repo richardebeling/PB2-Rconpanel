@@ -1,21 +1,5 @@
-/*
-	Copyright (C) 2015 Richard Ebeling
-
-	This file is part of "DP:PB2 Rconpanel".
-	"DP:PB2 Rconpanel" is free software: you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation, either version 3 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program (Filename: COPYING).
-	If not, see <http://www.gnu.org/licenses/>.
-*/
+#ifndef __SETTINGS_H_INCLUDED
+#define __SETTINGS_H_INCLUDED
 
 namespace Subitems {
 static constexpr int NUMBER = 0;
@@ -46,3 +30,5 @@ struct Settings
 	bool  bDisableConsole = false;			// the lower part of the GUI (manual RCON communication) will not be shown.
 	std::string sServerlistAddress;			// address where the server list can be gotten in case it changes.
 };
+
+#endif // __SETTINGS_H_INCLUDED

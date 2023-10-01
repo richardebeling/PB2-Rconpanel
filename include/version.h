@@ -1,5 +1,5 @@
-#ifndef VERSION_H
-#define VERSION_H
+#ifndef __VERSION_H_INCLUDED
+#define __VERSION_H_INCLUDED
 
 namespace AutoVersion{
 	
@@ -30,4 +30,4 @@ namespace AutoVersion{
 	
 
 }
-#endif //VERSION_H
+#endif // __VERSION_H_INCLUDED
