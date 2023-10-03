@@ -89,15 +89,15 @@ void SocketRaiiWrapper::receive(std::vector<char>* buffer, double timeout) {
 
 	// Must be big enough to hold a single answer packet, otherwise excess data of that packet is discarded and our answer is lost
 	buffer->resize(65535);
-	sockaddr_in sender_address;
+	sockaddr_in sender_address = { 0 };
 	int sender_address_size = sizeof(sender_address);
 
 	int receive_result = recvfrom(socket_handle_, buffer->data(), static_cast<int>(buffer->size()), 0, reinterpret_cast<sockaddr*>(&sender_address), &sender_address_size);
 	if (receive_result == SOCKET_ERROR) {
 		auto last_error = WSAGetLastError();
-		// From/To localhost, windows will give a WSAEConnReset error with UDP if the remove port is closed
+		// from/to localhost, windows will give a WSAEConnReset error with UDP if the remove port is closed
 		// https://stackoverflow.com/questions/30749423/is-winsock-error-10054-wsaeconnreset-normal-with-udp-to-from-localhost
-		// We just want to handle that like a timeout / no response, since that is what happens with non-localhost servers
+		// we just want to handle that like a timeout / no response, since that is what happens with non-localhost servers
 		if (last_error == WSAECONNRESET) {
 			buffer->resize(0);
 			return;
@@ -117,7 +117,6 @@ void SocketRaiiWrapper::receive(std::vector<char>* buffer, double timeout) {
 
 
 std::optional<std::string> get_hostname_or_nullopt(const Address& address, double timeout) noexcept {
-
 	std::string response;
 	try {
 		response = send_connectionless(address, "status", timeout);
@@ -348,17 +347,13 @@ std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std
 void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, double timeout) {
 	const std::string response = send_rcon(address, rcon_password, "status", timeout);
 
-	std::regex rx(R"((\d+)\s*(\d+)\s*(\d+)\s{0,1}(.+?)\s*(\d+|CNCT)\s*(\d+\.\d+\.\d+\.\d+):(\d{1,5})\s*(\d{2,5}))");
-	//							 NUM-1	 SCORE-2 PING-3		 NAME-4	  LASTMSG-5    IP-6					PORT-7		QPORT-8
+	const std::regex rx(R"((\d+)\s*(\d+)\s*(\d+)\s{0,1}(.+?)\s*(\d+|CNCT)\s*(\d+\.\d+\.\d+\.\d+):(\d{1,5})\s*(\d{2,5}))");
+	//						 NUM-1	 SCORE-2 PING-3		 NAME-4	  LASTMSG-5    IP-6					PORT-7		QPORT-8
 
-	std::string::const_iterator start = response.begin();
-	std::string::const_iterator end = response.end();
-	std::smatch matches;
-	while (std::regex_search(start, end, matches, rx)) {
-		start = matches[0].second;
-
-		const std::string name = matches[4];
-		const int number = std::stoi(matches[1]);
+	for(auto it = std::sregex_iterator(response.begin(), response.end(), rx); it != std::sregex_iterator(); ++it) {
+		const std::smatch match = *it;
+		const std::string name = match[4];
+		const int number = std::stoi(match[1]);
 		if (name == "CNCT") {
 			continue;
 		}
@@ -381,28 +376,31 @@ void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, 
 			continue;
 		}
 
-		player_it->score = std::stoi(matches[2]);
-		player_it->ping = std::stoi(matches[3]);
-		player_it->address = { matches[6], std::stoi(matches[7]) };
+		player_it->score = std::stoi(match[2]);
+		player_it->ping = std::stoi(match[3]);
+		player_it->address = { match[6], std::stoi(match[7]) };
 	}
 }
 
 void annotate_team_from_status(std::vector<Player>* players, const Address& address, double timeout) {
+	// Currently doesn't annotate bot teams as bots are not reported in connectionless status response
+
 	const std::string response = send_connectionless(address, "status", timeout);
+	if (!response.starts_with("print\n")) {
+		throw Exception("Unexpected status response: " + response);
+	}
 
-	std::regex rx(R"(p([byrpo])\\((\!\d+)+))");
-	std::string::const_iterator start = response.begin();
-	std::string::const_iterator end = response.end();
-	std::smatch matches;
+	std::string serverinfo = response.substr("print\n"s.size());
+	serverinfo = serverinfo.substr(0, serverinfo.find('\n'));
 
-	while (std::regex_search(start, end, matches, rx))
-	{
-		start = matches[0].second;
+	const std::regex rx(R"((?:^|\\)p([byrpo])\\((\!\d+)+)(?:$|\\))");
+	for (auto it = std::sregex_iterator(serverinfo.begin(), serverinfo.end(), rx); it != std::sregex_iterator{}; ++it) {
+		const std::smatch match = *it;
 
-		const std::string team_string = matches[1];
+		const std::string team_string = match[1];
 		const Team team = team_from_string(team_string);
 
-		std::string concatenated_numbers = matches[2];
+		const std::string concatenated_numbers = match[2];
 		auto number_strings = concatenated_numbers
 			| std::ranges::views::split('!')
 			| std::ranges::views::transform([](auto&& rng) { return std::string(rng.begin(), rng.end()); })

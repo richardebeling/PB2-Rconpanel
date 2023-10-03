@@ -194,20 +194,19 @@ void ShowPlayerInfo(HWND hwnd)
 
 	if (player->id)
 	{
-		std::string sPlayersite = GetHttpResponse("http://www.dplogin.com/index.php?action=viewmember&playerid=" + std::to_string(player->id.value()));
-
-		std::smatch matches;
-		std::regex rx ("<tr><td><b class=\"faqtitle\">(.+?:)</b></td><td>(.+?)</td></tr>");
-		//												1-VARNAME		2-CONTENT
+		const std::string player_site = GetHttpResponse("http://www.dplogin.com/index.php?action=viewmember&playerid=" + std::to_string(player->id.value()));
+		const std::regex rx ("<tr><td><b class=\"faqtitle\">(.+?:)</b></td><td>(.+?)</td></tr>");
+		//													1-VARNAME		2-CONTENT
 				
-		auto start = sPlayersite.cbegin();
-		while (std::regex_search(start, sPlayersite.cend(), matches, rx)) {
-			start = matches[0].second;
+		const auto begin = std::sregex_iterator(player_site.begin(), player_site.end(), rx);
+		const auto end = std::sregex_iterator{};
+		for (auto it = begin; it != end; ++it) {
+			const std::smatch match = *it;
 			
-			sBoxContent += matches[1];
+			sBoxContent += match[1];
 			sBoxContent += " ";
 			
-			std::string sContent = matches[2];
+			std::string sContent = match[2];
 			sContent = std::regex_replace(sContent, std::regex(R"(<a href=\".+?\">)"), "");
 			sContent = std::regex_replace(sContent, std::regex("</a>"), "");
 
@@ -1347,17 +1346,13 @@ void LoadRotationToListbox(HWND hListBox)
 	}
 	
 	MainWindowLogPb2LibExceptionsToConsole([&]() {
-		std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv maplist", gSettings.fTimeoutSecs);
+		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv maplist", gSettings.fTimeoutSecs);
+		const std::regex rx(R"(^\d+ (.*?)$)");
 
 		SendMessage(hListBox, LB_RESETCONTENT, 0, 0);
-		std::string::const_iterator start = response.begin();
-		std::string::const_iterator end = response.end();
-		std::regex rx(R"(^\d+ (.*?)$)");
-		std::smatch matches;
-		while (std::regex_search(start, end, matches, rx))
-		{
-			start = matches[0].second;
-			std::string map = matches[1];
+		for (auto it = std::sregex_iterator(response.begin(), response.end(), rx); it != std::sregex_iterator{}; ++it){
+			const std::smatch match = *it;
+			const std::string map = match[1];
 			ListBox_AddString(hListBox, map.c_str());
 		}
 	});
@@ -1646,22 +1641,16 @@ void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has 
 	
 	MainWindowWriteConsole("Loading servers, this may take a short time...");
 	
-	std::string sServerlist = GetHttpResponse(gSettings.sServerlistAddress);
-
-	std::smatch matches;
-	std::regex rx (R"((\d+\.\d+\.\d+\.\d+):(\d{2,5}))");
-	std::string::const_iterator start = sServerlist.begin();
-	std::string::const_iterator end   = sServerlist.end();
-
-	while (std::regex_search(start, end, matches, rx)) //add all servers that answer to the listbox
-	{
-		start = matches[0].second;
-
+	const std::string serverlist = GetHttpResponse(gSettings.sServerlistAddress);
+	const std::regex rx (R"((\d+\.\d+\.\d+\.\d+):(\d{2,5}))");
+	for (auto it = std::sregex_iterator(serverlist.begin(), serverlist.end(), rx); it != std::sregex_iterator{}; ++it) {
+		const std::smatch match = *it;
 		pb2lib::Server server;
-		server.address.ip = matches[1];
-		server.address.port = std::stoi(matches[2]);
+		server.address.ip = match[1];
+		server.address.port = std::stoi(match[2]);
+
 		// TODO: Asynchronous
-		auto hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fAllServersTimeoutSecs);
+		const auto hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fAllServersTimeoutSecs);
 		if (hostname) {
 			server.hostname = hostname.value();
 			g_vAllServers.push_back(server);
@@ -2153,17 +2142,13 @@ void LoadBannedIPsToListbox(HWND hListBox)
 	}
 
 	MainWindowLogPb2LibExceptionsToConsole([&]() {
-		std::string answer = pb2lib::send_rcon(server->address, server->rcon_password, "sv listip", gSettings.fTimeoutSecs);
+		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv listip", gSettings.fTimeoutSecs);
+		const std::regex rx(R"(\s*\d+\.\s*\d+\.\s*\d+\.\s*\d+)");
 
 		ListBox_ResetContent(hListBox);
-		std::string::const_iterator start = answer.begin();
-		std::string::const_iterator end = answer.end();
-		std::regex rx(R"(\s*\d+\.\s*\d+\.\s*\d+\.\s*\d+)");
-		std::smatch matches;
-		while (std::regex_search(start, end, matches, rx))
-		{
-			start = matches[0].second;
-			std::string ip = matches[0];
+		for (auto it = std::sregex_iterator(response.begin(), response.end(), rx); it != std::sregex_iterator{}; ++it) {
+			const std::smatch match = *it;
+			const std::string ip = match[0];
 			ListBox_AddString(hListBox, ip.c_str());
 		}
 	});
@@ -2218,6 +2203,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		{
 			if (codeNotify == LBN_SELCHANGE)
 			{
+				// TODO: Some kind of overflow here?
 				char szBuffer[16] = { 0 };
 				BYTE b0, b1, b2, b3;
 				SendMessage(GetDlgItem(hwnd, IDC_MIPS_LIST), LB_GETTEXT,
