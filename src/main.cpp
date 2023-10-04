@@ -967,17 +967,18 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				break;
 			}
 		case IDM_SERVER_MANAGE:
-			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, (DLGPROC) ManageServersDlgProc);
+			// TODO: Also make non-blocking? Should work now.
+			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, ManageServersDlgProc);
 			break;
 		case IDM_SERVER_ROTATION:
 			if (!gWindows.hDlgManageRotation)
-				gWindows.hDlgManageRotation = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, (DLGPROC) ManageRotationDlgProc);
+				gWindows.hDlgManageRotation = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, ManageRotationDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgManageRotation);			
 			break;
 		case IDM_SERVER_BANNEDIPS:
 			if (!gWindows.hDlgManageIps)
-				gWindows.hDlgManageIps = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, (DLGPROC)ManageIPsDlgProc);
+				gWindows.hDlgManageIps = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, ManageIPsDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgManageIps);
 			break;
@@ -986,11 +987,11 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			MainWindowUpdateAutoKickState();
 			break;
 		case IDM_AUTOKICK_SETPING:
-			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SETPING), hwnd, (DLGPROC) SetPingDlgProc);
+			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SETPING), hwnd, SetPingDlgProc);
 			break;
 		case IDM_AUTOKICK_MANAGEIDS:
 			if (!gWindows.hDlgManageIds)
-				gWindows.hDlgManageIds = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIDS), hwnd, (DLGPROC) ManageIDsDlgProc);
+				gWindows.hDlgManageIds = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIDS), hwnd, ManageIDsDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgManageIds);
 			break;
@@ -999,7 +1000,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			break;
 		case IDM_HELP_RCONCOMMANDS:
 			if (!gWindows.hDlgRconCommands)
-				gWindows.hDlgRconCommands = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_RCONCOMMANDS), hwnd, (DLGPROC) RCONCommandsDlgProc);
+				gWindows.hDlgRconCommands = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_RCONCOMMANDS), hwnd, RCONCommandsDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgRconCommands);
 			break;
@@ -1057,7 +1058,9 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
     int iMW = LOWORD(dwBaseUnits) / 4; //Multiplier width for base units -> pixels
 	int iMH = HIWORD(dwBaseUnits) / 8; //Multiplier height for base units -> pixels
 
+	// TODO: Make DPI aware and mark as DPI aware?
 	// TODO: Fix clipping with DPI scaling enabled
+	// TODO: Also fix wrong positioning on some of the resource dialogs
 
     // TODO: Add: calculate it all from a few, for humans readable areas (Server, Player, Console) so editing is easier.
     //RECT rcServer =  {3*iMW, 3*iMH                   , cx - 3*iMW, 23*iMH};
