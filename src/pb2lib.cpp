@@ -7,8 +7,22 @@
 
 namespace pb2lib {
 
+using namespace std::chrono_literals;
 using namespace std::string_literals;
 using namespace std::string_view_literals;
+
+
+Address::operator sockaddr_in() const {
+	sockaddr_in result = { 0 };
+	result.sin_family = AF_INET;
+	result.sin_port = htons(port);
+	InetPton(AF_INET, ip.c_str(), &result.sin_addr.s_addr);
+	return result;
+}
+
+Address::operator std::string() const {
+	return ip + ":" + std::to_string(port);
+}
 
 
 WsaRaiiWrapper::WsaRaiiWrapper() {
@@ -25,25 +39,18 @@ WsaRaiiWrapper::~WsaRaiiWrapper() {
 }
 
 
-SocketRaiiWrapper::SocketRaiiWrapper(const Address& remote_address) {
+UdpSocket::UdpSocket() {
 	socket_handle_ = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (socket_handle_ == INVALID_SOCKET) {
 		throw Exception("Error opening socket. WSAGetLastError() = " + std::to_string(WSAGetLastError()));
 	}
-
-	remote_address_ = { 0 };
-	remote_address_.sin_family = AF_INET;
-	remote_address_.sin_port = htons(remote_address.port);
-	InetPton(AF_INET, remote_address.ip.c_str(), &remote_address_.sin_addr.s_addr);
 }
 
-
-SocketRaiiWrapper::~SocketRaiiWrapper() {
+UdpSocket::~UdpSocket() {
 	closesocket(socket_handle_);
 }
 
-
-void SocketRaiiWrapper::clear_receive_queue() noexcept {
+void UdpSocket::clear_receive_queue() noexcept {
 	fd_set fdset = { 0 };
 	timeval tv = { 0 };
 	FD_ZERO(&fdset);
@@ -56,20 +63,17 @@ void SocketRaiiWrapper::clear_receive_queue() noexcept {
 	}
 }
 
-
-void SocketRaiiWrapper::send(const std::string& packet_content) {
+void UdpSocket::send(const sockaddr_in& address, const std::string& packet_content) {
 	const auto ret = sendto(socket_handle_, packet_content.c_str(),
 		static_cast<int>(packet_content.size() + 1), 0,
-		reinterpret_cast<const sockaddr*>(&remote_address_), sizeof(remote_address_));
+		reinterpret_cast<const sockaddr*>(&address), sizeof(address));
 
 	if (ret == SOCKET_ERROR) {
 		throw Exception("sendto failed, WSAGetLastError() = " + std::to_string(WSAGetLastError()));
 	}
 }
 
-
-void SocketRaiiWrapper::receive(std::vector<char>* buffer, double timeout) {
-	// select is necessary to get timeout behavior
+bool UdpSocket::wait_for_data(double timeout) const {
 	fd_set fdset = { 0 };
 	timeval time_val = { 0 };
 	FD_ZERO(&fdset);
@@ -82,17 +86,22 @@ void SocketRaiiWrapper::receive(std::vector<char>* buffer, double timeout) {
 		throw Exception("select failed, WSAGetLastError() = " + std::to_string(WSAGetLastError()));
 	}
 
-	if (select_result == 0) {
+	return select_result;
+}
+
+void UdpSocket::receive(std::vector<char>* buffer, sockaddr_in* remote_address, double timeout) {
+	const bool data_available = wait_for_data(timeout);
+	if (!data_available) {
 		buffer->resize(0);
 		return;
 	}
 
 	// Must be big enough to hold a single answer packet, otherwise excess data of that packet is discarded and our answer is lost
 	buffer->resize(65535);
-	sockaddr_in sender_address = { 0 };
-	int sender_address_size = sizeof(sender_address);
+	int sender_address_size = sizeof(*remote_address);
 
-	int receive_result = recvfrom(socket_handle_, buffer->data(), static_cast<int>(buffer->size()), 0, reinterpret_cast<sockaddr*>(&sender_address), &sender_address_size);
+	int receive_result = recvfrom(socket_handle_, buffer->data(),
+		static_cast<int>(buffer->size()), 0, reinterpret_cast<sockaddr*>(remote_address), &sender_address_size);
 	if (receive_result == SOCKET_ERROR) {
 		auto last_error = WSAGetLastError();
 		// from/to localhost, windows will give a WSAEConnReset error with UDP if the remove port is closed
@@ -107,36 +116,92 @@ void SocketRaiiWrapper::receive(std::vector<char>* buffer, double timeout) {
 	}
 
 	assert(sender_address_size == sizeof(sockaddr_in));
-	if (memcmp(&(sender_address.sin_addr), &(remote_address_.sin_addr), sizeof(sender_address.sin_addr)) != 0) {
-		throw Exception("Received packet from wrong remote address");
-	}
-
 	buffer->at(receive_result) = '\0';
 	buffer->resize(static_cast<size_t>(receive_result) + 1);
 }
 
 
-std::optional<std::string> get_hostname_or_nullopt(const Address& address, double timeout) noexcept {
-	std::string response;
+SingleRemoteEndpointUdpSocket::SingleRemoteEndpointUdpSocket(const Address& remote_address) {
+	remote_address_ = static_cast<sockaddr_in>(remote_address);
+}
+
+void SingleRemoteEndpointUdpSocket::clear_receive_queue() noexcept {
+	return socket_.clear_receive_queue();
+}
+
+
+void SingleRemoteEndpointUdpSocket::send(const std::string& packet_content) {
+	return socket_.send(remote_address_, packet_content);
+}
+
+
+void SingleRemoteEndpointUdpSocket::receive(std::vector<char>* buffer, double timeout) {
+	sockaddr_in sender_address = { 0 };
+	socket_.receive(buffer, &sender_address, timeout);
+
+	if (memcmp(&(sender_address.sin_addr), &(remote_address_.sin_addr), sizeof(sender_address.sin_addr)) != 0) {
+		throw Exception("Received packet from wrong remote address");
+	}
+}
+
+std::future<std::string> AsyncHostnameResolver::resolve(const Address& address, CallbackT callback) {
+	sockaddr_in addr = static_cast<sockaddr_in>(address);
+
+	auto new_entry_it = requests_by_address_.emplace(addr, MapValue{
+		std::promise<std::string>{},
+		std::move(callback),
+	});
+
 	try {
-		response = send_connectionless(address, "status", timeout);
+		socket_.send(addr, "\xFF\xFF\xFF\xFFstatus");
 	}
 	catch (pb2lib::Exception&) {
-		return std::nullopt;
+		requests_by_address_.erase(new_entry_it);
+		std::promise<std::string> promise;
+		promise.set_exception(std::current_exception());
+		std::string result;
+		return promise.get_future();
 	}
 
-	std::smatch matches;
-	if (!std::regex_search(response, matches, std::regex(R"(\\hostname\\(.*?)\\)"))) {
-		return std::nullopt;
+	return new_entry_it->second.promise.get_future();
+}
+
+
+void AsyncHostnameResolver::thread_func(std::stop_token stop_token) {
+	constexpr double wake_up_interval = 0.1;
+
+	sockaddr_in remote_address;
+	std::vector<char> buffer;
+	std::cmatch matches;
+	std::regex rx(R"(\\hostname\\(.*?)\\)");
+
+	while (!stop_token.stop_requested()) {
+		bool data_available = socket_.wait_for_data(wake_up_interval);
+		if (!data_available)
+			continue;
+
+		socket_.receive(&buffer, &remote_address, 0);
+		const char* response_begin = buffer.data();
+		const char* response_end = response_begin + buffer.size();
+
+		if (!std::regex_search(response_begin, response_end, matches, rx)) {
+			continue;
+		}
+
+		std::string hostname = matches[1];
+
+		auto [begin, end] = requests_by_address_.equal_range(remote_address);
+		for (auto it = begin; it != end; ++it) {
+			it->second.promise.set_value(hostname);
+			it->second.callback(hostname);
+		}
+		requests_by_address_.erase(begin, end);
 	}
-	return matches[1];
 }
 
 
 std::string send_connectionless(const Address& address, std::string_view message, double timeout) {
-	static const WsaRaiiWrapper wra_wrapper;
-
-	SocketRaiiWrapper socket(address);
+	SingleRemoteEndpointUdpSocket socket(address);
 	socket.clear_receive_queue();
 
 	std::string packet_content = "\xFF\xFF\xFF\xFF";
@@ -169,7 +234,7 @@ std::string send_connectionless(const Address& address, std::string_view message
 		response += partial_response;
 		received_anything = true;
 
-		if (partial_response.size() < 1200) {
+		if (partial_response.size() < 1000) {
 			// early exit if we don't expect additional packets
 			break;  // todo: possibly wrong, but can we do better?
 		}
@@ -430,7 +495,14 @@ void annotate_team_from_status(std::vector<Player>* players, const Address& addr
 
 std::vector<Player> get_players(const Address& address, std::string_view rcon_password, double timeout) {
 	std::vector<Player> result = get_players_from_rcon_sv_players(address, rcon_password, timeout);
+	if (result.empty()) {
+		return result;
+	}
+
 	annotate_score_ping_address_from_rcon_status(&result, address, rcon_password, timeout);
+
+	// TODO: Maybe probe player count first with `status`, and only use logged rcon if there are players?
+	// Problem: Bots don't currently show up in connectionless `status` response.
 	annotate_team_from_status(&result, address, timeout);
 
 	return result;

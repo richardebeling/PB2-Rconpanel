@@ -22,36 +22,48 @@
 using namespace std::string_literals;
 using namespace std::chrono_literals;
 
-std::jthread g_FetchServerCvarsThread;
 std::future<std::vector<std::string>> g_FetchServerCvarsFuture;
-
-std::jthread g_FetchPlayersThread;
 std::future<std::vector<pb2lib::Player>> g_FetchPlayersFuture;
 
-std::vector<pb2lib::Player> g_vPlayers;			// players on the current server, shown in the listview
+std::vector<std::unique_ptr<Server>> g_ServersWithRcon;
+std::vector<std::future<std::string>> g_RconResponses;
+std::vector<pb2lib::Player> g_vPlayers; // players on the current server, shown in the listview
 
-std::vector<pb2lib::Server> g_vSavedServers;	// used to store servers in the combo box
 std::vector<AutoKickEntry> 	g_vAutoKickEntries;
+
+std::future<std::vector<std::unique_ptr<Server>>> g_ServerlistFuture;
+std::vector<std::unique_ptr<Server>> g_Serverlist;
 
 AsyncRepeatedTimer g_AutoReloadTimer;
 AsyncRepeatedTimer g_AutoKickTimer;
 
-std::vector<std::future<std::string>> g_RconResponses;
-
-std::vector<pb2lib::Server> g_vAllServers;		// used to fill server list in the "Manage servers" dialog
-std::map <size_t, HANDLE> g_mLoadServersThreads;	//contains UID and ExitEvent for every reload thread
+pb2lib::AsyncHostnameResolver g_HostnameResolver;
 
 UINT WM_REFETCHPLAYERS;
 UINT WM_SERVERCHANGED;
 UINT WM_PLAYERSREADY;
 UINT WM_SERVERCVARSREADY;
 UINT WM_RCONRESPONSEREADY;
+UINT WM_HOSTNAMEREADY;
+UINT WM_SERVERLISTREADY;
 
-WindowHandles gWindows; // stores all window handles
-Settings gSettings;     // stores all program settings
+WindowHandles gWindows;
+Settings gSettings;
 
 ULONG_PTR g_gdiplusStartupToken;
 std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmap;
+
+
+Server::operator std::string() const {
+	std::string display_hostname = "No response";
+	if (hostname.valid() && hostname.wait_for(0s) != std::future_status::timeout) {
+		MainWindowLogPb2LibExceptionsToConsole([&]() {
+			display_hostname = hostname.get();
+		});
+	}
+
+	return display_hostname + " [" + static_cast<std::string>(address) + "]";
+}
 
 
 //--------------------------------------------------------------------------------------------------
@@ -70,6 +82,8 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 	WM_SERVERCHANGED = RegisterWindowMessageOrCriticalError("RCONPANEL_SERVERCHANGED");
 	WM_SERVERCVARSREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_SERVERCVARSREADY");
 	WM_RCONRESPONSEREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_RCONRESPONSEREADY");
+	WM_HOSTNAMEREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_HOSTNAMEREADY");
+	WM_SERVERLISTREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_SERVERLISTREADY");
 	
 	if (OleInitialize(NULL) != S_OK) {
 		HandleCriticalError("OleInitialize returned non-ok status");
@@ -122,6 +136,67 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 
 // TODO: Namespacing instead of function name prefixing
 
+// TODO: additional string argument describing the attempted action
+void MainWindowLogPb2LibExceptionsToConsole(std::function<void()> func) {
+	try {
+		func();
+	}
+	catch (pb2lib::Exception& e) {
+		MainWindowWriteConsole("An error occurred: "s + e.what());
+	}
+}
+
+void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr) noexcept {
+	const Server& server = *stable_server_ptr;
+	const std::string display_string = static_cast<std::string>(server);
+
+	const auto selected_index = ComboBox_GetCurSel(gWindows.hComboServer);
+	int found_index = ComboBox_CustomFindItemData(gWindows.hComboServer, stable_server_ptr);
+
+	if (found_index >= 0) {
+		auto existing_text_length = ComboBox_GetLBTextLen(gWindows.hComboServer, found_index);
+		std::vector<char> buffer(existing_text_length + 1);
+		ComboBox_GetLBText(gWindows.hComboServer, found_index, buffer.data());
+		if (std::string_view(buffer.data(), buffer.size() - 1) == display_string) {
+			return;
+		}
+		ComboBox_DeleteString(gWindows.hComboServer, found_index);
+	}
+
+	const auto created_index = ComboBox_AddString(gWindows.hComboServer, display_string.c_str());
+	ComboBox_SetItemData(gWindows.hComboServer, created_index, stable_server_ptr);
+
+	if (selected_index == -1) {
+		ComboBox_SetCurSel(gWindows.hComboServer, 0);
+	}
+	else if (selected_index == found_index) {
+		ComboBox_SetCurSel(gWindows.hComboServer, created_index);
+	}
+}
+
+void MainWindowRemoveOwnedServer(const Server* stored_server_ptr) noexcept {
+	const auto found_index = ComboBox_CustomFindItemData(gWindows.hComboServer, stored_server_ptr);
+	const auto selected_index = ComboBox_GetCurSel(gWindows.hComboServer);
+	ComboBox_DeleteString(gWindows.hComboServer, found_index);
+
+	if (found_index == selected_index) {
+		const auto new_index = min(ComboBox_GetCount(gWindows.hComboServer) - 1, selected_index);
+		ComboBox_SetCurSel(gWindows.hComboServer, new_index);
+	}
+}
+
+void MainWindowRefetchHostnames() noexcept {
+	HWND hwnd = gWindows.hWinMain;
+	UINT message = WM_HOSTNAMEREADY;
+
+	for (const auto& server_ptr : g_ServersWithRcon) {
+		Server* raw_server_ptr = server_ptr.get();
+		server_ptr->hostname = g_HostnameResolver.resolve(server_ptr->address, [hwnd, message, raw_server_ptr](const std::string& resolved_hostname) {
+			PostMessage(hwnd, message, 0, (LPARAM)raw_server_ptr);
+		});
+	}
+}
+
 void MainWindowUpdateAutoKickState() noexcept {
 	HMENU menu = GetMenu(gWindows.hWinMain);
 
@@ -131,19 +206,20 @@ void MainWindowUpdateAutoKickState() noexcept {
 	CheckMenuItem(menu, IDM_AUTOKICK_SETPING, gSettings.iAutoKickCheckMaxPingMsecs != 0 ? MF_CHECKED : MF_UNCHECKED);
 }
 
-pb2lib::Server* MainWindowGetSelectedServerOrLoggedNull() noexcept {
-	if (g_vSavedServers.size() == 0) {
+Server* MainWindowGetSelectedServerOrLoggedNull() noexcept {
+	if (g_ServersWithRcon.size() == 0) {
 		MainWindowWriteConsole("There are no servers in your server list.");
 		return nullptr;
 	}
 
-	size_t selectedServerIndex = SendMessage(gWindows.hComboServer, CB_GETITEMDATA, SendMessage(gWindows.hComboServer, CB_GETCURSEL, 0, 0), 0);
-	if (selectedServerIndex == CB_ERR || selectedServerIndex >= g_vSavedServers.size()) {
+	auto selected_index = ComboBox_GetCurSel(gWindows.hComboServer);
+	auto selectedServerPtr = ComboBox_GetItemData(gWindows.hComboServer, selected_index);
+	if (selectedServerPtr == CB_ERR) {
 		MainWindowWriteConsole("Error when trying to get the selected server");
 		return nullptr;
 	}
 
-	return &g_vSavedServers.at(selectedServerIndex);
+	return reinterpret_cast<Server*>(selectedServerPtr);
 }
 
 pb2lib::Player* MainWindowGetSelectedPlayerOrNull() noexcept {
@@ -167,17 +243,6 @@ pb2lib::Player* MainWindowGetSelectedPlayerOrLoggedNull() noexcept {
 		MainWindowWriteConsole("Please select a player first.");
 	}
 	return result;
-}
-
-// TODO: additional string argument describing the attempted action
-template <typename FuncT>
-auto MainWindowLogPb2LibExceptionsToConsole(FuncT&& functor) {
-	try {
-		functor();
-	}
-	catch (pb2lib::Exception& e) {
-		MainWindowWriteConsole("An error occurred: "s + e.what());
-	}
 }
 
 void ShowPlayerInfo(HWND hwnd)
@@ -265,13 +330,6 @@ void ShowAboutDialog(HWND hwnd)
 					MB_OK | MB_ICONINFORMATION);
 }
 
-inline void SignalAllThreads(std::map<size_t, HANDLE> * map)
-{
-	for (auto& [key, event] : *map) {
-		SetEvent(event);
-	}
-}
-
 void PostMessageToAllWindows(UINT message) {
 	WNDENUMPROC enum_callback = [](HWND hwnd, LPARAM lParam) -> BOOL {
 		PostMessage(hwnd, (UINT)lParam, 0, 0);
@@ -284,22 +342,12 @@ void PostMessageToAllWindows(UINT message) {
 void MainWindowRefetchServerInfo() noexcept {
 	g_AutoReloadTimer.reset_current_timeout();
 
-	g_FetchPlayersThread.request_stop();
-	if (g_FetchPlayersThread.joinable()) {
-		g_FetchPlayersThread.detach();
-	}
-
-	g_FetchServerCvarsThread.request_stop();
-	if (g_FetchServerCvarsThread.joinable()) {
-		g_FetchServerCvarsThread.detach();
-	}
-
 	auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
 	}
 
-	auto fetch_players_thread_function = [](std::promise<std::vector<pb2lib::Player>> promise, pb2lib::Server server, HWND window, double timeout) {
+	auto fetch_players_thread_function = [](std::promise<std::vector<pb2lib::Player>> promise, Server server, HWND window, double timeout) {
 		try {
 			promise.set_value(pb2lib::get_players(server.address, server.rcon_password, timeout));
 		}
@@ -311,9 +359,10 @@ void MainWindowRefetchServerInfo() noexcept {
 
 	std::promise<std::vector<pb2lib::Player>> players_promise;
 	g_FetchPlayersFuture = players_promise.get_future();
-	g_FetchPlayersThread = std::jthread(fetch_players_thread_function, std::move(players_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
+	std::jthread fetch_players_thread(fetch_players_thread_function, std::move(players_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
+	fetch_players_thread.detach();
 
-	auto fetch_cvars_thread_function = [](std::promise<std::vector<std::string>> promise, pb2lib::Server server, HWND window, double timeout) {
+	auto fetch_cvars_thread_function = [](std::promise<std::vector<std::string>> promise, Server server, HWND window, double timeout) {
 		const std::vector<std::string> status_vars = { "mapname", "password", "elim", "timelimit", "maxclients" };
 		try {
 			promise.set_value(pb2lib::get_cvars(server.address, server.rcon_password, status_vars, gSettings.fTimeoutSecs));
@@ -326,7 +375,8 @@ void MainWindowRefetchServerInfo() noexcept {
 
 	std::promise<std::vector<std::string>> cvars_promise;
 	g_FetchServerCvarsFuture = cvars_promise.get_future();
-	g_FetchServerCvarsThread = std::jthread(fetch_cvars_thread_function, std::move(cvars_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
+	std::jthread fetch_cvars_thread(fetch_cvars_thread_function, std::move(cvars_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
+	fetch_cvars_thread.detach();
 }
 
 void MainWindowUpdatePlayersListview() noexcept
@@ -618,6 +668,8 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	else
 		MainWindowWriteConsole("Unexpected error when loading the configuration file: " + std::to_string(retVal));
 	
+	MainWindowRefetchHostnames();
+
 	SendMessage(hwnd, WM_SERVERCHANGED, 0, 0);
 
 	return true;
@@ -697,7 +749,7 @@ void OnMainWindowJoinServer(void)
 		return;
 	}
 
-	const std::string args = "+connect " + server->address.ip + ":" + std::to_string(server->address.port);
+	const std::string args = "+connect " + std::string(server->address);
 	const std::string pb2_executable = pb2_path.value() + "\\paintball2.exe";
 
 	auto ret = (INT_PTR) ShellExecute(0, "open", pb2_executable.c_str(), args.c_str(), 0, 1); //start it
@@ -848,6 +900,14 @@ void OnMainWindowRconResponseReady() noexcept {
 			});
 	}
 	std::erase_if(g_RconResponses, [](const auto& future) { return !future.valid(); });
+}
+
+void OnMainWindowHostnameReady(Server* server_instance) noexcept {
+	for (const auto& server_ptr : g_ServersWithRcon) {
+		if (server_ptr.get() == server_instance) {
+			MainWindowAddOrUpdateOwnedServer(server_ptr.get());
+		}
+	}
 }
 
 void OnMainWindowDestroy(HWND hwnd)
@@ -1097,8 +1157,7 @@ HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type)
 
 LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	switch (message)
-	{
+	switch (message) {
 		HANDLE_MSG(hwnd, WM_CREATE,         OnMainWindowCreate);
 		HANDLE_MSG(hwnd, WM_DESTROY,        OnMainWindowDestroy);
 		HANDLE_MSG(hwnd, WM_COMMAND,        OnMainWindowCommand);
@@ -1108,12 +1167,12 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 		HANDLE_MSG(hwnd, WM_CTLCOLORSTATIC, OnMainWindowCtlColorStatic);
 	}
 
-#define HANDLE_CUSTOM_MSG(msg, fn) if (message == msg) {(fn)(); return NULL;}
-	HANDLE_CUSTOM_MSG(WM_REFETCHPLAYERS, MainWindowRefetchServerInfo);
-	HANDLE_CUSTOM_MSG(WM_SERVERCHANGED, MainWindowRefetchServerInfo);
-	HANDLE_CUSTOM_MSG(WM_PLAYERSREADY, OnMainWindowPlayersReady);
-	HANDLE_CUSTOM_MSG(WM_SERVERCVARSREADY, OnMainWindowServerCvarsReady);
-	HANDLE_CUSTOM_MSG(WM_RCONRESPONSEREADY, OnMainWindowRconResponseReady);
+	if (message == WM_REFETCHPLAYERS) { MainWindowRefetchServerInfo(); return 0; };
+	if (message == WM_SERVERCHANGED) { MainWindowRefetchServerInfo(); return 0; };
+	if (message == WM_PLAYERSREADY) { OnMainWindowPlayersReady(); return 0; };
+	if (message == WM_SERVERCVARSREADY) { OnMainWindowServerCvarsReady(); return 0; };
+	if (message == WM_RCONRESPONSEREADY) { OnMainWindowRconResponseReady(); return 0; };
+	if (message == WM_HOSTNAMEREADY) { OnMainWindowHostnameReady((Server*)lParam); return 0; };
 
 	return DefWindowProc(hwnd, message, wParam, lParam);
 }
@@ -1631,252 +1690,231 @@ LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPA
 // Callback Manage Servers Dialog                                                                  |
 //{-------------------------------------------------------------------------------------------------
 
-void LoadServersToListbox(LPVOID lpArgumentStruct) //Only called as thread, has to delete its argument
-{
-	size_t uid = static_cast<LoadServersArgs *>(lpArgumentStruct)->uid;
-	HWND hwndListbox = static_cast<LoadServersArgs *>(lpArgumentStruct)->hwnd;
-	delete static_cast<LoadServersArgs *>(lpArgumentStruct);
-	
-	bool bExit = false;
-	
-	MainWindowWriteConsole("Loading servers, this may take a short time...");
-	
-	const std::string serverlist = GetHttpResponse(gSettings.sServerlistAddress);
-	const std::regex rx (R"((\d+\.\d+\.\d+\.\d+):(\d{2,5}))");
-	for (auto it = std::sregex_iterator(serverlist.begin(), serverlist.end(), rx); it != std::sregex_iterator{}; ++it) {
-		const std::smatch match = *it;
-		pb2lib::Server server;
-		server.address.ip = match[1];
-		server.address.port = std::stoi(match[2]);
+void ManageServersAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept {
+	const Server& server = *stable_server_ptr;
+	std::string display_string = static_cast<std::string>(server);
 
-		// TODO: Asynchronous
-		const auto hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fAllServersTimeoutSecs);
-		if (hostname) {
-			server.hostname = hostname.value();
-			g_vAllServers.push_back(server);
-			auto index = SendMessage(hwndListbox, LB_ADDSTRING, 0, (LPARAM)server.hostname.c_str());
-			SendMessage(hwndListbox, LB_SETITEMDATA, index, g_vAllServers.size() - 1);
-		}
-		
-		try
-		{
-			if (WaitForSingleObject(g_mLoadServersThreads.at(uid), 0) == WAIT_OBJECT_0)
-			{
-				bExit = true;
-				break;
-			}
-		}
-		catch (const std::out_of_range&)
-		{
-			// todo -- this should work differently. A thread should get all hostnames, then the UI should be updated (synchronously)
+	const auto selected_index = ListBox_GetCurSel(list);
+
+	const auto found_index = ListBox_CustomFindItemData(list, stable_server_ptr);
+	if (found_index >= 0) {
+		auto existing_text_length = ListBox_GetTextLen(list, found_index);
+		std::vector<char> buffer(existing_text_length + 1);
+		ListBox_GetText(list, found_index, buffer.data());
+		if (std::string_view(buffer.data(), buffer.size() - 1) == display_string) {
 			return;
 		}
+		ListBox_DeleteString(list, found_index);
 	}
 
-	CloseHandle(g_mLoadServersThreads.at(uid)); //Delete the Event
-	g_mLoadServersThreads.erase(g_mLoadServersThreads.find(uid));
-	if (!bExit) MainWindowWriteConsole("Done.");
+	const auto created_index = ListBox_AddString(list, display_string.c_str());
+	ListBox_SetItemData(list, created_index, stable_server_ptr);
+
+	if (selected_index == found_index) {
+		ListBox_SetCurSel(list, created_index);
+	}
 }
 
-void OnManageServersClose(HWND hwnd)
-{
+void ManageServersRemoveServer(HWND list, const Server* stored_server_ptr) noexcept {
+	const auto selected_index = ListBox_GetCurSel(list);
+	const auto found_index = ListBox_CustomFindItemData(list, stored_server_ptr);
+	ListBox_DeleteString(list, found_index);
+
+	if (found_index == selected_index) {
+		const auto new_index = min(ListBox_GetCount(list) - 1, selected_index);
+		ListBox_SetCurSel(list, new_index);
+	}
+}
+
+void ManageServersFetchHostname(HWND hDlg, Server* server) noexcept {
+	HWND hWinMain = gWindows.hWinMain;
+	UINT message = WM_HOSTNAMEREADY;
+	server->hostname = g_HostnameResolver.resolve(server->address, [hWinMain, hDlg, message, server](const std::string& resolved_hostname) {
+		PostMessage(hWinMain, message, 0, (LPARAM)server);
+		PostMessage(hDlg, message, 0, (LPARAM)server);
+	});
+}
+
+void OnManageServersClose(HWND hwnd) {
 	EndDialog(hwnd, 1);
-}
-
-void OnManageServersDestroy(HWND hwnd)
-{
-	SendMessage(gWindows.hComboServer, CB_RESETCONTENT, 0, 0);
-	for (unsigned int i = 0; i < g_vSavedServers.size(); i++)
-	{
-		auto index = SendMessage(gWindows.hComboServer, CB_ADDSTRING, 0, (LPARAM) g_vSavedServers[i].hostname.c_str());
-		SendMessage(gWindows.hComboServer, CB_SETITEMDATA, index, i);
-	}
-	SendMessage(gWindows.hComboServer, CB_SETCURSEL, 0, 0);
-	
-	SignalAllThreads(&g_mLoadServersThreads);
-	MainWindowWriteConsole("Aborting.");  // TODO: Not always correct
-	
-	g_vAllServers.clear();
 }
 
 BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
-	// TODO: Maybe initially list servers as their IPs, replace by hostname once retrieved
-	for(unsigned int i = 0; i < g_vSavedServers.size(); i++) {
-		auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM)g_vSavedServers[i].hostname.c_str());
-		SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, i);
+	for (const auto& ptr : g_ServersWithRcon) {
+		ManageServersAddOrUpdateServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), ptr.get());
 	}
-	
-	LoadServersArgs * lpArgumentsStruct = new LoadServersArgs;
-	
-	lpArgumentsStruct->uid = GetFirstUnusedMapKey(g_mLoadServersThreads);
-	lpArgumentsStruct->hwnd = GetDlgItem(hwnd, IDC_DM_LISTLEFT);
-	
-	g_mLoadServersThreads.emplace(lpArgumentsStruct->uid, CreateEvent(NULL, TRUE, FALSE, NULL));
-	
-	HANDLE hThread = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) &LoadServersToListbox, lpArgumentsStruct, 0, NULL);
-	if (hThread == NULL) {
-		MessageBox(NULL, "Failed to create thread to load servers", "Error", MB_OK | MB_ICONERROR);
-	}
-	else {
-		CloseHandle(hThread);
-	}
-	
+
+	std::promise<std::vector<std::unique_ptr<Server>>> promise;
+	g_ServerlistFuture = promise.get_future();
+
+	std::jthread thread([hwnd](std::promise<std::vector<std::unique_ptr<Server>>> promise) {
+		std::string serverlist = GetHttpResponse(gSettings.sServerlistAddress);
+
+		std::vector<std::unique_ptr<Server>> result;
+
+		const std::regex rx(R"((\d+\.\d+\.\d+\.\d+):(\d{2,5}))");
+		for (auto it = std::sregex_iterator(serverlist.begin(), serverlist.end(), rx); it != std::sregex_iterator{}; ++it) {
+			const std::smatch match = *it;
+
+			std::unique_ptr<Server>& server = result.emplace_back(std::make_unique<Server>());
+			server->address.ip = match[1];
+			server->address.port = std::stoi(match[2]);
+		}
+
+		promise.set_value(std::move(result));
+		PostMessage(hwnd, WM_SERVERLISTREADY, 0, 0);
+	}, std::move(promise));
+	thread.detach();
+
 	return TRUE;
+}
+
+void OnManageServersServerlistReady(HWND hWndDlg) noexcept {
+	if (!g_ServerlistFuture.valid() || g_ServerlistFuture.wait_for(0s) == std::future_status::timeout) {
+		return;
+	}
+	g_Serverlist = g_ServerlistFuture.get();
+
+	for (const auto& server_ptr : g_Serverlist) {
+		ManageServersAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_DM_LISTLEFT), server_ptr.get());
+		ManageServersFetchHostname(hWndDlg, server_ptr.get());
+	}
+}
+
+void OnManageServersHostnameReady(HWND hWndDlg, Server* server_instance) {
+	for (const auto& server_ptr : g_Serverlist) {
+		if (server_ptr.get() == server_instance) {
+			ManageServersAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_DM_LISTLEFT), server_ptr.get());
+		}
+	}
+
+	for (const auto& server_ptr : g_ServersWithRcon) {
+		if (server_ptr.get() == server_instance) {
+			ManageServersAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_DM_LISTRIGHT), server_ptr.get());
+		}
+	}
 }
 
 void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 {
+	auto server_from_inputs = [&]() -> std::optional<Server> {
+		EDITBALLOONTIP balloon_tip = { 0 };
+		balloon_tip.cbStruct = sizeof(EDITBALLOONTIP);
+		balloon_tip.ttiIcon = TTI_ERROR;
+
+		Server server;
+
+		DWORD dwIP = 0;
+		SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_GETADDRESS, 0, (LPARAM)&dwIP);
+		server.address.ip = std::to_string(FIRST_IPADDRESS(dwIP)) + "." +
+			std::to_string(SECOND_IPADDRESS(dwIP)) + "." +
+			std::to_string(THIRD_IPADDRESS(dwIP)) + "." +
+			std::to_string(FOURTH_IPADDRESS(dwIP));
+
+		std::vector<char> buffer;
+		buffer.resize(1 + GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPORT)) + 1);
+		SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
+		server.address.port = atoi(buffer.data());
+
+		if (dwIP == 0 || server.address.port == 0) {
+			balloon_tip.pszText = L"Please enter the address of the server";
+			balloon_tip.pszTitle = L"IP and Port required";
+			Edit_ShowBalloonTip(GetDlgItem(hwnd, IDC_DM_EDITPORT), &balloon_tip);
+			return std::nullopt;
+		}
+
+		buffer.resize(1 + GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPW)) + 1);
+		SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
+		server.rcon_password = buffer.data();
+		if (server.rcon_password.empty()) {
+			balloon_tip.pszText = L"Please enter the rcon_password of the server";
+			balloon_tip.pszTitle = L"Password required";
+			Edit_ShowBalloonTip(GetDlgItem(hwnd, IDC_DM_EDITPW), &balloon_tip);
+			return std::nullopt;
+		}
+		return server;
+	};
+
 	switch(id)
 	{
 		case IDC_DM_BUTTONOK:
 		{
-			//saving will be done after WM_DESTROY
 			EndDialog(hwnd, 0);
-			return ;
+			return;
 		}
 		case IDC_DM_BUTTONADD:
 		{
-			// TODO: Disallow adding server with empty password
+			std::optional<Server> server = server_from_inputs();
+			if (!server) {
+				return;
+			}
 
-			int iBufferSize = 16; //"255.255.255.255\0
-			int iRconPWLength = GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPW)) + 1;
-			iBufferSize = (iRconPWLength > iBufferSize) ? iRconPWLength : iBufferSize;
-			std::vector<char> buffer(iBufferSize);
+			g_ServersWithRcon.emplace_back(std::make_unique<Server>(server.value()));
+			Server* raw_server_ptr = g_ServersWithRcon.back().get();
 
-			pb2lib::Server server;
-
-			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
-			server.address.port = atoi(buffer.data());
-
-			DWORD dwIP = 0;
-			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_GETADDRESS, 0, (LPARAM) &dwIP);
-			server.address.ip = std::to_string(FIRST_IPADDRESS(dwIP)) + "." +
-							 std::to_string(SECOND_IPADDRESS(dwIP)) + "." +
-							 std::to_string(THIRD_IPADDRESS(dwIP)) + "." +
-							 std::to_string(FOURTH_IPADDRESS(dwIP));
-
-			// TODO: Deduplicate with initialization from config file.
-
-			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
-			server.rcon_password = buffer.data();
-			server.hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fTimeoutSecs).value_or(unreachable_hostname);
-
-			g_vSavedServers.push_back(server);
-
-			auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM) server.hostname.c_str());
-			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, g_vSavedServers.size() - 1);
+			ManageServersFetchHostname(hwnd, raw_server_ptr);
+			MainWindowAddOrUpdateOwnedServer(raw_server_ptr);
+			ManageServersAddOrUpdateServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), raw_server_ptr);
 			return;
 		}
 		case IDC_DM_BUTTONREMOVE:
 		{
-			// TODO: Use helpers
-			//Get position of selected server in g_vSavedServers
-			auto iCurSel = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETCURSEL, 0, 0);
-			if (iCurSel == LB_ERR) return;
-			auto iServerIndex = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETITEMDATA, iCurSel, 0);
-			if (iServerIndex == LB_ERR) return;
+			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_DM_LISTRIGHT));
+			if (selected_index == LB_ERR) return;
 
-			// TODO: Removing the selected server causes "Error why trying to get selected server" spam by the auto-reload-thread
-			//	-> Lock + immediately update combobox (content + selection) in main window
-			g_vSavedServers.erase(g_vSavedServers.begin() + iServerIndex);
+			const Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), selected_index));
+			auto it = std::ranges::find_if(g_ServersWithRcon, [&](const auto& unique_ptr) { return unique_ptr.get() == stored_server; });
+			assert(it != g_ServersWithRcon.end());
 
-			// TODO: Remove instead of clear + rebuild -- or, at least, factor this out
-			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_RESETCONTENT, 0, 0); //Reload right listbox
-			for(unsigned int i = 0; i < g_vSavedServers.size(); i++) {
-				auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING,
-										 0, (LPARAM)g_vSavedServers[i].hostname.c_str());
-				SendMessage (GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, i);
-			}
+			std::unique_ptr<Server> moved_out = std::move(*it);
+			g_ServersWithRcon.erase(it);
 
+			MainWindowRemoveOwnedServer(stored_server);
+			ManageServersRemoveServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), stored_server);
 
 			return;
 		}
 		case IDC_DM_BUTTONSAVE:
 		{
-			int iBufferSize = 16; //"255.255.255.255\0"
-			iBufferSize = max(iBufferSize, GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPW)) + 1);
-			std::vector<char> buffer(iBufferSize);
+			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_DM_LISTRIGHT));
+			if (selected_index == LB_ERR) return;
+			Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), selected_index));
 
-			auto iCurSel = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETCURSEL, 0, 0);
-			if (iCurSel == LB_ERR)
-			{
-				return;
-			}
-			auto iRet = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETITEMDATA, iCurSel, 0);
-			if (iRet == LB_ERR)
-			{
-				return;
-			}
+			std::optional<Server> input_data_server = server_from_inputs();
+			if (!input_data_server) return;
 
-			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
-			g_vSavedServers[iRet].address.port = atoi(buffer.data());
+			*stored_server = input_data_server.value();
+			auto it = std::ranges::find_if(g_ServersWithRcon, [&](const auto& unique_ptr) { return unique_ptr.get() == stored_server; });
+			assert(it != g_ServersWithRcon.end());
 
-			DWORD dwIP = 0;
-			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_GETADDRESS, 0, (LPARAM) &dwIP);
-			snprintf(buffer.data(), iBufferSize, "%lu.%lu.%lu.%lu", FIRST_IPADDRESS(dwIP), SECOND_IPADDRESS(dwIP),
-					THIRD_IPADDRESS(dwIP), FOURTH_IPADDRESS(dwIP));
-			g_vSavedServers[iRet].address.ip = buffer.data();
-
-			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, iBufferSize, (LPARAM)buffer.data());
-			g_vSavedServers[iRet].rcon_password = buffer.data();
-
-			g_vSavedServers[iRet].hostname = pb2lib::get_hostname_or_nullopt(g_vSavedServers[iRet].address, gSettings.fAllServersTimeoutSecs).value_or(unreachable_hostname);
-
-			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_RESETCONTENT, 0, 0); //reload right listbox
-			for(size_t i = 0; i < g_vSavedServers.size(); i++)
-			{
-				auto index = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_ADDSTRING, 0, (LPARAM)g_vSavedServers[i].hostname.c_str());
-				SendMessage (GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETITEMDATA, index, i);
-			}
-			
+			ManageServersFetchHostname(hwnd, stored_server);
+			ManageServersAddOrUpdateServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), stored_server);
+			MainWindowAddOrUpdateOwnedServer(stored_server);
 			return;
 		}
 	}
 	if (codeNotify == LBN_SELCHANGE)
 	{
-		if (id == IDC_DM_LISTLEFT)
-		{
-			char szIpBuffer[16] = {'\0'};
-			auto selectedServerIndex = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTLEFT), LB_GETITEMDATA,
-						SendMessage(GetDlgItem(hwnd, IDC_DM_LISTLEFT), LB_GETCURSEL, 0, 0),
-						0);
-			if (selectedServerIndex == LB_ERR) return;
+		auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, id));
+		if (selected_index == LB_ERR) return;
+		Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, id), selected_index));
 
-			strcpy (szIpBuffer, g_vAllServers[selectedServerIndex].address.ip.c_str());
-
-			BYTE b0, b1, b2, b3;
-			SplitIpAddressToBytes(szIpBuffer, &b0, &b1, &b2, &b3);
+		BYTE b0, b1, b2, b3;
+		SplitIpAddressToBytes(stored_server->address.ip, &b0, &b1, &b2, &b3);
 
 #pragma warning (suppress : 26451)
-			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
-			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_SETTEXT,
-						0, (LPARAM) (std::to_string(g_vAllServers[selectedServerIndex].address.port)).c_str());
+		SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
+		SetWindowText(GetDlgItem(hwnd, IDC_DM_EDITPORT), std::to_string(stored_server->address.port).c_str());
+		SetWindowText(GetDlgItem(hwnd, IDC_DM_EDITPW), stored_server->rcon_password.c_str());
 
-			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_SETCURSEL,  -1, 0);
+		if (id == IDC_DM_LISTLEFT) {
+			ListBox_SetCurSel(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), -1);
 			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONREMOVE), FALSE);
 			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONSAVE), FALSE);
-			return;
 		}
-		else if (id == IDC_DM_LISTRIGHT)
-		{
-			auto selectedSavedServerIndex = SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETITEMDATA,
-						SendMessage(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), LB_GETCURSEL, 0, 0),
-						0);
-			if (selectedSavedServerIndex == LB_ERR) return;
-
-			char szIpBuffer[16] = {'\0'};
-			strcpy (szIpBuffer, g_vSavedServers[selectedSavedServerIndex].address.ip.c_str());
-			BYTE b0, b1, b2, b3;
-			SplitIpAddressToBytes(szIpBuffer, &b0, &b1, &b2, &b3);
-
-#pragma warning (suppress : 26451)
-			SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
-			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_SETTEXT,
-						0, (LPARAM) (std::to_string(g_vSavedServers[selectedSavedServerIndex].address.port)).c_str());
-			SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_SETTEXT,
-						0, (LPARAM) g_vSavedServers[selectedSavedServerIndex].rcon_password.c_str());
-			SendMessage(GetDlgItem(hwnd, IDC_DM_LISTLEFT), LB_SETCURSEL,  -1, 0);
+		else if (id == IDC_DM_LISTRIGHT) {
+			ListBox_SetCurSel(GetDlgItem(hwnd, IDC_DM_LISTLEFT), -1);
 			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONREMOVE), TRUE);
 			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONSAVE), TRUE);
 		}
@@ -1888,10 +1926,13 @@ LRESULT CALLBACK ManageServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPA
 	switch(Msg)
 	{
 		HANDLE_MSG(hWndDlg, WM_CLOSE,      OnManageServersClose);
-		HANDLE_MSG(hWndDlg, WM_DESTROY,    OnManageServersDestroy);
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageServersInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageServersCommand);
 	}
+
+	if (Msg == WM_HOSTNAMEREADY) { OnManageServersHostnameReady(hWndDlg, (Server*)lParam); return 0; }
+	if (Msg == WM_SERVERLISTREADY) { OnManageServersServerlistReady(hWndDlg); return 0; };
+
 	return FALSE;
 }
 
@@ -2203,13 +2244,12 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		{
 			if (codeNotify == LBN_SELCHANGE)
 			{
-				// TODO: Some kind of overflow here?
-				char szBuffer[16] = { 0 };
+				auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_MIPS_LIST));
+				std::vector<char> buffer(1 + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_MIPS_LIST), selected_index));
+				ListBox_GetText(GetDlgItem(hwnd, IDC_MIPS_LIST), selected_index, buffer.data());
+
 				BYTE b0, b1, b2, b3;
-				SendMessage(GetDlgItem(hwnd, IDC_MIPS_LIST), LB_GETTEXT,
-							SendMessage(GetDlgItem(hwnd, IDC_MIPS_LIST), LB_GETCURSEL, 0, 0),
-							(LPARAM) szBuffer);
-				SplitIpAddressToBytes(szBuffer, &b0, &b1, &b2, &b3);
+				SplitIpAddressToBytes({ buffer.data(), buffer.size() - 1}, &b0, &b1, &b2, &b3);
 #pragma warning (suppress : 26451)
 				SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
 			}
@@ -2319,17 +2359,45 @@ void Edit_ScrollToEnd(HWND hEdit)
 	Edit_ScrollCaret(hEdit);
 }
 
-void SplitIpAddressToBytes(char * szIp, BYTE * pb0, BYTE * pb1, BYTE * pb2, BYTE * pb3)
+int ComboBox_CustomFindItemData(HWND hComboBox, const void* itemData) noexcept {
+	int found_index = -1;
+	for (int i = 0; i < ComboBox_GetCount(hComboBox); ++i) {
+		if (reinterpret_cast<void*>(ComboBox_GetItemData(hComboBox, i)) == itemData) {
+			found_index = i;
+			break;
+		}
+	}
+	return found_index;
+}
+
+int ListBox_CustomFindItemData(HWND hList, const void* itemData) noexcept {
+	int found_index = -1;
+	for (int i = 0; i < ListBox_GetCount(hList); ++i) {
+		if (reinterpret_cast<void*>(ListBox_GetItemData(hList, i)) == itemData) {
+			found_index = i;
+			break;
+		}
+	}
+	return found_index;
+}
+
+void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3)
 {
-	char * split;
-	split = strtok(szIp, ".");
-	*pb0 = atoi(split);
-	split = strtok(NULL, ".");
-	*pb1 = atoi(split);
-	split = strtok(NULL, ".");
-	*pb2 = atoi(split);
-	split = strtok(NULL, "\0");
-	*pb3 = atoi(split);
+	*pb0 = *pb1 = *pb2 = *pb3 = NULL;
+
+	auto substrings = ip
+		| std::ranges::views::split('.')
+		| std::ranges::views::transform([](auto&& rng) { return std::string(rng.begin(), rng.end()); });
+
+	if (std::ranges::distance(substrings) != 4) {
+		return;
+	}
+
+	auto it = substrings.begin();
+	*pb0 = atoi((*it++).c_str());
+	*pb1 = atoi((*it++).c_str());
+	*pb2 = atoi((*it++).c_str());
+	*pb3 = atoi((*it++).c_str());
 }
 
 std::optional<std::string> GetPb2InstallPath()
@@ -2372,12 +2440,12 @@ void StartServerbrowser(void)
 }
 
 void AutoKickTimerFunction() noexcept {
-	// todo: mutex -- currently race condition
-	std::vector <pb2lib::Server> servers = g_vSavedServers;
 	std::vector <AutoKickEntry> autokick_entries = g_vAutoKickEntries;
 
-    for (const auto& server : servers)
+	// todo: mutex -- currently race condition
+    for (const auto& server_ptr : g_ServersWithRcon)
 	{
+		const Server& server = *server_ptr;
 		std::vector <pb2lib::Player> players = pb2lib::get_players(server.address, server.rcon_password, gSettings.fTimeoutSecs);
 			
         for (const auto& player : players)
@@ -2387,7 +2455,7 @@ void AutoKickTimerFunction() noexcept {
 				MainWindowLogPb2LibExceptionsToConsole([&]() {
 					std::string command = "kick " + std::to_string(player.number);
 					auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
-					MainWindowWriteConsole("Player " + player.name + " on server " + server.hostname + " had a too high ping and was kicked.");
+					MainWindowWriteConsole("Player " + player.name + " on server " + static_cast<std::string>(server) + " had a too high ping and was kicked.");
 				});
 				continue;
 			}
@@ -2404,7 +2472,7 @@ void AutoKickTimerFunction() noexcept {
 			MainWindowLogPb2LibExceptionsToConsole([&]() {
 				std::string command = "kick " + std::to_string(player.number);
 				auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
-				MainWindowWriteConsole("Found and kicked player " + player.name + " on server " + server.hostname);
+				MainWindowWriteConsole("Found and kicked player " + player.name + " on server " + static_cast<std::string>(server));
 			});
 		}
 	}
@@ -2479,28 +2547,23 @@ int LoadConfig() // loads the servers and settings from the config file
 	char szCount[10];
 	GetPrivateProfileString("server", "count", "-1", szCount, sizeof(szCount), path.c_str());
 	if (strcmp (szCount, "-1") == 0 && GetLastError() == 0x2) return -1; //File not Found
-	for (int i = 0; i < atoi(szCount); i++) //load servers
+	for (int i = 0; i < atoi(szCount); i++) // load servers
 	{
 		char szKeyBuffer[512] = { 0 };
 		char szPortBuffer[6] = { 0 };
 		sprintf(szKeyBuffer, "%d", i);
 		GetPrivateProfileString("ip", szKeyBuffer, "0.0.0.0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
 		GetPrivateProfileString("port", szKeyBuffer, "00000", szPortBuffer, 6, path.c_str());
-		pb2lib::Server server;
+		Server server;
 		server.address.ip = szReadBuffer;
 		server.address.port = atoi(szPortBuffer);
-
-		// TODO: Run asynchronously -- immediately add the servers to the combobox, but asynchronously add their hostnames once retrieved.
-		server.hostname = pb2lib::get_hostname_or_nullopt(server.address, gSettings.fTimeoutSecs).value_or(unreachable_hostname);
 
 		GetPrivateProfileString("pw", szKeyBuffer, "", szReadBuffer, sizeof(szReadBuffer), path.c_str());
 		server.rcon_password = szReadBuffer;
 
-		g_vSavedServers.push_back(server);
-		auto index = SendMessage(gWindows.hComboServer, CB_ADDSTRING, 0, (LPARAM)server.hostname.c_str());
-		SendMessage (gWindows.hComboServer, CB_SETITEMDATA, index, g_vSavedServers.size() - 1);
+		g_ServersWithRcon.emplace_back(std::make_unique<Server>(server));
+		MainWindowAddOrUpdateOwnedServer(g_ServersWithRcon.back().get());
 	}
-	SendMessage(gWindows.hComboServer, CB_SETCURSEL, 0, 0);
 
 	GetPrivateProfileString("bans", "count", "0", szCount, sizeof(szCount), path.c_str());
 	for (int i = 0; i < atoi(szCount); i++)
@@ -2540,16 +2603,16 @@ void SaveConfig() // Saves all servers and settings in the config file
 	WritePrivateProfileString("port", NULL, NULL, path.c_str());
 	WritePrivateProfileString("bans", NULL, NULL, path.c_str());
 	
-	std::string sWriteBuffer = std::to_string(g_vSavedServers.size());
+	std::string sWriteBuffer = std::to_string(g_ServersWithRcon.size());
 	if (!WritePrivateProfileString("server", "count", sWriteBuffer.c_str(), path.c_str()))
 		return;
 
-	for (unsigned int i = 0; i< g_vSavedServers.size(); i++) //write servers to it
+	for (unsigned int i = 0; i< g_ServersWithRcon.size(); i++) //write servers to it
 	{
 		std::string sKeyBuffer = std::to_string(i);
-		std::string sPortBuffer = std::to_string(g_vSavedServers[i].address.port);
-		WritePrivateProfileString("ip", sKeyBuffer.c_str(), g_vSavedServers[i].address.ip.c_str(), path.c_str());
-		WritePrivateProfileString("pw", sKeyBuffer.c_str(), g_vSavedServers[i].rcon_password.c_str(), path.c_str());
+		std::string sPortBuffer = std::to_string(g_ServersWithRcon[i]->address.port);
+		WritePrivateProfileString("ip", sKeyBuffer.c_str(), g_ServersWithRcon[i]->address.ip.c_str(), path.c_str());
+		WritePrivateProfileString("pw", sKeyBuffer.c_str(), g_ServersWithRcon[i]->rcon_password.c_str(), path.c_str());
 		WritePrivateProfileString("port", sKeyBuffer.c_str(), sPortBuffer.c_str(), path.c_str());
 	}
 
@@ -2589,15 +2652,4 @@ void SaveConfig() // Saves all servers and settings in the config file
 		sWriteBuffer = std::to_string(static_cast<int>(g_vAutoKickEntries[i].tType));
 		WritePrivateProfileString("bans", sKeyBuffer.c_str(), sWriteBuffer.c_str(), path.c_str());
 	}
-}
-
-size_t GetFirstUnusedMapKey (const std::map<size_t, HANDLE>& m)
-{	
-	for (size_t key = 0; key <= m.size() + 1; key++)
-	{
-		if (!m.contains(key))
-			return key;
-	}
-	assert(false);
-	return -1;
 }

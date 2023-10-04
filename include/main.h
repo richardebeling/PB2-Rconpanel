@@ -74,15 +74,16 @@ struct AutoKickEntry {
     std::string sText;
 };
 
-struct LoadServersArgs {
-	size_t uid = 0;
-	HWND hwnd = NULL;
+struct Server {
+	pb2lib::Address address;
+	std::shared_future<std::string> hostname;
+	std::string rcon_password;
+
+	explicit operator std::string() const;
 };
 
 // TODO: Mark stuff as noexcept
 // TODO: Clang format, clang tidy
-
-static const std::string unreachable_hostname = "Server did not respond -- Offline?";
 
 [[noreturn]] void HandleCriticalError(const std::string& message) noexcept;
 
@@ -91,37 +92,41 @@ int  LoadConfig(void);
 void SaveConfig(void);
 void DeleteConfig(void);
 
-size_t GetFirstUnusedMapKey(const std::map<size_t, HANDLE>& m);
-
 UINT RegisterWindowMessageOrCriticalError(const std::string& message_name) noexcept;
 void SetClipboardContent(const std::string& content);
 std::string GetHttpResponse(const std::string& url);
-void SplitIpAddressToBytes(char* szIp, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3);
+void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3);
 
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
+// original [List|Combo]Box_FindItemData doesn't find item data but item string.
+int ComboBox_CustomFindItemData(HWND hComboBox, const void* itemData) noexcept;
+int ListBox_CustomFindItemData(HWND hList, const void* itemData) noexcept;
 void PostMessageToAllWindows(UINT message);  // TODO: Maybe only to windows of our process?
 
 std::optional<std::string> GetPb2InstallPath(void);
 void StartServerbrowser(void);
 
+
+//--------------------------------------------------------------------------------------------------
+// Main Window
+//--------------------------------------------------------------------------------------------------
+
 void AutoKickTimerFunction() noexcept;
+void MainWindowLogPb2LibExceptionsToConsole(std::function<void()> func);
+void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr) noexcept;
+void MainWindowRemoveOwnedServer(const Server* stored_server_ptr) noexcept;
 void MainWindowUpdateAutoKickState() noexcept;
 void MainWindowUpdatePlayersListview() noexcept;
 void MainWindowRefetchServerInfo() noexcept;
 
-void SignalAllThreads(std::map<size_t, HANDLE> * map);
-pb2lib::Server* MainWindowGetSelectedServerOrLoggedNull() noexcept;
+Server* MainWindowGetSelectedServerOrLoggedNull() noexcept;
 void MainWindowWriteConsole(std::string_view);
 void LoadBannedIPsToListbox(HWND hListBox);
 void LoadRotationToListbox(HWND hListBox);
-void LoadServersToListbox(LPVOID lpArgumentStruct);
 void ShowAboutDialog(HWND hwnd);
 void ShowPlayerInfo(HWND hwnd);
 
-//--------------------------------------------------------------------------------------------------
-// Callback Main Window                                                                            |
-//--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK WindowProcedure (HWND, UINT, WPARAM, LPARAM);
 void OnMainWindowAutoKick(void);
 void OnMainWindowBanIP(void);
@@ -142,9 +147,10 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy);
 void OnMainWindowPlayersReady() noexcept;
 void OnMainWindowServerCvarsReady() noexcept;
 void OnMainWindowRconResponseReady() noexcept;
+void OnMainWindowHostnameReady() noexcept;
 
 //--------------------------------------------------------------------------------------------------
-// Callback Forcejoin Dialog                                                                       |
+// Forcejoin Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ForcejoinDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnForcejoinClose(HWND hwnd);
@@ -153,7 +159,7 @@ BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 void OnForcejoinKeyDown(HWND hwnd, UINT vk, BOOL fDown, int cRepeat, UINT flags);
 
 //--------------------------------------------------------------------------------------------------
-// Callback Manage IDs Dialog                                                                      |
+// Manage IDs Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ManageIDsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnManageIDsClose(HWND hwnd);
@@ -161,7 +167,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnManageIDsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 
 //--------------------------------------------------------------------------------------------------
-// Callback Manage IPs Dialog                                                                      |
+// Manage IPs Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnManageIPsClose(HWND hwnd);
@@ -170,7 +176,7 @@ BOOL OnManageIPsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 void OnManageIPsReloadContent(HWND hwnd);
 
 //--------------------------------------------------------------------------------------------------
-// Callback Manage Rotation Dialog                                                                 |
+// Manage Rotation Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnManageRotationClose(HWND hwnd);
@@ -180,16 +186,21 @@ void OnManageRotationPaint(HWND hwnd);
 void OnManageRotationReloadContent(HWND hwnd);
 
 //--------------------------------------------------------------------------------------------------
-// Callback Manage Servers Dialog                                                                  |
+// Manage Servers Dialog
 //--------------------------------------------------------------------------------------------------
+void ManageServersAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept;
+void ManageServersRemoveServer(HWND list, const Server* stored_server_ptr) noexcept;
+void ManageServersFetchHostname(HWND hDlg, Server* server) noexcept;
+
 LRESULT CALLBACK ManageServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnManageServersClose(HWND hwnd);
-void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
-void OnManageServersDestroy(HWND hwnd);
 BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
+void OnManageServersServerlistReady(HWND hWndDlg) noexcept;
+void OnManageServersHostnameReady(HWND hWndDlg, Server* server_instance);
+void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 
 //--------------------------------------------------------------------------------------------------
-// Callback Program Settings Dialog                                                                |
+// Program Settings Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ProgramSettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnProgramSettingsClose(HWND hwnd);
@@ -198,13 +209,13 @@ BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
 void OnProgramSettingsHScroll(HWND hwnd, HWND hwndCtl, UINT code, int pos);
 
 //--------------------------------------------------------------------------------------------------
-// Callback RCON Commands Dialog                                                                   |
+// RCON Commands Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnRCONCommandsClose(HWND hwnd);
 
 //--------------------------------------------------------------------------------------------------
-// Callback Set Ping Dialog                                                                        |
+// Set Ping Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK SetPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnSetPingClose(HWND hwnd);

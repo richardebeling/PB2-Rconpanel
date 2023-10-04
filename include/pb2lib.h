@@ -7,6 +7,10 @@
 #include <string>
 #include <optional>
 #include <stdexcept>
+#include <thread>
+#include <map>
+#include <future>
+#include <utility>
 
 
 namespace pb2lib {
@@ -35,11 +39,12 @@ enum class Team : char {
 struct Address {
 	std::string ip = "";
 	int port = 0;
+
+	explicit operator sockaddr_in() const;
+	explicit operator std::string() const;
 };
 
-
-struct Player
-{
+struct Player {
 	std::string name;
 	int number = 0;
 	int op = 0;
@@ -49,17 +54,6 @@ struct Player
 	std::optional<int> ping = std::nullopt;  // annotation might fail
 	std::optional<int> score = std::nullopt;  // annotation might fail
 	std::optional<Team> team = std::nullopt;  // annotation might fail
-};
-
-
-struct Server
-{
-	Address address;
-	std::string hostname;
-	std::string rcon_password;
-
-	Server() = default;
-	Server(Address address) : address{ address } {};
 };
 
 
@@ -81,23 +75,69 @@ public:
 * Reusing same socket for every packet: 0.079289
 * -> Creating a new one is ~10x slower, but still fast enough for the pb2 context with <100 servers
 */
-class SocketRaiiWrapper {
+class UdpSocket {
 public:
-	SocketRaiiWrapper(const Address& remote_address);
-	~SocketRaiiWrapper();
+	UdpSocket();
+	~UdpSocket();
 
-	SocketRaiiWrapper(const SocketRaiiWrapper&) = delete;
-	SocketRaiiWrapper(SocketRaiiWrapper&&) = delete;
-	SocketRaiiWrapper& operator=(const SocketRaiiWrapper&) = delete;
-	SocketRaiiWrapper& operator=(SocketRaiiWrapper&&) = delete;
+	UdpSocket(const UdpSocket&) = delete;
+	UdpSocket(UdpSocket&&) = delete;
+	UdpSocket& operator=(const UdpSocket&) = delete;
+	UdpSocket& operator=(UdpSocket&&) = delete;
 
 	void clear_receive_queue(void) noexcept;
-	void send(const std::string& packet_content);  // require std::string because pb2 requires terminating NULL in the packet.
+	void send(const sockaddr_in& address, const std::string& packet_content);  // require std::string because pb2 requires terminating NULL in the packet.
+	bool wait_for_data(double timeout) const;
+	void receive(std::vector<char>* buffer, sockaddr_in* remote_address, double timeout);
+
+private:
+	WsaRaiiWrapper wsa_raii_wrapper_;
+	SOCKET socket_handle_;
+};
+
+
+class SingleRemoteEndpointUdpSocket { // UdpSocket "bound" to a single remote endpoint (knows send address, checks receive address)
+public:
+	SingleRemoteEndpointUdpSocket(const Address& remote_address);
+	~SingleRemoteEndpointUdpSocket() = default;
+
+	SingleRemoteEndpointUdpSocket(const SingleRemoteEndpointUdpSocket&) = delete;
+	SingleRemoteEndpointUdpSocket(SingleRemoteEndpointUdpSocket&&) = delete;
+	SingleRemoteEndpointUdpSocket& operator=(const SingleRemoteEndpointUdpSocket&) = delete;
+	SingleRemoteEndpointUdpSocket& operator=(SingleRemoteEndpointUdpSocket&&) = delete;
+
+	void clear_receive_queue(void) noexcept;
+	void send(const std::string& packet_content);
 	void receive(std::vector<char>* buffer, double timeout);
 
 private:
-	SOCKET socket_handle_;
+	UdpSocket socket_;
 	sockaddr_in remote_address_;
+};
+
+
+class AsyncHostnameResolver {
+public:
+	using CallbackT = std::function<void(const std::string&)>;
+	std::future<std::string> resolve(const Address& address, CallbackT callback = {});
+
+private:
+	void thread_func(std::stop_token);
+
+	struct MapValue {
+		std::promise<std::string> promise;
+		CallbackT callback;
+	};
+	struct MapComparator {
+		bool operator()(const sockaddr_in& lhs, const sockaddr_in& rhs) const {
+			return std::tuple(lhs.sin_addr.S_un.S_addr, lhs.sin_port)
+				< std::tuple(rhs.sin_addr.S_un.S_addr, rhs.sin_port);
+		}
+	};
+	std::multimap<sockaddr_in, MapValue, MapComparator> requests_by_address_;
+
+	UdpSocket socket_;
+	std::jthread receive_thread_{ [this](std::stop_token st) { thread_func(std::move(st)); } };
 };
 
 
@@ -105,8 +145,6 @@ Team team_from_string(std::string_view team_string);
 
 std::string send_connectionless(const Address& address, std::string_view message, double timeout);
 std::string send_rcon(const Address& address, std::string_view rcon_password, std::string_view message, double timeout);
-
-std::optional<std::string> get_hostname_or_nullopt(const Address& address, double timeout) noexcept;
 
 std::string get_cvar(const Address& address, std::string_view rcon_password, std::string_view cvar, double timeout);
 std::vector<std::string> get_cvars(const Address& address, std::string_view rcon_password, const std::vector<std::string>& cvars, double timeout);

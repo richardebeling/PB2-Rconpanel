@@ -28,7 +28,7 @@ struct Settings
 	bool  bColorPings = false;				// in the listview, the background color of the pings will vary from green to red
 	bool  bColorPlayers = true;				// in the listview, players will get their teamcolor as background
 	bool  bDisableConsole = false;			// the lower part of the GUI (manual RCON communication) will not be shown.
-	std::string sServerlistAddress;			// address where the server list can be gotten in case it changes.
+	std::string sServerlistAddress = "http://dplogin.com/serverlist.php"; // address where the server list can be retrieved in case it changes.
 };
 
 #endif // __SETTINGS_H_INCLUDED
