@@ -357,10 +357,10 @@ void ShowPlayerInfo(HWND hwnd)
 
 void ShowAboutDialog(HWND hwnd)
 {
-	std::string sTitle = "About - DP:PB2 Rconpanel V" + std::to_string(AutoVersion::MAJOR)
-						+ "." + std::to_string(AutoVersion::MINOR) + "." + std::to_string(AutoVersion::BUILD);
+	std::string sTitle = "About - DP:PB2 Rconpanel v" + std::to_string(Version::MAJOR)
+						+ "." + std::to_string(Version::MINOR) + "." + std::to_string(Version::BUILD);
 
-	MessageBox(hwnd,"Remote administration tool for Digital Paint: Paintball 2 servers."
+	MessageBox(hwnd,"Remote administration tool for Digital Paint: Paintball 2 servers. "
 					"The source code is released under GPLv3 here:\r\n"
 					"https://github.com/richardebeling/PB2-Rconpanel\r\n"
 					"If there are any questions, feel free to contact me (issue, email, discord, ...).",

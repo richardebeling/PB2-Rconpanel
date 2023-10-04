@@ -195,6 +195,8 @@ void AsyncHostnameResolver::thread_func(std::stop_token stop_token) {
 			it->second.promise.set_value(hostname);
 			it->second.callback(hostname);
 		}
+
+		// TODO Servers that never respond will never be deleted -> slowly leak memory here. Fix it?
 		requests_by_address_.erase(begin, end);
 	}
 }
