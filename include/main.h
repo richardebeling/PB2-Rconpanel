@@ -160,7 +160,7 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy);
 void OnMainWindowPlayersReady() noexcept;
 void OnMainWindowServerCvarsReady() noexcept;
 void OnMainWindowRconResponseReady() noexcept;
-void OnMainWindowHostnameReady() noexcept;
+void OnMainWindowHostnameReady(Server* server_instance) noexcept;
 
 //--------------------------------------------------------------------------------------------------
 // Forcejoin Dialog

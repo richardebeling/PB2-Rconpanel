@@ -1636,8 +1636,7 @@ BOOL OnRCONCommandsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
 	HWND textElement = GetDlgItem(hwnd, IDC_RCONCOMMANDS_INFOTEXT);
 	SetWindowText(textElement,
-		"sv (Prefix) - lets you use most of the in-game commands, including admin commands\r\n"
-		"Examples:\r\n\r\n"
+		"The `sv` prefix lets you use most of the in-game commands, including admin commands, for example:\r\n"
 		"sv addip\r\n"
 		"sv expert X\r\n"
 		"sv listip\r\n"
@@ -1655,12 +1654,12 @@ BOOL OnRCONCommandsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 		"VARNAME VALUE - sets the specified variable to the value\r\n"
 		"status - gives you an overview of all players and the current map\r\n"
 		"kick NUMBER - kicks a player by his number\r\n"
-		"map NAME - instantly restarts the server and loads a map.\r\n"
+		"map NAME - instantly restarts the server and loads a map\r\n"
 		"say TEXT - says the text as server\r\n"
-		"quit - closes the server\r\n"
-		"exit - closes the server\r\n"
+		"quit - quits the server\r\n"
+		"exit - quits the server\r\n"
 		"exec PATH - executes a config file\r\n"
-		"set VARNAME CONTENT TYPE - sets the content of a variable. The type is optional\r\n"
+		"set VARNAME CONTENT [TYPE] - sets the content of a variable. The type is optional\r\n"
 		"unset VARNAME - unsets a variable"
 	);
 	return TRUE;
