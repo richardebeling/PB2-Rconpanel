@@ -330,15 +330,6 @@ void ShowAboutDialog(HWND hwnd)
 					MB_OK | MB_ICONINFORMATION);
 }
 
-void PostMessageToAllWindows(UINT message) {
-	WNDENUMPROC enum_callback = [](HWND hwnd, LPARAM lParam) -> BOOL {
-		PostMessage(hwnd, (UINT)lParam, 0, 0);
-		return TRUE;
-	};
-
-	EnumWindows(enum_callback, (LPARAM)message);
-}
-
 void MainWindowRefetchServerInfo() noexcept {
 	g_AutoReloadTimer.reset_current_timeout();
 
@@ -940,7 +931,11 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	
 		case CBN_SELENDOK: {
 			if (hwndCtl == gWindows.hComboRcon) OnMainWindowSendRcon();
-			if (hwndCtl == gWindows.hComboServer) PostMessageToAllWindows(WM_SERVERCHANGED);
+			if (hwndCtl == gWindows.hComboServer) {
+				PostMessage(hwnd, WM_SERVERCHANGED, 0, 0);
+				PostMessage(gWindows.hDlgManageRotation, WM_SERVERCHANGED, 0, 0);
+				PostMessage(gWindows.hDlgManageIps, WM_SERVERCHANGED, 0, 0);
+			}
 			break;
 		}
 	}	

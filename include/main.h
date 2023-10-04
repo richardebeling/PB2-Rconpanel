@@ -42,12 +42,15 @@ private:
 };
 
 struct WindowHandles {
+	HWND hWinMain = NULL;
+
 	HWND hDlgManageRotation = NULL;
-	HWND hDlgManageIds = NULL;
 	HWND hDlgManageIps = NULL;
+	HWND hDlgManageIds = NULL;
+	HWND hDlgManageServers = NULL;
 	HWND hDlgSettings = NULL;
 	HWND hDlgRconCommands = NULL;
-	HWND hWinMain = NULL;
+
 	HWND hComboServer = NULL;
 	HWND hListPlayers = NULL;
 	HWND hButtonKick = NULL;
@@ -102,7 +105,6 @@ void Edit_ScrollToEnd(HWND hEdit);
 // original [List|Combo]Box_FindItemData doesn't find item data but item string.
 int ComboBox_CustomFindItemData(HWND hComboBox, const void* itemData) noexcept;
 int ListBox_CustomFindItemData(HWND hList, const void* itemData) noexcept;
-void PostMessageToAllWindows(UINT message);  // TODO: Maybe only to windows of our process?
 
 std::optional<std::string> GetPb2InstallPath(void);
 void StartServerbrowser(void);
