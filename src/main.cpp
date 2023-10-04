@@ -1731,6 +1731,7 @@ void ManageServersFetchHostname(HWND hDlg, Server* server) noexcept {
 }
 
 void OnManageServersClose(HWND hwnd) {
+	gWindows.hDlgManageServers = NULL;
 	EndDialog(hwnd, 1);
 }
 
@@ -2435,6 +2436,8 @@ void StartServerbrowser(void)
 
 void AutoKickTimerFunction() noexcept {
 	std::vector <AutoKickEntry> autokick_entries = g_vAutoKickEntries;
+
+	// TODO: Put in MainWindowLogPb2Exceptions scope
 
 	// todo: mutex -- currently race condition
     for (const auto& server_ptr : g_ServersWithRcon)
