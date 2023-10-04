@@ -131,6 +131,7 @@ void MainWindowRemoveOwnedServer(const Server* stored_server_ptr) noexcept;
 void MainWindowUpdateAutoKickState() noexcept;
 void MainWindowUpdatePlayersListview() noexcept;
 void MainWindowRefetchServerInfo() noexcept;
+void MainWindowSendRcon(const std::string& command) noexcept;
 
 Server* MainWindowGetSelectedServerOrLoggedNull() noexcept;
 void MainWindowWriteConsole(std::string_view);

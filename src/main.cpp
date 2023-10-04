@@ -159,6 +159,33 @@ void MainWindowLogPb2LibExceptionsToConsole(std::function<void()> func) {
 	}
 }
 
+void MainWindowSendRcon(const std::string& command) noexcept {
+	const Server* server = MainWindowGetSelectedServerOrLoggedNull();
+	if (!server) {
+		return;
+	}
+
+	const pb2lib::Address& address = server->address;
+	const std::string rcon_password = server->rcon_password;
+	const auto timeout = gSettings.fTimeoutSecs;
+	const HWND hwnd = gWindows.hWinMain;
+
+	std::promise<std::string> promise;
+	g_RconResponses.push_back(promise.get_future());
+
+	std::thread thread([address, rcon_password, command, timeout, hwnd](std::promise<std::string> promise) {
+		try {
+			promise.set_value(pb2lib::send_rcon(address, rcon_password, command, timeout));
+		}
+		catch (pb2lib::Exception&) {
+			promise.set_exception(std::current_exception());
+		}
+		PostMessage(hwnd, WM_RCONRESPONSEREADY, 0, 0);
+		}, std::move(promise));
+	thread.detach();
+	MainWindowWriteConsole("rcon " + command);
+}
+
 void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr) noexcept {
 	const Server& server = *stable_server_ptr;
 	const std::string display_string = static_cast<std::string>(server);
@@ -702,40 +729,15 @@ void OnMainWindowForcejoin(void)
 			return;
 		}
 
-		const std::string message = "sv forcejoin " + std::to_string(player->number) + " " + (char)iSelectedColor;
-		pb2lib::send_rcon(server->address, server->rcon_password, message, gSettings.fTimeoutSecs);
-		MainWindowWriteConsole("Player was force-joined successfully.");
+		MainWindowSendRcon("sv forcejoin " + std::to_string(player->number) + " " + (char)iSelectedColor);
 	});
 }
 
 void OnMainWindowSendRcon(void)
 {
-	const auto* server = MainWindowGetSelectedServerOrLoggedNull();
-	if (!server) {
-		return;
-	}
-
-	const pb2lib::Address& address = server->address;
-	const std::string rcon_password = server->rcon_password;
-	const auto timeout = gSettings.fTimeoutSecs;
-	const HWND hwnd = gWindows.hWinMain;
 	std::string command(1ull + ComboBox_GetTextLength(gWindows.hComboRcon), '\0');
 	ComboBox_GetText(gWindows.hComboRcon, command.data(), static_cast<int>(command.size()));
-
-	std::promise<std::string> promise;
-	g_RconResponses.push_back(promise.get_future());
-
-	std::thread thread([address, rcon_password, command, timeout, hwnd](std::promise<std::string> promise) {
-		try {
-			promise.set_value(pb2lib::send_rcon(address, rcon_password, command, timeout));
-		}
-		catch (pb2lib::Exception&) {
-			promise.set_exception(std::current_exception());
-		}
-		PostMessage(hwnd, WM_RCONRESPONSEREADY, 0, 0);
-	}, std::move(promise));
-	thread.detach();
-	MainWindowWriteConsole("rcon " + command);
+	MainWindowSendRcon(command);
 }
 
 void OnMainWindowJoinServer(void)
@@ -809,33 +811,23 @@ void OnMainWindowKickPlayer(void)
 			return;
 		}
 
-		const std::string message = "kick " + std::to_string(player->number);
-		pb2lib::send_rcon(server->address, server->rcon_password, message, gSettings.fTimeoutSecs);
-		MainWindowWriteConsole("Player was kicked successfully.");
+		MainWindowSendRcon("kick " + std::to_string(player->number));
 	});
 }
 
 void OnMainWindowBanIP(void)
 {
-	auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
-	if (!server || !player) {
+	if (!player) {
 		return;
 	}
-
-	// TODO: Maybe instead just craft the command and act as if user pressed the send_rcon button?
 
 	if (!player->address) {
 		MainWindowWriteConsole("The player's IP was not loaded correctly. Please reload.");
 		return;
 	}
 
-	std::string command = "sv addip " + player->address->ip;
-
-	MainWindowLogPb2LibExceptionsToConsole([&]() {
-		pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
-		MainWindowWriteConsole("The IP " + player->address->ip + " was added to the server's ban list.");
-	});
+	MainWindowSendRcon("sv addip " + player->address->ip);
 }
 
 void OnMainWindowAutoKick(void)
@@ -2212,8 +2204,7 @@ void OnManageIPsClose(HWND hwnd)
 	EndDialog(hwnd, 1);
 }
 
-void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
-{
+void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	auto helper_run_rcon_command_with_current_ip = [&](std::string command) {
 		auto* server = MainWindowGetSelectedServerOrLoggedNull();
 		if (!server) {
