@@ -962,8 +962,10 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				break;
 			}
 		case IDM_SERVER_MANAGE:
-			// TODO: Also make non-blocking? Should work now.
-			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, ManageServersDlgProc);
+			if (!gWindows.hDlgManageServers)
+				gWindows.hDlgManageServers = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, ManageServersDlgProc);
+			else
+				SetForegroundWindow(gWindows.hDlgManageServers);
 			break;
 		case IDM_SERVER_ROTATION:
 			if (!gWindows.hDlgManageRotation)
