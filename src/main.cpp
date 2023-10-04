@@ -22,7 +22,7 @@
 using namespace std::string_literals;
 using namespace std::chrono_literals;
 
-std::future<std::vector<std::string>> g_FetchServerCvarsFuture;
+std::future<ServerCvars> g_FetchServerCvarsFuture;
 std::future<std::vector<pb2lib::Player>> g_FetchPlayersFuture;
 
 std::vector<std::unique_ptr<Server>> g_ServersWithRcon;
@@ -63,6 +63,19 @@ Server::operator std::string() const {
 	}
 
 	return display_hostname + " [" + static_cast<std::string>(address) + "]";
+}
+
+ServerCvars ServerCvars::from_server(const Server& server, double timeout) {
+	const std::vector<std::string> status_vars = { "mapname", "password", "elim", "timelimit", "maxclients" };
+	auto values = pb2lib::get_cvars(server.address, server.rcon_password, status_vars, timeout);
+
+	return ServerCvars{
+		.mapname = values[0],
+		.password = values[1],
+		.elim = atoi(values[2].c_str()),
+		.timelimit = atoi(values[3].c_str()),
+		.maxclients = atoi(values[4].c_str()),
+	};
 }
 
 
@@ -154,8 +167,7 @@ void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr) noexcept 
 	int found_index = ComboBox_CustomFindItemData(gWindows.hComboServer, stable_server_ptr);
 
 	if (found_index >= 0) {
-		auto existing_text_length = ComboBox_GetLBTextLen(gWindows.hComboServer, found_index);
-		std::vector<char> buffer(existing_text_length + 1);
+		std::vector<char> buffer(1ull + ComboBox_GetLBTextLen(gWindows.hComboServer, found_index));
 		ComboBox_GetLBText(gWindows.hComboServer, found_index, buffer.data());
 		if (std::string_view(buffer.data(), buffer.size() - 1) == display_string) {
 			return;
@@ -353,10 +365,9 @@ void MainWindowRefetchServerInfo() noexcept {
 	std::jthread fetch_players_thread(fetch_players_thread_function, std::move(players_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
 	fetch_players_thread.detach();
 
-	auto fetch_cvars_thread_function = [](std::promise<std::vector<std::string>> promise, Server server, HWND window, double timeout) {
-		const std::vector<std::string> status_vars = { "mapname", "password", "elim", "timelimit", "maxclients" };
+	auto fetch_cvars_thread_function = [](std::promise<ServerCvars> promise, Server server, HWND window, double timeout) {
 		try {
-			promise.set_value(pb2lib::get_cvars(server.address, server.rcon_password, status_vars, gSettings.fTimeoutSecs));
+			promise.set_value(ServerCvars::from_server(server, timeout));
 		}
 		catch (pb2lib::Exception&) {
 			promise.set_exception(std::current_exception());
@@ -364,7 +375,7 @@ void MainWindowRefetchServerInfo() noexcept {
 		PostMessage(window, WM_SERVERCVARSREADY, 0, 0);
 	};
 
-	std::promise<std::vector<std::string>> cvars_promise;
+	std::promise<ServerCvars> cvars_promise;
 	g_FetchServerCvarsFuture = cvars_promise.get_future();
 	std::jthread fetch_cvars_thread(fetch_cvars_thread_function, std::move(cvars_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
 	fetch_cvars_thread.detach();
@@ -708,7 +719,7 @@ void OnMainWindowSendRcon(void)
 	const std::string rcon_password = server->rcon_password;
 	const auto timeout = gSettings.fTimeoutSecs;
 	const HWND hwnd = gWindows.hWinMain;
-	std::string command(ComboBox_GetTextLength(gWindows.hComboRcon) + 1, '\0');
+	std::string command(1ull + ComboBox_GetTextLength(gWindows.hComboRcon), '\0');
 	ComboBox_GetText(gWindows.hComboRcon, command.data(), static_cast<int>(command.size()));
 
 	std::promise<std::string> promise;
@@ -857,21 +868,16 @@ void OnMainWindowPlayersReady() noexcept {
 
 void OnMainWindowServerCvarsReady() noexcept {
 	if (g_FetchServerCvarsFuture.valid() && g_FetchServerCvarsFuture.wait_for(0s) != std::future_status::timeout) {
-		std::vector<std::string> values;
-
 		std::string display_text = "Error";
 
-		// TODO: Cvar names and value access are separated, they could start mismatching. Do something about that?
-		// Maybe some ServerCvars struct that is returned in the promise, the thread handles all strings and assigns compile-time names?
-
 		MainWindowLogPb2LibExceptionsToConsole([&]() {
-			values = g_FetchServerCvarsFuture.get();
-			display_text = "map: " + values[0];
-			display_text += " | pw: " + (values[1].size() > 0 ? values[1] : "none");
-			display_text += " | elim: " + values[2];
-			display_text += " | timelimit: " + values[3];
-			display_text += " | maxclients: " + values[4];
-			});
+			auto values = g_FetchServerCvarsFuture.get();
+			display_text = "map: " + values.mapname;
+			display_text += " | pw: " + (values.password.size() > 0 ? values.password : "none");
+			display_text += " | elim: " + std::to_string(values.elim);
+			display_text += " | timelimit: " + std::to_string(values.timelimit);
+			display_text += " | maxclients: " + std::to_string(values.maxclients);
+		});
 
 		SetWindowText(gWindows.hStaticServerInfo, display_text.c_str());
 		DeleteObjectRAIIWrapper<HRGN> region(CreateRectRgn(0, 0, 0, 0));
@@ -1698,8 +1704,7 @@ void ManageServersAddOrUpdateServer(HWND list, const Server* stable_server_ptr) 
 
 	const auto found_index = ListBox_CustomFindItemData(list, stable_server_ptr);
 	if (found_index >= 0) {
-		auto existing_text_length = ListBox_GetTextLen(list, found_index);
-		std::vector<char> buffer(existing_text_length + 1);
+		std::vector<char> buffer(1ull + ListBox_GetTextLen(list, found_index));
 		ListBox_GetText(list, found_index, buffer.data());
 		if (std::string_view(buffer.data(), buffer.size() - 1) == display_string) {
 			return;
@@ -1813,7 +1818,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			std::to_string(FOURTH_IPADDRESS(dwIP));
 
 		std::vector<char> buffer;
-		buffer.resize(1 + GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPORT)) + 1);
+		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPORT)));
 		SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
 		server.address.port = atoi(buffer.data());
 
@@ -1824,7 +1829,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			return std::nullopt;
 		}
 
-		buffer.resize(1 + GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPW)) + 1);
+		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPW)));
 		SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
 		server.rcon_password = buffer.data();
 		if (server.rcon_password.empty()) {
@@ -2245,7 +2250,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (codeNotify == LBN_SELCHANGE)
 			{
 				auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_MIPS_LIST));
-				std::vector<char> buffer(1 + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_MIPS_LIST), selected_index));
+				std::vector<char> buffer(1ull + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_MIPS_LIST), selected_index));
 				ListBox_GetText(GetDlgItem(hwnd, IDC_MIPS_LIST), selected_index, buffer.data());
 
 				BYTE b0, b1, b2, b3;

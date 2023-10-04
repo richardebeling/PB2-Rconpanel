@@ -85,6 +85,16 @@ struct Server {
 	explicit operator std::string() const;
 };
 
+struct ServerCvars {
+	std::string mapname;
+	std::string password;
+	int elim = 0;
+	int timelimit = 0;
+	int maxclients = 0;
+
+	static ServerCvars from_server(const Server& server, double timeout);
+};
+
 // TODO: Mark stuff as noexcept
 // TODO: Clang format, clang tidy
 
