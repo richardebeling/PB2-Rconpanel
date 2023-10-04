@@ -59,7 +59,7 @@ Server::operator std::string() const {
 	if (hostname.valid() && hostname.wait_for(0s) != std::future_status::timeout) {
 		MainWindowLogPb2LibExceptionsToConsole([&]() {
 			display_hostname = hostname.get();
-		});
+		}, "getting hostname");
 	}
 
 	return display_hostname + " [" + static_cast<std::string>(address) + "]";
@@ -149,13 +149,12 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 
 // TODO: Namespacing instead of function name prefixing
 
-// TODO: additional string argument describing the attempted action
-void MainWindowLogPb2LibExceptionsToConsole(std::function<void()> func) {
+void MainWindowLogPb2LibExceptionsToConsole(std::function<void()> func, std::string_view action_description) {
 	try {
 		func();
 	}
 	catch (pb2lib::Exception& e) {
-		MainWindowWriteConsole("An error occurred: "s + e.what());
+		MainWindowWriteConsole("Error (" + std::string(action_description) + "): " + e.what());
 	}
 }
 
@@ -730,7 +729,7 @@ void OnMainWindowForcejoin(void)
 		}
 
 		MainWindowSendRcon("sv forcejoin " + std::to_string(player->number) + " " + (char)iSelectedColor);
-	});
+	}, "force-joining");
 }
 
 void OnMainWindowSendRcon(void)
@@ -812,7 +811,7 @@ void OnMainWindowKickPlayer(void)
 		}
 
 		MainWindowSendRcon("kick " + std::to_string(player->number));
-	});
+	}, "kicking");
 }
 
 void OnMainWindowBanIP(void)
@@ -854,7 +853,7 @@ void OnMainWindowPlayersReady() noexcept {
 			g_vPlayers = g_FetchPlayersFuture.get();
 			MainWindowUpdatePlayersListview();
 			MainWindowWriteConsole("The player list was reloaded.");
-		});
+		}, "loading players");
 	}
 }
 
@@ -869,7 +868,7 @@ void OnMainWindowServerCvarsReady() noexcept {
 			display_text += " | elim: " + std::to_string(values.elim);
 			display_text += " | timelimit: " + std::to_string(values.timelimit);
 			display_text += " | maxclients: " + std::to_string(values.maxclients);
-		});
+		}, "getting cvars");
 
 		SetWindowText(gWindows.hStaticServerInfo, display_text.c_str());
 		DeleteObjectRAIIWrapper<HRGN> region(CreateRectRgn(0, 0, 0, 0));
@@ -886,7 +885,7 @@ void OnMainWindowRconResponseReady() noexcept {
 		MainWindowLogPb2LibExceptionsToConsole([&]() {
 			std::string response = future.get();
 			MainWindowWriteConsole(response);
-			});
+		}, "getting rcon response");
 	}
 	std::erase_if(g_RconResponses, [](const auto& future) { return !future.valid(); });
 }
@@ -1412,7 +1411,7 @@ void LoadRotationToListbox(HWND hListBox)
 			const std::string map = match[1];
 			ListBox_AddString(hListBox, map.c_str());
 		}
-	});
+	}, "loading rotation");
 }
 
 BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
@@ -1429,13 +1428,12 @@ void OnManageRotationReloadContent(HWND hwnd)
 		return;
 	}
 
-	// TODO: Might log two times -- probably ok?
 	LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
 
 	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		std::string answer = pb2lib::get_cvar(server->address, server->rcon_password, "rot_file", gSettings.fTimeoutSecs);
 		SetDlgItemText(hwnd, IDC_MROT_EDITFILE, answer.c_str());
-	});
+	}, "getting rot_file");
 
 	std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
 	if (!pb2InstallPath)
@@ -1502,7 +1500,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 		MainWindowLogPb2LibExceptionsToConsole([&]() {
 			answer = pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
-		});
+		}, "changing rotation");
 
 		LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
 		return answer;
@@ -2189,7 +2187,7 @@ void LoadBannedIPsToListbox(HWND hListBox)
 			const std::string ip = match[0];
 			ListBox_AddString(hListBox, ip.c_str());
 		}
-	});
+	}, "loading banned IPs");
 }
 
 BOOL OnManageIPsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
@@ -2219,7 +2217,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 
 		MainWindowLogPb2LibExceptionsToConsole([&]() {
 			pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
-		});
+		}, "modifying banned IPs");
 
 		LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
 	};
@@ -2452,7 +2450,7 @@ void AutoKickTimerFunction() noexcept {
 					std::string command = "kick " + std::to_string(player.number);
 					auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
 					MainWindowWriteConsole("Player " + player.name + " on server " + static_cast<std::string>(server) + " had a too high ping and was kicked.");
-				});
+				}, "auto-kicking");
 				continue;
 			}
 
@@ -2469,7 +2467,7 @@ void AutoKickTimerFunction() noexcept {
 				std::string command = "kick " + std::to_string(player.number);
 				auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
 				MainWindowWriteConsole("Found and kicked player " + player.name + " on server " + static_cast<std::string>(server));
-			});
+			}, "auto-kicking");
 		}
 	}
 	MainWindowWriteConsole("AutoKick checked all servers.");
