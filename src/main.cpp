@@ -637,8 +637,10 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	LONG lfHeight = -MulDiv(9, GetDeviceCaps(hdc, LOGPIXELSY), 72);
 	ReleaseDC(NULL, hdc);
 
-	static DeleteObjectRAIIWrapper<HFONT> font(CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "MS Shell Dlg"));
-	static DeleteObjectRAIIWrapper<HFONT> consoleFont(CreateFont(lfHeight, 0, 0, 0, 0, FALSE, 0, 0, 0, 0, 0, 0, 0, "Courier New"));
+	static DeleteObjectRAIIWrapper<HFONT> font(CreateFont(
+		lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Ms Shell Dlg"));
+	static DeleteObjectRAIIWrapper<HFONT> consoleFont(CreateFont(
+		lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Consolas"));
 
 	WPARAM fontWparam = (WPARAM)(HFONT)font;
 	WPARAM fontConsoleWparam = (WPARAM)(HFONT)consoleFont;
@@ -1636,7 +1638,7 @@ BOOL OnRCONCommandsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
 	HWND textElement = GetDlgItem(hwnd, IDC_RCONCOMMANDS_INFOTEXT);
 	SetWindowText(textElement,
-		"The `sv` prefix lets you use most of the in-game commands, including admin commands, for example:\r\n"
+		"The `sv` prefix lets you use most of the in-game commands, for example:\r\n"
 		"sv addip\r\n"
 		"sv expert X\r\n"
 		"sv listip\r\n"
@@ -1651,15 +1653,14 @@ BOOL OnRCONCommandsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 		"sv rotation save\r\n"
 		"sv tban\r\n"
 		"sv writeip\r\n\r\n"
+		"Additionally, these might be useful:\r\n"
 		"VARNAME VALUE - sets the specified variable to the value\r\n"
-		"status - gives you an overview of all players and the current map\r\n"
-		"kick NUMBER - kicks a player by his number\r\n"
-		"map NAME - instantly restarts the server and loads a map\r\n"
-		"say TEXT - says the text as server\r\n"
-		"quit - quits the server\r\n"
-		"exit - quits the server\r\n"
-		"exec PATH - executes a config file\r\n"
-		"set VARNAME CONTENT [TYPE] - sets the content of a variable. The type is optional\r\n"
+		"status        - shows the current map and lists players\r\n"
+		"kick NUMBER   - kicks a player by his number\r\n"
+		"map NAME      - instantly restarts the server and loads a map\r\n"
+		"say TEXT      - says the text as server\r\n"
+		"quit, exit    - quit the server\r\n"
+		"exec PATH     - executes a config file\r\n"
 		"unset VARNAME - unsets a variable"
 	);
 	return TRUE;
