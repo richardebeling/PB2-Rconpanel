@@ -45,10 +45,10 @@ private:
 struct WindowHandles {
 	HWND hWinMain = NULL;
 
-	HWND hDlgManageRotation = NULL;
-	HWND hDlgManageIps = NULL;
-	HWND hDlgManageIds = NULL;
-	HWND hDlgManageServers = NULL;
+	HWND hDlgRotation = NULL;
+	HWND hDlgBannedIps = NULL;
+	HWND hDlgAutoKickEntries = NULL;
+	HWND hDlgServers = NULL;
 	HWND hDlgSettings = NULL;
 	HWND hDlgRconCommands = NULL;
 
@@ -173,60 +173,60 @@ void OnForcejoinCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 
 //--------------------------------------------------------------------------------------------------
-// Manage IDs Dialog
+// Auto Kick Dialog
 //--------------------------------------------------------------------------------------------------
-LRESULT CALLBACK ManageIDsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
-BOOL OnManageIDsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
+LRESULT CALLBACK AutoKickEntriesDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
+void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
+BOOL OnAutoKickEntriesDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 
 //--------------------------------------------------------------------------------------------------
-// Manage IPs Dialog
+// Banned IPs Dialog
 //--------------------------------------------------------------------------------------------------
-LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
-BOOL OnManageIPsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
-void OnManageIPsReloadContent(HWND hwnd);
+LRESULT CALLBACK BannedIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
+void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
+BOOL OnBannedIPsDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
+void OnBannedIPsDlgReloadContent(HWND hwnd);
 
 //--------------------------------------------------------------------------------------------------
-// Manage Rotation Dialog
+// Rotation Dialog
 //--------------------------------------------------------------------------------------------------
-LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
-BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
-void OnManageRotationPaint(HWND hwnd);
-void OnManageRotationReloadContent(HWND hwnd);
+LRESULT CALLBACK RotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
+void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
+BOOL OnRotationDlgInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
+void OnRotationDlgPaint(HWND hwnd);
+void OnRotationDlgReloadContent(HWND hwnd);
 
 //--------------------------------------------------------------------------------------------------
-// Manage Servers Dialog
+// Servers Dialog
 //--------------------------------------------------------------------------------------------------
-void ManageServersAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept;
-void ManageServersRemoveServer(HWND list, const Server* stored_server_ptr) noexcept;
-void ManageServersFetchHostname(HWND hDlg, Server* server) noexcept;
+void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept;
+void ServersDlgRemoveServer(HWND list, const Server* stored_server_ptr) noexcept;
+void ServersDlgFetchHostname(HWND hDlg, Server* server) noexcept;
 
-LRESULT CALLBACK ManageServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
-void OnManageServersServerlistReady(HWND hWndDlg) noexcept;
-void OnManageServersHostnameReady(HWND hWndDlg, Server* server_instance);
-void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
+LRESULT CALLBACK ServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
+BOOL OnServersDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
+void OnServersDlgServerlistReady(HWND hWndDlg) noexcept;
+void OnServersDlgHostnameReady(HWND hWndDlg, Server* server_instance);
+void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 
 //--------------------------------------------------------------------------------------------------
 // Program Settings Dialog
 //--------------------------------------------------------------------------------------------------
-LRESULT CALLBACK ProgramSettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
-BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
+LRESULT CALLBACK SettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
+void OnSettingsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
+BOOL OnSettingsDlgInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
 
 //--------------------------------------------------------------------------------------------------
 // RCON Commands Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnRCONCommandsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
+void OnRCONCommandsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 
 //--------------------------------------------------------------------------------------------------
-// Set Ping Dialog
+// Max Ping Dialog
 //--------------------------------------------------------------------------------------------------
-LRESULT CALLBACK SetPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnSetPingCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
-BOOL OnSetPingInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
+LRESULT CALLBACK SetMaxPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
+void OnSetMaxPingDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
+BOOL OnSetMaxPingDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 
 #endif // __MAIN_H_INCLUDED

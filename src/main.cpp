@@ -909,8 +909,8 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			if (hwndCtl == gWindows.hComboRcon) OnMainWindowSendRcon();
 			if (hwndCtl == gWindows.hComboServer) {
 				PostMessage(hwnd, WM_SERVERCHANGED, 0, 0);
-				PostMessage(gWindows.hDlgManageRotation, WM_SERVERCHANGED, 0, 0);
-				PostMessage(gWindows.hDlgManageIps, WM_SERVERCHANGED, 0, 0);
+				PostMessage(gWindows.hDlgRotation, WM_SERVERCHANGED, 0, 0);
+				PostMessage(gWindows.hDlgBannedIps, WM_SERVERCHANGED, 0, 0);
 			}
 			break;
 		}
@@ -922,7 +922,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			break;
 		case IDM_FILE_SETTINGS:
 			if (!gWindows.hDlgSettings)
-				gWindows.hDlgSettings = CreateDialog(NULL, MAKEINTRESOURCE(IDD_PROGRAMSETTINGS), hwnd, (DLGPROC) ProgramSettingsDlgProc);
+				gWindows.hDlgSettings = CreateDialog(NULL, MAKEINTRESOURCE(IDD_SETTINGS), hwnd, (DLGPROC) SettingsDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgSettings);
 			break;
@@ -937,36 +937,36 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				if (iResult == IDYES) DeleteConfig();
 				break;
 			}
-		case IDM_SERVER_MANAGE:
-			if (!gWindows.hDlgManageServers)
-				gWindows.hDlgManageServers = CreateDialog(NULL, MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, ManageServersDlgProc);
+		case IDM_SERVER_EDITSERVERS:
+			if (!gWindows.hDlgServers)
+				gWindows.hDlgServers = CreateDialog(NULL, MAKEINTRESOURCE(IDD_SERVERS), hwnd, ServersDlgProc);
 			else
-				SetForegroundWindow(gWindows.hDlgManageServers);
+				SetForegroundWindow(gWindows.hDlgServers);
 			break;
 		case IDM_SERVER_ROTATION:
-			if (!gWindows.hDlgManageRotation)
-				gWindows.hDlgManageRotation = CreateDialog(NULL, MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, ManageRotationDlgProc);
+			if (!gWindows.hDlgRotation)
+				gWindows.hDlgRotation = CreateDialog(NULL, MAKEINTRESOURCE(IDD_ROTATION), hwnd, RotationDlgProc);
 			else
-				SetForegroundWindow(gWindows.hDlgManageRotation);			
+				SetForegroundWindow(gWindows.hDlgRotation);			
 			break;
 		case IDM_SERVER_BANNEDIPS:
-			if (!gWindows.hDlgManageIps)
-				gWindows.hDlgManageIps = CreateDialog(NULL, MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, ManageIPsDlgProc);
+			if (!gWindows.hDlgBannedIps)
+				gWindows.hDlgBannedIps = CreateDialog(NULL, MAKEINTRESOURCE(IDD_BANNEDIPS), hwnd, BannedIPsDlgProc);
 			else
-				SetForegroundWindow(gWindows.hDlgManageIps);
+				SetForegroundWindow(gWindows.hDlgBannedIps);
 			break;
 		case IDM_AUTOKICK_ENABLE:
 			gSettings.bAutoKickCheckEnable = GetMenuState(GetMenu(gWindows.hWinMain), IDM_AUTOKICK_ENABLE, MF_BYCOMMAND) != SW_SHOWNA;
 			MainWindowUpdateAutoKickState();
 			break;
 		case IDM_AUTOKICK_SETPING:
-			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SETPING), hwnd, SetPingDlgProc);
+			DialogBox(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_SETPING), hwnd, SetMaxPingDlgProc);
 			break;
-		case IDM_AUTOKICK_MANAGEIDS:
-			if (!gWindows.hDlgManageIds)
-				gWindows.hDlgManageIds = CreateDialog(NULL, MAKEINTRESOURCE(IDD_MANAGEIDS), hwnd, ManageIDsDlgProc);
+		case IDM_AUTOKICK_EDITENTRIES:
+			if (!gWindows.hDlgAutoKickEntries)
+				gWindows.hDlgAutoKickEntries = CreateDialog(NULL, MAKEINTRESOURCE(IDD_AUTOKICK_ENTRIES), hwnd, AutoKickEntriesDlgProc);
 			else
-				SetForegroundWindow(gWindows.hDlgManageIds);
+				SetForegroundWindow(gWindows.hDlgAutoKickEntries);
 			break;
 		case IDM_HELP_DPLOGIN:
 			ShellExecute(NULL, "open", "http://www.dplogin.com", NULL, NULL, SW_SHOWNORMAL);
@@ -1156,13 +1156,13 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 // Callback Set Ping Dialog                                                                        |
 //{-------------------------------------------------------------------------------------------------
 
-BOOL OnSetPingInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
+BOOL OnSetMaxPingDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	std::string sMaxPing = std::to_string(gSettings.iAutoKickCheckMaxPingMsecs);
 	SetDlgItemText(hwnd, IDC_SP_EDIT, sMaxPing.c_str());
 	return TRUE;
 }
 
-void OnSetPingCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+void OnSetMaxPingDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	switch (id) {
 		case IDC_SP_BUTTONOK: {
 			std::vector<char> maxPingBuffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_SP_EDIT)) + 1);
@@ -1181,10 +1181,10 @@ void OnSetPingCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	}
 }
 
-LRESULT CALLBACK SetPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK SetMaxPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
     switch (Msg) {
-    	HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnSetPingInitDialog);
-    	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnSetPingCommand);
+    	HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnSetMaxPingDlgInitDialog);
+    	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnSetMaxPingDlgCommand);
     }
     return FALSE;
 }
@@ -1193,79 +1193,79 @@ LRESULT CALLBACK SetPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM l
 // Callback Program Settings Dialog                                                                |
 //{-------------------------------------------------------------------------------------------------
 
-BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam) {	
+BOOL OnSettingsDlgInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam) {	
 	std::string sBuffer = std::to_string(static_cast<int>(1000 * gSettings.fTimeoutSecs));
-	SetDlgItemText(hwnd, IDC_PS_EDITTIMEOUTOWNSERVERS, sBuffer.c_str());
+	SetDlgItemText(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS, sBuffer.c_str());
 	
 	sBuffer = std::to_string(gSettings.iAutoKickCheckDelay);
-	SetDlgItemText(hwnd, IDC_PS_EDITAUTOKICKINTERVAL, sBuffer.c_str());
+	SetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL, sBuffer.c_str());
 	
 	sBuffer = std::to_string(gSettings.iAutoReloadDelaySecs);
-	SetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, sBuffer.c_str());
+	SetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTORELOAD, sBuffer.c_str());
 
 	sBuffer = std::to_string(gSettings.iMaxConsoleLineCount);
-	SetDlgItemText(hwnd, IDC_PS_EDITLINECOUNT, sBuffer.c_str());
+	SetDlgItemText(hwnd, IDC_SETTINGS_EDITLINECOUNT, sBuffer.c_str());
 	if (gSettings.bLimitConsoleLineCount)
-		CheckDlgButton(hwnd, IDC_PS_CHECKLINECOUNT, BST_CHECKED);
+		CheckDlgButton(hwnd, IDC_SETTINGS_CHECKLINECOUNT, BST_CHECKED);
 	else
-		EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT), FALSE);
+		EnableWindow(GetDlgItem(hwnd, IDC_SETTINGS_EDITLINECOUNT), FALSE);
 	
 	if (gSettings.bColorPlayers)
-		CheckDlgButton(hwnd, IDC_PS_CHECKCOLORPLAYERS, BST_CHECKED);
+		CheckDlgButton(hwnd, IDC_SETTINGS_CHECKCOLORPLAYERS, BST_CHECKED);
 	
 	if (gSettings.bColorPings)
-		CheckDlgButton(hwnd, IDC_PS_CHECKCOLORPINGS, BST_CHECKED);
+		CheckDlgButton(hwnd, IDC_SETTINGS_CHECKCOLORPINGS, BST_CHECKED);
 	
 	if (gSettings.bDisableConsole)
-		CheckDlgButton(hwnd, IDC_PS_CHECKDISABLECONSOLE, BST_CHECKED);
+		CheckDlgButton(hwnd, IDC_SETTINGS_CHECKDISABLECONSOLE, BST_CHECKED);
 	
 	return TRUE;
 }
 
-void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
+void OnSettingsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 {
 	switch (id) {				
-	case IDC_PS_CHECKLINECOUNT: {
+	case IDC_SETTINGS_CHECKLINECOUNT: {
 		if (codeNotify == BN_CLICKED) {
-			EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT),
-				IsDlgButtonChecked(hwnd, IDC_PS_CHECKLINECOUNT) == BST_CHECKED
+			EnableWindow(GetDlgItem(hwnd, IDC_SETTINGS_EDITLINECOUNT),
+				IsDlgButtonChecked(hwnd, IDC_SETTINGS_CHECKLINECOUNT) == BST_CHECKED
 			);
 		}					
 		return;
 	}
 		
-	case IDC_PS_BUTTONOK: {
+	case IDC_SETTINGS_BUTTONOK: {
 		std::vector<char> buffer;
 
 		// TODO: Too small setting will give "Received packet from wrong remote address" error
-		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITTIMEOUTOWNSERVERS)) + 1);
-		GetDlgItemText(hwnd, IDC_PS_EDITTIMEOUTOWNSERVERS, buffer.data(), static_cast<int>(buffer.size()));
+		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS)) + 1);
+		GetDlgItemText(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.fTimeoutSecs = atoi(buffer.data()) / 1000.0f;
 		
-		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITAUTOKICKINTERVAL)) + 1);
-		GetDlgItemText(hwnd, IDC_PS_EDITAUTOKICKINTERVAL, buffer.data(), static_cast<int>(buffer.size()));
+		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL)) + 1);
+		GetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.iAutoKickCheckDelay = atoi(buffer.data());
 		MainWindowUpdateAutoKickState();
 		
-		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITAUTORELOAD)) + 1);
-		GetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, buffer.data(), static_cast<int>(buffer.size()));
+		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITAUTORELOAD)) + 1);
+		GetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTORELOAD, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.iAutoReloadDelaySecs = atoi(buffer.data());
 		g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
 			
-		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT)) + 1);
+		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITLINECOUNT)) + 1);
 		// TODO: Also use 0 = unlimited semantics?
-		GetDlgItemText(hwnd, IDC_PS_EDITLINECOUNT, buffer.data(), static_cast<int>(buffer.size()));
+		GetDlgItemText(hwnd, IDC_SETTINGS_EDITLINECOUNT, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.iMaxConsoleLineCount = atoi (buffer.data());
 		gSettings.bLimitConsoleLineCount = 0;
-		if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKLINECOUNT) == BST_CHECKED) {
+		if (IsDlgButtonChecked(hwnd, IDC_SETTINGS_CHECKLINECOUNT) == BST_CHECKED) {
 			gSettings.bLimitConsoleLineCount = 1;
 			Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
 			Edit_ScrollToEnd(gWindows.hEditConsole);
 		}
 		
-		gSettings.bColorPlayers = IsDlgButtonChecked(hwnd, IDC_PS_CHECKCOLORPLAYERS) == BST_CHECKED;
-		gSettings.bColorPings = IsDlgButtonChecked(hwnd, IDC_PS_CHECKCOLORPINGS) == BST_CHECKED;
-		gSettings.bDisableConsole = IsDlgButtonChecked(hwnd, IDC_PS_CHECKDISABLECONSOLE) == BST_CHECKED;
+		gSettings.bColorPlayers = IsDlgButtonChecked(hwnd, IDC_SETTINGS_CHECKCOLORPLAYERS) == BST_CHECKED;
+		gSettings.bColorPings = IsDlgButtonChecked(hwnd, IDC_SETTINGS_CHECKCOLORPINGS) == BST_CHECKED;
+		gSettings.bDisableConsole = IsDlgButtonChecked(hwnd, IDC_SETTINGS_CHECKDISABLECONSOLE) == BST_CHECKED;
 			
 		RECT rc;
 		GetClientRect(gWindows.hWinMain, &rc);
@@ -1284,17 +1284,17 @@ void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	}
 }
 
-LRESULT CALLBACK ProgramSettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK SettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
     switch (Msg) {
-		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnProgramSettingsInitDialog);
-		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnProgramSettingsCommand);
+		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnSettingsDlgInitDialog);
+		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnSettingsDlgCommand);
     }
     return FALSE;
 }
 
 //}-------------------------------------------------------------------------------------------------
-// Callback Manage Rotation Dialog                                                                 |
+// Callback Rotation Dialog                                                                 |
 //{-------------------------------------------------------------------------------------------------
 
 void LoadRotationToListbox(HWND hListBox) {
@@ -1316,22 +1316,22 @@ void LoadRotationToListbox(HWND hListBox) {
 	}, "loading rotation");
 }
 
-BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam) {
-	OnManageRotationReloadContent(hwnd);
+BOOL OnRotationDlgInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam) {
+	OnRotationDlgReloadContent(hwnd);
 	return TRUE;
 }
 
-void OnManageRotationReloadContent(HWND hwnd) {
+void OnRotationDlgReloadContent(HWND hwnd) {
 	auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
 	}
 
-	LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
+	LoadRotationToListbox(GetDlgItem(hwnd, IDC_ROTATION_LIST));
 
 	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		std::string answer = pb2lib::get_cvar(server->address, server->rcon_password, "rot_file", gSettings.fTimeoutSecs);
-		SetDlgItemText(hwnd, IDC_MROT_EDITFILE, answer.c_str());
+		SetDlgItemText(hwnd, IDC_ROTATION_EDITFILE, answer.c_str());
 	}, "getting rot_file");
 
 	std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
@@ -1344,9 +1344,9 @@ void OnManageRotationReloadContent(HWND hwnd) {
 	g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
 }
 
-void OnManageRotationPaint(HWND hwnd) {
+void OnRotationDlgPaint(HWND hwnd) {
 	PAINTSTRUCT ps;
-	HDC hdc = BeginPaint(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &ps);
+	HDC hdc = BeginPaint(GetDlgItem(hwnd, IDC_ROTATION_MAPSHOT), &ps);
 	const RECT ui_rect = ps.rcPaint;
 	FillRect(hdc, &ui_rect, (HBRUSH) (COLOR_WINDOW));
 
@@ -1372,11 +1372,11 @@ void OnManageRotationPaint(HWND hwnd) {
 		graphics.DrawImage(g_pMapshotBitmap.get(), offset_x, offset_y, draw_width, draw_height);
 	}
 
-	EndPaint(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &ps);
+	EndPaint(GetDlgItem(hwnd, IDC_ROTATION_MAPSHOT), &ps);
 	DeleteDC(hdc);
 }
 
-void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	auto executeSubcommandOnSelectedServer = [&](std::string subcommand) {
 		auto* server = MainWindowGetSelectedServerOrLoggedNull();
 		if (!server) {
@@ -1390,40 +1390,40 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			answer = pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
 		}, "changing rotation");
 
-		LoadRotationToListbox(GetDlgItem(hwnd, IDC_MROT_LIST));
+		LoadRotationToListbox(GetDlgItem(hwnd, IDC_ROTATION_LIST));
 		return answer;
 	};
 
 	auto executeMapSubcommandOnSelectedServer = [&](std::string mapSubcommand) {
-		auto iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_MROT_EDITMAP)) + 1;
+		auto iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITMAP)) + 1;
 		std::vector<char> buffer(iBufferSize);
-		GetDlgItemText(hwnd, IDC_MROT_EDITMAP, buffer.data(), iBufferSize);
+		GetDlgItemText(hwnd, IDC_ROTATION_EDITMAP, buffer.data(), iBufferSize);
 
 		std::string command = mapSubcommand + " " + buffer.data();
 		return executeSubcommandOnSelectedServer(command);
 	};
 
 	switch (id) {
-		case IDC_MROT_BUTTONADD: {
+		case IDC_ROTATION_BUTTONADD: {
 			// TODO: Update selection
 			executeMapSubcommandOnSelectedServer("add");
 			return;
 		}
 	
-		case IDC_MROT_BUTTONREMOVE: {
+		case IDC_ROTATION_BUTTONREMOVE: {
 			// TODO: Update selection
 			executeMapSubcommandOnSelectedServer("remove");
 			return;
 		}
 	
-		case IDC_MROT_BUTTONCLEAR: {
+		case IDC_ROTATION_BUTTONCLEAR: {
 			executeSubcommandOnSelectedServer("clear");
 			return;
 		}
 	
-		case IDC_MROT_BUTTONWRITE: {
-			std::vector<char> buffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_MROT_EDITFILE)) + 1);
-			GetDlgItemText(hwnd, IDC_MROT_EDITFILE, buffer.data(), static_cast<int>(buffer.size()));
+		case IDC_ROTATION_BUTTONWRITE: {
+			std::vector<char> buffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITFILE)) + 1);
+			GetDlgItemText(hwnd, IDC_ROTATION_EDITFILE, buffer.data(), static_cast<int>(buffer.size()));
 			auto sAnswer = executeSubcommandOnSelectedServer("save "s + buffer.data());
 
 			if (sAnswer.find("Saved maplist to") != std::string::npos)
@@ -1435,34 +1435,34 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			return;
 		}
 	
-		case IDC_MROT_BUTTONREAD: {
-			std::vector<char> buffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_MROT_EDITFILE)) + 1);
-			GetDlgItemText(hwnd, IDC_MROT_EDITFILE, buffer.data(), static_cast<int>(buffer.size()));
+		case IDC_ROTATION_BUTTONREAD: {
+			std::vector<char> buffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITFILE)) + 1);
+			GetDlgItemText(hwnd, IDC_ROTATION_EDITFILE, buffer.data(), static_cast<int>(buffer.size()));
 			executeSubcommandOnSelectedServer("load "s + buffer.data());
 			return;
 		}
 	
 		case IDCANCEL: {
-			gWindows.hDlgManageRotation = NULL;
+			gWindows.hDlgRotation = NULL;
 			EndDialog(hwnd, 0);
 			return;
 		}
 		
-		case IDC_MROT_LIST: {
+		case IDC_ROTATION_LIST: {
 			if (codeNotify == LBN_SELCHANGE)
 			{
-				auto iCurSel = SendMessage(GetDlgItem(hwnd, IDC_MROT_LIST), LB_GETCURSEL, 0, 0);
+				auto iCurSel = SendMessage(GetDlgItem(hwnd, IDC_ROTATION_LIST), LB_GETCURSEL, 0, 0);
 				if (iCurSel == LB_ERR) return;
 
-				auto iBufferSize = SendMessage(GetDlgItem(hwnd, IDC_MROT_LIST), LB_GETTEXTLEN, iCurSel, 0) + 1;
+				auto iBufferSize = SendMessage(GetDlgItem(hwnd, IDC_ROTATION_LIST), LB_GETTEXTLEN, iCurSel, 0) + 1;
 				std::vector<char> mapnameBuffer(iBufferSize);
-				SendMessage(GetDlgItem(hwnd, IDC_MROT_LIST), LB_GETTEXT, iCurSel, (LPARAM) mapnameBuffer.data());
-				SetDlgItemText(hwnd, IDC_MROT_EDITMAP, mapnameBuffer.data());
+				SendMessage(GetDlgItem(hwnd, IDC_ROTATION_LIST), LB_GETTEXT, iCurSel, (LPARAM) mapnameBuffer.data());
+				SetDlgItemText(hwnd, IDC_ROTATION_EDITMAP, mapnameBuffer.data());
 			}
 			return;
 		}
 	
-		case IDC_MROT_EDITMAP: {
+		case IDC_ROTATION_EDITMAP: {
 			if (codeNotify == EN_CHANGE)
 			{
 				std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
@@ -1470,9 +1470,9 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 					return;
 
 				std::string sMapshot = pb2InstallPath.value() + R"(\pball\pics\mapshots\)";
-				int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_MROT_EDITMAP)) + 1;
+				int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITMAP)) + 1;
 				std::vector<char> mapnameBuffer(iBufferSize);
-				GetDlgItemText(hwnd, IDC_MROT_EDITMAP, mapnameBuffer.data(), iBufferSize);
+				GetDlgItemText(hwnd, IDC_ROTATION_EDITMAP, mapnameBuffer.data(), iBufferSize);
 				sMapshot += mapnameBuffer.data();
 				sMapshot += ".jpg";
 
@@ -1483,7 +1483,7 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 				}
 
 				RECT rcMapshotImageRect;
-				GetClientRect(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &rcMapshotImageRect);
+				GetClientRect(GetDlgItem(hwnd, IDC_ROTATION_MAPSHOT), &rcMapshotImageRect);
 
 				std::wstring sWideMapshot(sMapshot.begin(), sMapshot.end());
 				g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
@@ -1495,16 +1495,16 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	}
 }
 
-LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK RotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
     switch (Msg) {
-    	HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageRotationInitDialog);
-    	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageRotationCommand);
-    	HANDLE_MSG(hWndDlg, WM_PAINT,      OnManageRotationPaint);
+    	HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnRotationDlgInitDialog);
+    	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnRotationDlgCommand);
+    	HANDLE_MSG(hWndDlg, WM_PAINT,      OnRotationDlgPaint);
     }
     
     if (Msg == WM_SERVERCHANGED) {
-		OnManageRotationReloadContent(hWndDlg);
+		OnRotationDlgReloadContent(hWndDlg);
 		return TRUE;
 	}
 
@@ -1547,7 +1547,7 @@ BOOL OnRCONCommandsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	return TRUE;
 }
 
-void OnRCONCommandsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+void OnRCONCommandsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	switch (id) {
 		case IDCANCEL: {
 			gWindows.hDlgRconCommands = NULL;
@@ -1560,16 +1560,16 @@ void OnRCONCommandsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
     switch (Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnRCONCommandsInitDialog);
-		HANDLE_MSG(hWndDlg, WM_COMMAND, OnRCONCommandsCommand);
+		HANDLE_MSG(hWndDlg, WM_COMMAND, OnRCONCommandsDlgCommand);
     }
     return FALSE;
 }
 
 //}-------------------------------------------------------------------------------------------------
-// Callback Manage Servers Dialog                                                                  |
+// Callback Servers Dialog                                                                  |
 //{-------------------------------------------------------------------------------------------------
 
-void ManageServersAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept {
+void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept {
 	const Server& server = *stable_server_ptr;
 	std::string display_string = static_cast<std::string>(server);
 
@@ -1593,7 +1593,7 @@ void ManageServersAddOrUpdateServer(HWND list, const Server* stable_server_ptr) 
 	}
 }
 
-void ManageServersRemoveServer(HWND list, const Server* stored_server_ptr) noexcept {
+void ServersDlgRemoveServer(HWND list, const Server* stored_server_ptr) noexcept {
 	const auto selected_index = ListBox_GetCurSel(list);
 	const auto found_index = ListBox_CustomFindItemData(list, stored_server_ptr);
 	ListBox_DeleteString(list, found_index);
@@ -1604,7 +1604,7 @@ void ManageServersRemoveServer(HWND list, const Server* stored_server_ptr) noexc
 	}
 }
 
-void ManageServersFetchHostname(HWND hDlg, Server* server) noexcept {
+void ServersDlgFetchHostname(HWND hDlg, Server* server) noexcept {
 	HWND hWinMain = gWindows.hWinMain;
 	UINT message = WM_HOSTNAMEREADY;
 	server->hostname = g_HostnameResolver.resolve(server->address, [hWinMain, hDlg, message, server](const std::string& resolved_hostname) {
@@ -1613,9 +1613,9 @@ void ManageServersFetchHostname(HWND hDlg, Server* server) noexcept {
 	});
 }
 
-BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
+BOOL OnServersDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	for (const auto& ptr : g_ServersWithRcon) {
-		ManageServersAddOrUpdateServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), ptr.get());
+		ServersDlgAddOrUpdateServer(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), ptr.get());
 	}
 
 	std::promise<std::vector<std::unique_ptr<Server>>> promise;
@@ -1643,33 +1643,33 @@ BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	return TRUE;
 }
 
-void OnManageServersServerlistReady(HWND hWndDlg) noexcept {
+void OnServersDlgServerlistReady(HWND hWndDlg) noexcept {
 	if (!g_ServerlistFuture.valid() || g_ServerlistFuture.wait_for(0s) == std::future_status::timeout) {
 		return;
 	}
 	g_Serverlist = g_ServerlistFuture.get();
 
 	for (const auto& server_ptr : g_Serverlist) {
-		ManageServersAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_DM_LISTLEFT), server_ptr.get());
-		ManageServersFetchHostname(hWndDlg, server_ptr.get());
+		ServersDlgAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_SERVERS_LISTLEFT), server_ptr.get());
+		ServersDlgFetchHostname(hWndDlg, server_ptr.get());
 	}
 }
 
-void OnManageServersHostnameReady(HWND hWndDlg, Server* server_instance) {
+void OnServersDlgHostnameReady(HWND hWndDlg, Server* server_instance) {
 	for (const auto& server_ptr : g_Serverlist) {
 		if (server_ptr.get() == server_instance) {
-			ManageServersAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_DM_LISTLEFT), server_ptr.get());
+			ServersDlgAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_SERVERS_LISTLEFT), server_ptr.get());
 		}
 	}
 
 	for (const auto& server_ptr : g_ServersWithRcon) {
 		if (server_ptr.get() == server_instance) {
-			ManageServersAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_DM_LISTRIGHT), server_ptr.get());
+			ServersDlgAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_SERVERS_LISTRIGHT), server_ptr.get());
 		}
 	}
 }
 
-void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	auto server_from_inputs = [&]() -> std::optional<Server> {
 		EDITBALLOONTIP balloon_tip = { 0 };
 		balloon_tip.cbStruct = sizeof(EDITBALLOONTIP);
@@ -1678,31 +1678,31 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		Server server;
 
 		DWORD dwIP = 0;
-		SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_GETADDRESS, 0, (LPARAM)&dwIP);
+		SendMessage(GetDlgItem(hwnd, IDC_SERVERS_EDITIP), IPM_GETADDRESS, 0, (LPARAM)&dwIP);
 		server.address.ip = std::to_string(FIRST_IPADDRESS(dwIP)) + "." +
 			std::to_string(SECOND_IPADDRESS(dwIP)) + "." +
 			std::to_string(THIRD_IPADDRESS(dwIP)) + "." +
 			std::to_string(FOURTH_IPADDRESS(dwIP));
 
 		std::vector<char> buffer;
-		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPORT)));
-		SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPORT), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
+		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT)));
+		SendMessage(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
 		server.address.port = atoi(buffer.data());
 
 		if (dwIP == 0 || server.address.port == 0) {
 			balloon_tip.pszText = L"Please enter the address of the server";
 			balloon_tip.pszTitle = L"IP and Port required";
-			Edit_ShowBalloonTip(GetDlgItem(hwnd, IDC_DM_EDITPORT), &balloon_tip);
+			Edit_ShowBalloonTip(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT), &balloon_tip);
 			return std::nullopt;
 		}
 
-		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_DM_EDITPW)));
-		SendMessage(GetDlgItem(hwnd, IDC_DM_EDITPW), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
+		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SERVERS_EDITPW)));
+		SendMessage(GetDlgItem(hwnd, IDC_SERVERS_EDITPW), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
 		server.rcon_password = buffer.data();
 		if (server.rcon_password.empty()) {
 			balloon_tip.pszText = L"Please enter the rcon_password of the server";
 			balloon_tip.pszTitle = L"Password required";
-			Edit_ShowBalloonTip(GetDlgItem(hwnd, IDC_DM_EDITPW), &balloon_tip);
+			Edit_ShowBalloonTip(GetDlgItem(hwnd, IDC_SERVERS_EDITPW), &balloon_tip);
 			return std::nullopt;
 		}
 		return server;
@@ -1710,11 +1710,11 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 
 	switch(id) {
 		case IDCANCEL: {
-			gWindows.hDlgManageServers = NULL;
+			gWindows.hDlgServers = NULL;
 			EndDialog(hwnd, 0);
 			return;
 		}
-		case IDC_DM_BUTTONADD: {
+		case IDC_SERVERS_BUTTONADD: {
 			std::optional<Server> server = server_from_inputs();
 			if (!server) {
 				return;
@@ -1723,16 +1723,16 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			g_ServersWithRcon.emplace_back(std::make_unique<Server>(server.value()));
 			Server* raw_server_ptr = g_ServersWithRcon.back().get();
 
-			ManageServersFetchHostname(hwnd, raw_server_ptr);
+			ServersDlgFetchHostname(hwnd, raw_server_ptr);
 			MainWindowAddOrUpdateOwnedServer(raw_server_ptr);
-			ManageServersAddOrUpdateServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), raw_server_ptr);
+			ServersDlgAddOrUpdateServer(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), raw_server_ptr);
 			return;
 		}
-		case IDC_DM_BUTTONREMOVE: {
-			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_DM_LISTRIGHT));
+		case IDC_SERVERS_BUTTONREMOVE: {
+			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT));
 			if (selected_index == LB_ERR) return;
 
-			const Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), selected_index));
+			const Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), selected_index));
 			auto it = std::ranges::find_if(g_ServersWithRcon, [&](const auto& unique_ptr) { return unique_ptr.get() == stored_server; });
 			assert(it != g_ServersWithRcon.end());
 
@@ -1740,14 +1740,14 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			g_ServersWithRcon.erase(it);
 
 			MainWindowRemoveOwnedServer(stored_server);
-			ManageServersRemoveServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), stored_server);
+			ServersDlgRemoveServer(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), stored_server);
 
 			return;
 		}
-		case IDC_DM_BUTTONSAVE: {
-			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_DM_LISTRIGHT));
+		case IDC_SERVERS_BUTTONSAVE: {
+			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT));
 			if (selected_index == LB_ERR) return;
-			Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), selected_index));
+			Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), selected_index));
 
 			std::optional<Server> input_data_server = server_from_inputs();
 			if (!input_data_server) return;
@@ -1756,8 +1756,8 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			auto it = std::ranges::find_if(g_ServersWithRcon, [&](const auto& unique_ptr) { return unique_ptr.get() == stored_server; });
 			assert(it != g_ServersWithRcon.end());
 
-			ManageServersFetchHostname(hwnd, stored_server);
-			ManageServersAddOrUpdateServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), stored_server);
+			ServersDlgFetchHostname(hwnd, stored_server);
+			ServersDlgAddOrUpdateServer(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), stored_server);
 			MainWindowAddOrUpdateOwnedServer(stored_server);
 			return;
 		}
@@ -1771,31 +1771,31 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		SplitIpAddressToBytes(stored_server->address.ip, &b0, &b1, &b2, &b3);
 
 #pragma warning (suppress : 26451)
-		SendMessage(GetDlgItem(hwnd, IDC_DM_IP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
-		SetWindowText(GetDlgItem(hwnd, IDC_DM_EDITPORT), std::to_string(stored_server->address.port).c_str());
-		SetWindowText(GetDlgItem(hwnd, IDC_DM_EDITPW), stored_server->rcon_password.c_str());
+		SendMessage(GetDlgItem(hwnd, IDC_SERVERS_EDITIP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
+		SetWindowText(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT), std::to_string(stored_server->address.port).c_str());
+		SetWindowText(GetDlgItem(hwnd, IDC_SERVERS_EDITPW), stored_server->rcon_password.c_str());
 
-		if (id == IDC_DM_LISTLEFT) {
-			ListBox_SetCurSel(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), -1);
-			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONREMOVE), FALSE);
-			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONSAVE), FALSE);
+		if (id == IDC_SERVERS_LISTLEFT) {
+			ListBox_SetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), -1);
+			EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONREMOVE), FALSE);
+			EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONSAVE), FALSE);
 		}
-		else if (id == IDC_DM_LISTRIGHT) {
-			ListBox_SetCurSel(GetDlgItem(hwnd, IDC_DM_LISTLEFT), -1);
-			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONREMOVE), TRUE);
-			EnableWindow(GetDlgItem(hwnd, IDC_DM_BUTTONSAVE), TRUE);
+		else if (id == IDC_SERVERS_LISTRIGHT) {
+			ListBox_SetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTLEFT), -1);
+			EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONREMOVE), TRUE);
+			EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONSAVE), TRUE);
 		}
 	}
 }
 
-LRESULT CALLBACK ManageServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK ServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
 	switch(Msg) {
-		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageServersInitDialog);
-		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageServersCommand);
+		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnServersDlgInitDialog);
+		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnServersDlgCommand);
 	}
 
-	if (Msg == WM_HOSTNAMEREADY) { OnManageServersHostnameReady(hWndDlg, (Server*)lParam); return 0; }
-	if (Msg == WM_SERVERLISTREADY) { OnManageServersServerlistReady(hWndDlg); return 0; };
+	if (Msg == WM_HOSTNAMEREADY) { OnServersDlgHostnameReady(hWndDlg, (Server*)lParam); return 0; }
+	if (Msg == WM_SERVERLISTREADY) { OnServersDlgServerlistReady(hWndDlg); return 0; };
 
 	return FALSE;
 }
@@ -1853,39 +1853,39 @@ LRESULT CALLBACK ForcejoinDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 }
 
 //}-------------------------------------------------------------------------------------------------
-// Callback Manage IDs Dialog                                                                      |
+// Callback AutoKick Entries Dialog                                                                |
 //{-------------------------------------------------------------------------------------------------
 
-BOOL OnManageIDsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
+BOOL OnAutoKickEntriesDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 {
 	for (size_t i = 0; i<g_vAutoKickEntries.size(); i++) {
-		auto index = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_ADDSTRING, 0, (LPARAM) g_vAutoKickEntries[i].sText.c_str());
-		SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_SETITEMDATA, index, i);
+		auto index = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_ADDSTRING, 0, (LPARAM) g_vAutoKickEntries[i].sText.c_str());
+		SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_SETITEMDATA, index, i);
 	}
-	SendMessage(GetDlgItem(hwnd, IDC_MIDS_RADIOID), BM_SETCHECK, BST_CHECKED, 1);
+	SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), BM_SETCHECK, BST_CHECKED, 1);
 	return TRUE;
 }
 
-void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	auto refillListbox = [&]() {
-		SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_RESETCONTENT, 0, 0);
+		SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_RESETCONTENT, 0, 0);
 		for (size_t i = 0; i < g_vAutoKickEntries.size(); i++) {
-			auto index = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_ADDSTRING, 0, (LPARAM)g_vAutoKickEntries[i].sText.c_str());
-			SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_SETITEMDATA, index, i);
+			auto index = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_ADDSTRING, 0, (LPARAM)g_vAutoKickEntries[i].sText.c_str());
+			SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_SETITEMDATA, index, i);
 		}
 	};
 
 	switch(id) {
-		case IDC_MIDS_BUTTONADD:
+		case IDC_AUTOKICK_BUTTONADD:
 		{
 			// TODO: Select
 			AutoKickEntry entry;
-			std::vector<char> buffer(static_cast<size_t>(GetWindowTextLength(GetDlgItem(hwnd, IDC_MIDS_EDIT))) + 1);
+			std::vector<char> buffer(static_cast<size_t>(GetWindowTextLength(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT))) + 1);
 
-			SendMessage (GetDlgItem(hwnd, IDC_MIDS_EDIT), WM_GETTEXT, buffer.size(), (LPARAM) buffer.data()); //set text
+			SendMessage (GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), WM_GETTEXT, buffer.size(), (LPARAM) buffer.data()); //set text
 			entry.sText = buffer.data();
 
-			if (IsDlgButtonChecked(hwnd, IDC_MIDS_RADIOID)) //Set ID / NAME flag
+			if (IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIOID)) //Set ID / NAME flag
 			{
 				std::vector<char> compareBuffer(buffer.size());
 				sprintf(compareBuffer.data(), "%d", atoi(buffer.data())); //check if it's a valid ID
@@ -1897,7 +1897,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 				entry.tType = AutoKickEntry::Type::ID;
 			}
 			else {
-				assert(IsDlgButtonChecked(hwnd, IDC_MIDS_RADIONAME));
+				assert(IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIONAME));
 				entry.tType = AutoKickEntry::Type::NAME;
 			}
 
@@ -1907,11 +1907,11 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			return;
 		}
 
-		case IDC_MIDS_BUTTONREMOVE:
+		case IDC_AUTOKICK_BUTTONREMOVE:
 		{
 			// TODO: Restore selection
-			auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETITEMDATA,
-						SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETCURSEL, 0, 0),
+			auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETITEMDATA,
+						SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETCURSEL, 0, 0),
 						0);
 			if (selectedPlayerIndex == LB_ERR) return;
 
@@ -1921,19 +1921,19 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			return;
 		}
 		
-		case IDC_MIDS_BUTTONOVERWRITE:
+		case IDC_AUTOKICK_BUTTONOVERWRITE:
 		{
-			auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETITEMDATA,
-						SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETCURSEL, 0, 0),
+			auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETITEMDATA,
+						SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETCURSEL, 0, 0),
 						0);
 			if (selectedPlayerIndex == LB_ERR) return;
 
-			int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_MIDS_EDIT)) + 1;
+			int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT)) + 1;
 			std::vector<char> buffer(iBufferSize);
-			SendMessage (GetDlgItem(hwnd, IDC_MIDS_EDIT), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
+			SendMessage (GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
 			g_vAutoKickEntries[selectedPlayerIndex].sText = buffer.data();
 
-			if (IsDlgButtonChecked(hwnd, IDC_MIDS_RADIOID))
+			if (IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIOID))
 			{
 				std::vector<char> comparisonBuffer(buffer.size());
 				sprintf(comparisonBuffer.data(), "%d", atoi(buffer.data())); //check if it's a valid ID
@@ -1944,7 +1944,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 				g_vAutoKickEntries[selectedPlayerIndex].tType = AutoKickEntry::Type::ID;
 			}
 			else {
-				assert(IsDlgButtonChecked(hwnd, IDC_MIDS_RADIONAME));
+				assert(IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIONAME));
 				g_vAutoKickEntries[selectedPlayerIndex].tType = AutoKickEntry::Type::NAME;
 			}
 
@@ -1952,49 +1952,49 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			return;
 		}
 		
-		case IDC_MIDS_LIST:
+		case IDC_AUTOKICK_LIST:
 		{
 			if (codeNotify == LBN_SELCHANGE)
 			{
-				auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETITEMDATA,
-						SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETCURSEL, 0, 0),
+				auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETITEMDATA,
+						SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETCURSEL, 0, 0),
 						0);
 				if (selectedPlayerIndex == LB_ERR) return;
-				SendMessage(GetDlgItem(hwnd, IDC_MIDS_EDIT), WM_SETTEXT,  0, (LPARAM) g_vAutoKickEntries[selectedPlayerIndex].sText.c_str());
+				SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), WM_SETTEXT,  0, (LPARAM) g_vAutoKickEntries[selectedPlayerIndex].sText.c_str());
 				
 				if (g_vAutoKickEntries[selectedPlayerIndex].tType == AutoKickEntry::Type::ID)
 				{
-					SendMessage(GetDlgItem(hwnd, IDC_MIDS_RADIOID), BM_SETCHECK, BST_CHECKED, 1);
-					SendMessage(GetDlgItem(hwnd, IDC_MIDS_RADIONAME), BM_SETCHECK, BST_UNCHECKED, 1);
+					SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), BM_SETCHECK, BST_CHECKED, 1);
+					SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIONAME), BM_SETCHECK, BST_UNCHECKED, 1);
 				}
 				else
 				{
-					SendMessage(GetDlgItem(hwnd, IDC_MIDS_RADIONAME), BM_SETCHECK, BST_CHECKED, 1);
-					SendMessage(GetDlgItem(hwnd, IDC_MIDS_RADIOID), BM_SETCHECK, BST_UNCHECKED, 1);
+					SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIONAME), BM_SETCHECK, BST_CHECKED, 1);
+					SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), BM_SETCHECK, BST_UNCHECKED, 1);
 				}
 			}
 			return;
 		}
 		
 		case IDCANCEL: {
-			gWindows.hDlgManageIds = NULL;
+			gWindows.hDlgAutoKickEntries = NULL;
 			EndDialog(hwnd, 1);
 			return;
 		}
 	}
 }
 
-LRESULT CALLBACK ManageIDsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK AutoKickEntriesDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	switch(Msg) {
-		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageIDsInitDialog);
-		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageIDsCommand);
+		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnAutoKickEntriesDlgInitDialog);
+		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnAutoKickEntriesDlgCommand);
 	}
 	return FALSE;
 }
 
 //}-------------------------------------------------------------------------------------------------
-// Callback Manage IPs Dialog                                                                      |
+// Callback Banned IPs Dialog                                                                      |
 //{-------------------------------------------------------------------------------------------------
 
 void LoadBannedIPsToListbox(HWND hListBox) {
@@ -2016,12 +2016,12 @@ void LoadBannedIPsToListbox(HWND hListBox) {
 	}, "loading banned IPs");
 }
 
-BOOL OnManageIPsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
-	LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
+BOOL OnBannedIPsDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
+	LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_IPS_LIST));
 	return TRUE;
 }
 
-void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	auto helper_run_rcon_command_with_current_ip = [&](std::string command) {
 		auto* server = MainWindowGetSelectedServerOrLoggedNull();
 		if (!server) {
@@ -2029,7 +2029,7 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		}
 
 		DWORD ip = 0;
-		SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_GETADDRESS, 0, (LPARAM)&ip);
+		SendMessage(GetDlgItem(hwnd, IDC_IPS_IPCONTROL), IPM_GETADDRESS, 0, (LPARAM)&ip);
 
 		command += std::to_string(FIRST_IPADDRESS(ip)) + "." + std::to_string(SECOND_IPADDRESS(ip))
 			+ "." + std::to_string(THIRD_IPADDRESS(ip)) + "." + std::to_string(FOURTH_IPADDRESS(ip));
@@ -2038,54 +2038,54 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
 		}, "modifying banned IPs");
 
-		LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
+		LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_IPS_LIST));
 	};
 
 	switch(id) {
-		case IDC_MIPS_BUTTONADD:
+		case IDC_IPS_BUTTONADD:
 			// TODO: Select created item
 			return helper_run_rcon_command_with_current_ip("sv addip ");
 	
-		case IDC_MIPS_BUTTONREMOVE:
+		case IDC_IPS_BUTTONREMOVE:
 			// TODO: Select new item in listview
 			return helper_run_rcon_command_with_current_ip("sv removeip ");
 	
 		case IDCANCEL:
-			gWindows.hDlgManageIps = NULL;
+			gWindows.hDlgBannedIps = NULL;
 			EndDialog(hwnd, 0);
 			return;
 		
-		case IDC_MIPS_LIST:
+		case IDC_IPS_LIST:
 		{
 			if (codeNotify == LBN_SELCHANGE)
 			{
-				auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_MIPS_LIST));
-				std::vector<char> buffer(1ull + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_MIPS_LIST), selected_index));
-				ListBox_GetText(GetDlgItem(hwnd, IDC_MIPS_LIST), selected_index, buffer.data());
+				auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_IPS_LIST));
+				std::vector<char> buffer(1ull + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_IPS_LIST), selected_index));
+				ListBox_GetText(GetDlgItem(hwnd, IDC_IPS_LIST), selected_index, buffer.data());
 
 				BYTE b0, b1, b2, b3;
 				SplitIpAddressToBytes({ buffer.data(), buffer.size() - 1}, &b0, &b1, &b2, &b3);
 #pragma warning (suppress : 26451)
-				SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
+				SendMessage(GetDlgItem(hwnd, IDC_IPS_IPCONTROL), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
 			}
 			return;
 		}
 	}
 }
 
-void OnManageIPsReloadContent(HWND hwnd) {
-	LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
+void OnBannedIPsDlgReloadContent(HWND hwnd) {
+	LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_IPS_LIST));
 }
 
-LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK BannedIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	switch(Msg) {
-		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageIPsInitDialog);
-		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageIPsCommand);
+		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnBannedIPsDlgInitDialog);
+		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnBannedIPsDlgCommand);
 	}
 
 	if (Msg == WM_SERVERCHANGED) {
-		OnManageIPsReloadContent(hWndDlg);
+		OnBannedIPsDlgReloadContent(hWndDlg);
 		return TRUE;
 	}
 	
