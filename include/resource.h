@@ -89,7 +89,6 @@
 
 #define IDD_SETPING							240
 #define IDC_SP_EDIT							241
-#define IDC_SP_BUTTONCANCEL					242
 #define IDC_SP_BUTTONOK						243
 
 #endif // __RESOURCE_H_INCLUDED

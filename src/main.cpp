@@ -1157,48 +1157,34 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 // Callback Set Ping Dialog                                                                        |
 //{-------------------------------------------------------------------------------------------------
 
-BOOL OnSetPingInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
-{
+BOOL OnSetPingInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	std::string sMaxPing = std::to_string(gSettings.iAutoKickCheckMaxPingMsecs);
 	SetDlgItemText(hwnd, IDC_SP_EDIT, sMaxPing.c_str());
 	return TRUE;
 }
 
-void OnSetPingClose(HWND hwnd)
-{
-	EndDialog (hwnd, 0);
-}
-
-void OnSetPingCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
-{
-	switch (id)
-	{
-	case IDC_SP_BUTTONOK:
-		{
-			int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_SP_EDIT)) + 1;
-			std::vector<char> maxPingBuffer(iBufferSize);
-			GetDlgItemText(hwnd, IDC_SP_EDIT, maxPingBuffer.data(), iBufferSize);
+void OnSetPingCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+	switch (id) {
+		case IDC_SP_BUTTONOK: {
+			std::vector<char> maxPingBuffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_SP_EDIT)) + 1);
+			GetDlgItemText(hwnd, IDC_SP_EDIT, maxPingBuffer.data(), static_cast<int>(maxPingBuffer.size()));
 			gSettings.iAutoKickCheckMaxPingMsecs = atoi(maxPingBuffer.data());
 			MainWindowUpdateAutoKickState();
 
-			EndDialog(hwnd, 1);
+			EndDialog(hwnd, 0);
 			return;
 		}
 		
-	case IDC_SP_BUTTONCANCEL:
-		{
+		case IDCANCEL: {
 			EndDialog(hwnd, 0);
 			return;
 		}
 	}
 }
 
-LRESULT CALLBACK SetPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (Msg)
-    {
+LRESULT CALLBACK SetPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
+    switch (Msg) {
     	HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnSetPingInitDialog);
-    	HANDLE_MSG(hWndDlg, WM_CLOSE,      OnSetPingClose);
     	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnSetPingCommand);
     }
     return FALSE;

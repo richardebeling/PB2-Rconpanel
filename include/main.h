@@ -227,7 +227,6 @@ void OnRCONCommandsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 // Set Ping Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK SetPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnSetPingClose(HWND hwnd);
 void OnSetPingCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnSetPingInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 
