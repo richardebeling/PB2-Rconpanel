@@ -24,8 +24,6 @@ struct Settings
 	int	  iAutoReloadDelaySecs = 0;			// delay for auto-reloading, 0 = disabled
 
 	float fTimeoutSecs = .5;				// timeout used for servers you have rcon access  to
-	// TODO: Unused, remove
-	float fAllServersTimeoutSecs = 1;		// timeout used for servers that you  don't have rcon access to (maybe higher ping?)
 	
 	bool  bColorPings = false;				// in the listview, the background color of the pings will vary from green to red
 	bool  bColorPlayers = true;				// in the listview, players will get their teamcolor as background

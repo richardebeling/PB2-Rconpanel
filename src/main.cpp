@@ -575,7 +575,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						MulDiv(8  , HIWORD(dwBaseUnits), 8),
 						hwnd, NULL, NULL, NULL);
 
-	// TODO: Specified accelerator keys don't work
+	// TODO: Specified accelerator keys don't work (main window and most dialogs (all except forcejoin)?)
 
 	//The following controls will be resized when the window is shown and HandleResize is called.
 	gWindows.hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX", "",
@@ -1033,7 +1033,6 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
 
 	// TODO: Make DPI aware and mark as DPI aware?
 	// TODO: Fix clipping with DPI scaling enabled
-	// TODO: Also fix wrong positioning on some of the resource dialogs
 
     // TODO: Add: calculate it all from a few, for humans readable areas (Server, Player, Console) so editing is easier.
     //RECT rcServer =  {3*iMW, 3*iMH                   , cx - 3*iMW, 23*iMH};
@@ -1589,7 +1588,7 @@ void ManageServersAddOrUpdateServer(HWND list, const Server* stable_server_ptr) 
 	const auto created_index = ListBox_AddString(list, display_string.c_str());
 	ListBox_SetItemData(list, created_index, stable_server_ptr);
 
-	if (selected_index == found_index) {
+	if (selected_index != LB_ERR && selected_index == found_index) {
 		ListBox_SetCurSel(list, created_index);
 	}
 }
@@ -2349,9 +2348,6 @@ int LoadConfig() // loads the servers and settings from the config file
 	GetPrivateProfileString("general", "timeout", std::to_string(defaults.fTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.fTimeoutSecs = (float) atof(szReadBuffer);
 	
-	GetPrivateProfileString("general", "timeoutForNonRconServers", std::to_string(defaults.fAllServersTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.fAllServersTimeoutSecs = (float) atof(szReadBuffer);
-	
 	GetPrivateProfileString("general", "maxConsoleLineCount", std::to_string(defaults.iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
 	gSettings.iMaxConsoleLineCount = atoi(szReadBuffer);
 	
@@ -2455,8 +2451,6 @@ void SaveConfig() // Saves all servers and settings in the config file
 
 	sWriteBuffer = std::to_string(gSettings.fTimeoutSecs);
 	WritePrivateProfileString("general", "timeout", sWriteBuffer.c_str(), path.c_str());
-	sWriteBuffer = std::to_string(gSettings.fAllServersTimeoutSecs);
-	WritePrivateProfileString("general", "timeoutForNonRconServers", sWriteBuffer.c_str(), path.c_str());
 	sWriteBuffer = std::to_string(gSettings.iMaxConsoleLineCount);
 	WritePrivateProfileString("general", "maxConsoleLineCount", sWriteBuffer.c_str(), path.c_str());
 	sWriteBuffer = std::to_string(gSettings.bLimitConsoleLineCount);
