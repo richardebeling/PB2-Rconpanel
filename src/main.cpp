@@ -567,7 +567,6 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	g_AutoReloadTimer.set_trigger_action([hwnd]() { PostMessage(hwnd, WM_REFETCHPLAYERS, 0, 0); });
 	g_AutoKickTimer.set_trigger_action(AutoKickTimerFunction);
 
-	//{ Create Controls
 	DWORD dwBaseUnits = GetDialogBaseUnits();
 
 	gWindows.hWinMain = hwnd;
@@ -579,6 +578,8 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						MulDiv(30 , LOWORD(dwBaseUnits), 4),
 						MulDiv(8  , HIWORD(dwBaseUnits), 8),
 						hwnd, NULL, NULL, NULL);
+
+	// TODO: Specified accelerator keys don't work
 
 	//The following controls will be resized when the window is shown and HandleResize is called.
 	gWindows.hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX", "",
@@ -631,8 +632,6 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	//}
-
 	HDC hdc = GetDC(NULL);
 	LONG lfHeight = -MulDiv(9, GetDeviceCaps(hdc, LOGPIXELSY), 72);
 	ReleaseDC(NULL, hdc);
@@ -642,46 +641,30 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	static DeleteObjectRAIIWrapper<HFONT> consoleFont(CreateFont(
 		lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Consolas"));
 
-	WPARAM fontWparam = (WPARAM)(HFONT)font;
-	WPARAM fontConsoleWparam = (WPARAM)(HFONT)consoleFont;
+	EnumChildWindows(hwnd, EnumWindowsSetFontCallback, (LPARAM)(HFONT)font);
+	SendMessage(gWindows.hEditConsole, WM_SETFONT, (WPARAM)(HFONT)consoleFont, true);
 
-	SendMessage(hStaticServer				  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hStaticServerInfo	  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hComboServer		  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hListPlayers		  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonJoin		  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonKick		  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonAutoKick	  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonBanIP		  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonReload		  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonDPLoginProfile, WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonWhois		  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonForcejoin	  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hComboRcon			  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hButtonSend		  , WM_SETFONT, fontWparam, true);
-	SendMessage(gWindows.hEditConsole		  , WM_SETFONT, fontConsoleWparam, true);
-	
-	SendMessage(gWindows.hEditConsole		  , EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
+	SendMessage(gWindows.hEditConsole, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
 
 	LVCOLUMN lvc = { 0 };
-	char szText[32] = { 0 }; //maximum: "Build\0"
+	std::string buffer;
 	lvc.mask = LVCF_TEXT | LVCF_SUBITEM | LVCF_FMT;
 	for (int i = 0; i <= 7; i++)
 	{
 		lvc.iSubItem = i;
-		lvc.pszText = szText;
 		lvc.fmt = LVCFMT_RIGHT;
 		switch (i)
 		{
-			case Subitems::NUMBER: strcpy(szText, "Num");   break;
-			case Subitems::NAME:   strcpy(szText, "Name");  lvc.fmt = LVCFMT_LEFT; break;
-			case Subitems::BUILD:  strcpy(szText, "Build"); break;
-			case Subitems::ID:     strcpy(szText, "ID");    break;
-			case Subitems::OP:     strcpy(szText, "OP");    break;
-			case Subitems::IP:     strcpy(szText, "IP");    lvc.fmt = LVCFMT_LEFT; break;
-			case Subitems::PING:   strcpy(szText, "Ping");  break;
-			case Subitems::SCORE:  strcpy(szText, "Score"); break;
+			case Subitems::NUMBER: buffer = "Num";   break;
+			case Subitems::NAME:   buffer = "Name";  lvc.fmt = LVCFMT_LEFT; break;
+			case Subitems::BUILD:  buffer = "Build"; break;
+			case Subitems::ID:     buffer = "ID";    break;
+			case Subitems::OP:     buffer = "OP";    break;
+			case Subitems::IP:     buffer = "IP";    lvc.fmt = LVCFMT_LEFT; break;
+			case Subitems::PING:   buffer = "Ping";  break;
+			case Subitems::SCORE:  buffer = "Score"; break;
 		}
+		lvc.pszText = const_cast<char*>(buffer.c_str());
 		ListView_InsertColumn(gWindows.hListPlayers, i, &lvc);
 	}
 	SendMessage(gWindows.hListPlayers, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
@@ -2280,6 +2263,11 @@ void SetClipboardContent(const std::string& content) {
 	SetClipboardData(CF_TEXT, hMem);  // transfers ownership of hMem
 	CloseClipboard();
 }
+
+BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font) {
+	SendMessage(child, WM_SETFONT, font, true);
+	return true;
+};
 
 void Edit_ReduceLines(HWND hEdit, int iLines)
 {

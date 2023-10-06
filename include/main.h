@@ -112,6 +112,7 @@ std::string GetHttpResponse(const std::string& url);
 void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3);
 
 DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC hDC, int side_length, DWORD color);
+BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font);
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
 // original [List|Combo]Box_FindItemData doesn't find item data but item string.

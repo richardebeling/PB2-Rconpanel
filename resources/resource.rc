@@ -20,9 +20,9 @@ IDM MENU
 	}
 	POPUP "&Server"
 	{
-		MENUITEM "Manage &Servers...", IDM_SERVER_MANAGE
-		MENUITEM "Manage &Rotation...", IDM_SERVER_ROTATION
-		MENUITEM "Manage &Banned IPs...", IDM_SERVER_BANNEDIPS
+		MENUITEM "Edit &Servers...", IDM_SERVER_MANAGE
+		MENUITEM "&Rotation...", IDM_SERVER_ROTATION
+		MENUITEM "&Banned IPs...", IDM_SERVER_BANNEDIPS
 	}
 	POPUP "&AutoKick"
 	{
