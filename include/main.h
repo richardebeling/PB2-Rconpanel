@@ -221,7 +221,7 @@ BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
 // RCON Commands Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnRCONCommandsClose(HWND hwnd);
+void OnRCONCommandsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 
 //--------------------------------------------------------------------------------------------------
 // Set Ping Dialog

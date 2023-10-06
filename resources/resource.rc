@@ -149,13 +149,15 @@ FONT 9, "Segoe UI"
     DEFPUSHBUTTON   "OK", IDC_PS_BUTTONOK, 223, 172, 50, 12
 }
 
-IDD_RCONCOMMANDS DIALOG 0, 0, 300, 210
-STYLE DS_CENTER | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU | WS_VISIBLE | WS_POPUP
+
+// Text is set in OnRCONCommandsInitDialog because the microsoft .rc compiler truncates text here.
+IDD_RCONCOMMANDS DIALOG 0, 0, 319, 231
+STYLE DS_CENTER | DS_MODALFRAME | DS_SETFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
 CAPTION "Common Rcon Commands"
-FONT 9, "Consolas"
+FONT 9, "Segoe UI"
 {
-	// Text is set in OnRCONCommandsInitDialog because the microsoft .rc compiler truncates text here.
-    LTEXT   "", IDC_RCONCOMMANDS_INFOTEXT, 7, 5, 318, 224, SS_LEFT
+    LTEXT           "Some info text", IDC_RCONCOMMANDS_INFOTEXT, 7, 7, 300, 200
+    DEFPUSHBUTTON   "&Close", IDCANCEL, 262, 212, 50, 12
 }
 
 IDD_SETPING DIALOG 0, 0, 151, 47

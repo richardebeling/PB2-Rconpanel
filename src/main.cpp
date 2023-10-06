@@ -39,13 +39,9 @@ AsyncRepeatedTimer g_AutoKickTimer;
 
 pb2lib::AsyncHostnameResolver g_HostnameResolver;
 
-UINT WM_REFETCHPLAYERS;
-UINT WM_SERVERCHANGED;
-UINT WM_PLAYERSREADY;
-UINT WM_SERVERCVARSREADY;
-UINT WM_RCONRESPONSEREADY;
-UINT WM_HOSTNAMEREADY;
-UINT WM_SERVERLISTREADY;
+UINT WM_REFETCHPLAYERS, WM_SERVERCHANGED, WM_PLAYERSREADY, WM_SERVERCVARSREADY, WM_RCONRESPONSEREADY, WM_HOSTNAMEREADY, WM_SERVERLISTREADY;
+
+DeleteObjectRAIIWrapper<HFONT> g_MainFont, g_MonospaceFont;
 
 WindowHandles gWindows;
 Settings gSettings;
@@ -636,13 +632,11 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	LONG lfHeight = -MulDiv(9, GetDeviceCaps(hdc, LOGPIXELSY), 72);
 	ReleaseDC(NULL, hdc);
 
-	static DeleteObjectRAIIWrapper<HFONT> font(CreateFont(
-		lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Ms Shell Dlg"));
-	static DeleteObjectRAIIWrapper<HFONT> consoleFont(CreateFont(
-		lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Consolas"));
+	g_MainFont = CreateFont(lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Segoe UI");
+	g_MonospaceFont = CreateFont(lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Consolas");
 
-	EnumChildWindows(hwnd, EnumWindowsSetFontCallback, (LPARAM)(HFONT)font);
-	SendMessage(gWindows.hEditConsole, WM_SETFONT, (WPARAM)(HFONT)consoleFont, true);
+	EnumChildWindows(hwnd, EnumWindowsSetFontCallback, (LPARAM)(HFONT)g_MainFont);
+	SendMessage(gWindows.hEditConsole, WM_SETFONT, (WPARAM)(HFONT)g_MonospaceFont, true);
 
 	SendMessage(gWindows.hEditConsole, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
 
@@ -1536,10 +1530,8 @@ LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, L
 // Callback RCON Commands Dialog                                                                   |
 //{-------------------------------------------------------------------------------------------------
 
-BOOL OnRCONCommandsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
-{
-	HWND textElement = GetDlgItem(hwnd, IDC_RCONCOMMANDS_INFOTEXT);
-	SetWindowText(textElement,
+BOOL OnRCONCommandsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
+	SetWindowText(GetDlgItem(hwnd, IDC_RCONCOMMANDS_INFOTEXT),
 		"The `sv` prefix lets you use most of the in-game commands, for example:\r\n"
 		"sv addip\r\n"
 		"sv expert X\r\n"
@@ -1565,21 +1557,25 @@ BOOL OnRCONCommandsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 		"exec PATH     - executes a config file\r\n"
 		"unset VARNAME - unsets a variable"
 	);
+
+	SendMessage(GetDlgItem(hwnd, IDC_RCONCOMMANDS_INFOTEXT), WM_SETFONT, (LPARAM)(HFONT)g_MonospaceFont, true);
 	return TRUE;
 }
 
-void OnRCONCommandsClose(HWND hwnd)
-{
-	gWindows.hDlgRconCommands = NULL;
-	EndDialog(hwnd, 1);
+void OnRCONCommandsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+	switch (id) {
+		case IDCANCEL: {
+			gWindows.hDlgRconCommands = NULL;
+			EndDialog(hwnd, 0);
+			return;
+		}
+	}
 }
 
-LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (Msg)
-    {
+LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
+    switch (Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnRCONCommandsInitDialog);
-		HANDLE_MSG(hWndDlg, WM_CLOSE, OnRCONCommandsClose);
+		HANDLE_MSG(hWndDlg, WM_COMMAND, OnRCONCommandsCommand);
     }
     return FALSE;
 }
