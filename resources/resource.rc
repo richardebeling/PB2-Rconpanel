@@ -122,41 +122,35 @@ FONT 9, "Segoe UI"
     DEFPUSHBUTTON   "&Close", IDCANCEL, 321, 251, 50, 12
 }
 
-LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
-IDD_PROGRAMSETTINGS DIALOG 0, 0, 280, 219
-STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
+IDD_PROGRAMSETTINGS DIALOG 0, 0, 280, 191
+STYLE DS_CENTER | DS_MODALFRAME | DS_SETFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
 CAPTION "Rconpanel - Settings"
-FONT 8, "Ms Shell Dlg"
+FONT 9, "Segoe UI"
 {
-    GROUPBOX        "Network", 0, 7, 7, 266, 48, 0, WS_EX_LEFT
-    LTEXT           "Time to wait for your servers to answer:", IDC_STATIC, 12, 18, 124, 8, SS_LEFT, WS_EX_LEFT
-    CONTROL         "", IDC_PS_TRACKOWNSERVERS, TRACKBAR_CLASS, WS_TABSTOP | TBS_BOTH | TBS_NOTICKS, 138, 14, 100, 15, WS_EX_LEFT
-    LTEXT           "1.000 s", IDC_PS_STATICOWNSERVERS, 243, 18, 24, 8, SS_LEFT, WS_EX_LEFT
-    LTEXT           "Time to wait for other servers to answer:", IDC_STATIC, 11, 33, 126, 8, SS_LEFT, WS_EX_LEFT
-    CONTROL         "", IDC_PS_TRACKOTHERSERVERS, TRACKBAR_CLASS, WS_TABSTOP | TBS_BOTH | TBS_NOTICKS, 138, 30, 100, 15, WS_EX_LEFT
-    LTEXT           "1.000 s", IDC_PS_STATICOTHERSERVERS, 243, 33, 24, 8, SS_LEFT, WS_EX_LEFT
-    
-    GROUPBOX        "Intervals", 1, 7, 60, 266, 51, 0, WS_EX_LEFT
-    LTEXT           "Checking interval for AutoKick (if active):", IDC_STATIC, 13, 71, 144, 8, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        IDC_PS_EDITAUTOKICKINTERVAL, 160, 68, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
-    LTEXT           "seconds", 2, 201, 71, 28, 8, SS_LEFT, WS_EX_LEFT
-	LTEXT           "Automatically refresh players after (0 = disabled):", IDC_STATIC, 13, 90, 145, 8, SS_LEFT, WS_EX_LEFT
-    EDITTEXT        IDC_PS_EDITAUTORELOAD, 160, 87, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
-    LTEXT           "seconds", 3, 201, 90, 28, 8, SS_LEFT, WS_EX_LEFT
-    
-    GROUPBOX        "Other settings", 4, 7, 116, 266, 77, 0, WS_EX_LEFT
-    AUTOCHECKBOX    "Limit console line count to:", IDC_PS_CHECKLINECOUNT, 14, 128, 100, 8, 0, WS_EX_LEFT
-    EDITTEXT        IDC_PS_EDITLINECOUNT, 115, 125, 38, 14, ES_AUTOHSCROLL | ES_NUMBER, WS_EX_LEFT
-    AUTOCHECKBOX    "Color the row backgrounds in the player's team colors.", IDC_PS_CHECKCOLORPLAYERS, 14, 144, 185, 8, 0, WS_EX_LEFT
-    AUTOCHECKBOX    "Color the pings from green to red", IDC_PS_CHECKCOLORPINGS, 14, 160, 118, 8, 0, WS_EX_LEFT
-    AUTOCHECKBOX    "Don't show the lower part of the GUI (manual RCON communication)", IDC_PS_CHECKDISABLECONSOLE, 14, 176, 231, 8, 0, WS_EX_LEFT
-    
-    DEFPUSHBUTTON   "OK", IDC_PS_BUTTONOK, 223, 198, 50, 14, 0, WS_EX_LEFT
-    PUSHBUTTON      "Cancel", IDC_PS_BUTTONCANCEL, 168, 198, 50, 14, 0, WS_EX_LEFT
+    GROUPBOX        "Network", IDC_STATIC, 7, 7, 266, 27
+    LTEXT           "Time to wait for your servers to respond:", IDC_STATIC, 13, 18, 135, 8
+    EDITTEXT        IDC_PS_EDITTIMEOUTOWNSERVERS, 184, 16, 38, 12, ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "milliseconds", IDC_STATIC, 227, 18, 44, 8
+    GROUPBOX        "Intervals", IDC_STATIC, 7, 39, 266, 46
+    LTEXT           "Checking interval for AutoKick (if active):", IDC_STATIC, 13, 50, 180, 8
+    EDITTEXT        IDC_PS_EDITAUTOKICKINTERVAL, 196, 49, 38, 12, ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "seconds", IDC_STATIC, 239, 50, 32, 8
+    LTEXT           "Automatically refresh players after (0 = disabled):", IDC_STATIC, 13, 69, 180, 8
+    EDITTEXT        IDC_PS_EDITAUTORELOAD, 196, 68, 38, 12, ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "seconds", IDC_STATIC, 239, 69, 32, 8
+    GROUPBOX        "Other settings", IDC_STATIC, 7, 90, 266, 77
+    AUTOCHECKBOX    "Limit console line count to:", IDC_PS_CHECKLINECOUNT, 14, 102, 111, 8
+    EDITTEXT        IDC_PS_EDITLINECOUNT, 127, 100, 38, 12, ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "lines", IDC_STATIC, 170, 102, 28, 8
+    AUTOCHECKBOX    "Color the row backgrounds in the player's team colors.", IDC_PS_CHECKCOLORPLAYERS, 14, 118, 253, 8
+    AUTOCHECKBOX    "Color the pings from green to red", IDC_PS_CHECKCOLORPINGS, 14, 134, 253, 8
+    AUTOCHECKBOX    "Don't show the lower part of the GUI (manual rcon)", IDC_PS_CHECKDISABLECONSOLE, 14, 150, 253, 8
+    PUSHBUTTON      "Cancel", IDCANCEL, 168, 172, 50, 12
+    DEFPUSHBUTTON   "OK", IDC_PS_BUTTONOK, 223, 172, 50, 12
 }
 
 IDD_RCONCOMMANDS DIALOG 0, 0, 300, 210
-STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
+STYLE DS_CENTER | DS_MODALFRAME | WS_CAPTION | WS_SYSMENU | WS_VISIBLE | WS_POPUP
 CAPTION "Common Rcon Commands"
 FONT 9, "Consolas"
 {

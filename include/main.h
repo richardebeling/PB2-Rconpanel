@@ -214,10 +214,8 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 // Program Settings Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ProgramSettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnProgramSettingsClose(HWND hwnd);
 void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
-void OnProgramSettingsHScroll(HWND hwnd, HWND hwndCtl, UINT code, int pos);
 
 //--------------------------------------------------------------------------------------------------
 // RCON Commands Dialog

@@ -1214,23 +1214,9 @@ LRESULT CALLBACK SetPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM l
 // Callback Program Settings Dialog                                                                |
 //{-------------------------------------------------------------------------------------------------
 
-BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
-{	
-	char szBuffer [32]; //maximum: "10.00 s\0"
-	std::string sBuffer;
-	
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_SETRANGE, FALSE, MAKELPARAM(2, 200));
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_SETRANGE, FALSE, MAKELPARAM(2, 200));
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_SETTICFREQ, 1000, 0);
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_SETTICFREQ, 100, 0);
-	
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_SETPOS, TRUE, (LPARAM) (gSettings.fTimeoutSecs) * 20);
-	sprintf (szBuffer, "%.2f s", gSettings.fTimeoutSecs);
-	SetDlgItemText(hwnd, IDC_PS_STATICOWNSERVERS, szBuffer);
-	
-	SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_SETPOS, TRUE, (LPARAM) (gSettings.fAllServersTimeoutSecs) * 20);
-	sprintf (szBuffer, "%.2f s", gSettings.fAllServersTimeoutSecs);
-	SetDlgItemText(hwnd, IDC_PS_STATICOTHERSERVERS, szBuffer);
+BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam) {	
+	std::string sBuffer = std::to_string(static_cast<int>(1000 * gSettings.fTimeoutSecs));
+	SetDlgItemText(hwnd, IDC_PS_EDITTIMEOUTOWNSERVERS, sBuffer.c_str());
 	
 	sBuffer = std::to_string(gSettings.iAutoKickCheckDelay);
 	SetDlgItemText(hwnd, IDC_PS_EDITAUTOKICKINTERVAL, sBuffer.c_str());
@@ -1257,120 +1243,73 @@ BOOL OnProgramSettingsInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
 	return TRUE;
 }
 
-void OnProgramSettingsHScroll(HWND hwnd, HWND hwndCtl, UINT, int)
-{
-	if (hwndCtl == GetDlgItem(hwnd, IDC_PS_TRACKOWNSERVERS))
-	{
-		auto pos = SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_GETPOS, 0, 0);
-		char szStaticText [32]; //"10.00 s\0"
-		snprintf (szStaticText, sizeof(szStaticText), "%.2f s", (float)pos/(float)20);
-		SetDlgItemText(hwnd, IDC_PS_STATICOWNSERVERS, szStaticText);
-	}
-	else if (hwndCtl == GetDlgItem(hwnd, IDC_PS_TRACKOTHERSERVERS))
-	{
-		auto pos = SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_GETPOS, 0, 0);
-		char szStaticText [32]; //"10.000 s\0"
-		snprintf (szStaticText, sizeof(szStaticText), "%.2f s", (float)pos/(float)20);
-		SetDlgItemText(hwnd, IDC_PS_STATICOTHERSERVERS, szStaticText);
-	}
-}
-
-void OnProgramSettingsClose(HWND hwnd)
-{
-	gWindows.hDlgSettings = NULL;
-	EndDialog(hwnd, 0);
-}
-
 void OnProgramSettingsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 {
-	switch (id)
-	{				
-	case IDC_PS_CHECKLINECOUNT:
-		{
-			if (codeNotify == BN_CLICKED)
-			{
-				if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKLINECOUNT) == BST_CHECKED)
-					EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT), true);
-				else
-					EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT), false);
-			}					
-			break;
+	switch (id) {				
+	case IDC_PS_CHECKLINECOUNT: {
+		if (codeNotify == BN_CLICKED) {
+			EnableWindow(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT),
+				IsDlgButtonChecked(hwnd, IDC_PS_CHECKLINECOUNT) == BST_CHECKED
+			);
+		}					
+		return;
+	}
+		
+	case IDC_PS_BUTTONOK: {
+		std::vector<char> buffer;
+
+		// TODO: Too small setting will give "Received packet from wrong remote address" error
+		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITTIMEOUTOWNSERVERS)) + 1);
+		GetDlgItemText(hwnd, IDC_PS_EDITTIMEOUTOWNSERVERS, buffer.data(), static_cast<int>(buffer.size()));
+		gSettings.fTimeoutSecs = atoi(buffer.data()) / 1000.0f;
+		
+		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITAUTOKICKINTERVAL)) + 1);
+		GetDlgItemText(hwnd, IDC_PS_EDITAUTOKICKINTERVAL, buffer.data(), static_cast<int>(buffer.size()));
+		gSettings.iAutoKickCheckDelay = atoi(buffer.data());
+		MainWindowUpdateAutoKickState();
+		
+		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITAUTORELOAD)) + 1);
+		GetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, buffer.data(), static_cast<int>(buffer.size()));
+		gSettings.iAutoReloadDelaySecs = atoi(buffer.data());
+		g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
+			
+		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT)) + 1);
+		// TODO: Also use 0 = unlimited semantics?
+		GetDlgItemText(hwnd, IDC_PS_EDITLINECOUNT, buffer.data(), static_cast<int>(buffer.size()));
+		gSettings.iMaxConsoleLineCount = atoi (buffer.data());
+		gSettings.bLimitConsoleLineCount = 0;
+		if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKLINECOUNT) == BST_CHECKED) {
+			gSettings.bLimitConsoleLineCount = 1;
+			Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
+			Edit_ScrollToEnd(gWindows.hEditConsole);
 		}
 		
-	case IDC_PS_BUTTONOK:
-		{			
-			auto pos = SendDlgItemMessage(hwnd, IDC_PS_TRACKOWNSERVERS, TBM_GETPOS, 0, 0);
-			gSettings.fTimeoutSecs = (float)pos/(float)20;
+		gSettings.bColorPlayers = IsDlgButtonChecked(hwnd, IDC_PS_CHECKCOLORPLAYERS) == BST_CHECKED;
+		gSettings.bColorPings = IsDlgButtonChecked(hwnd, IDC_PS_CHECKCOLORPINGS) == BST_CHECKED;
+		gSettings.bDisableConsole = IsDlgButtonChecked(hwnd, IDC_PS_CHECKDISABLECONSOLE) == BST_CHECKED;
 			
-			pos = SendDlgItemMessage(hwnd, IDC_PS_TRACKOTHERSERVERS, TBM_GETPOS, 0, 0);
-			gSettings.fAllServersTimeoutSecs = (float)pos/(float)20;
-			
-			auto iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITAUTOKICKINTERVAL)) + 1;
-			iBufferSize = max(iBufferSize, GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITAUTORELOAD)) + 1);
-			iBufferSize = max(iBufferSize, GetWindowTextLength(GetDlgItem(hwnd, IDC_PS_EDITLINECOUNT)) + 1);
-			std::vector<char> buffer(iBufferSize);
-			
-			GetDlgItemText(hwnd, IDC_PS_EDITAUTOKICKINTERVAL, buffer.data(), static_cast<int>(buffer.size()));
-			gSettings.iAutoKickCheckDelay = atoi(buffer.data());
-			MainWindowUpdateAutoKickState();
-			
-			GetDlgItemText(hwnd, IDC_PS_EDITAUTORELOAD, buffer.data(), static_cast<int>(buffer.size()));
-			gSettings.iAutoReloadDelaySecs = atoi (buffer.data());
-			g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
-			
-			// TODO: Also use 0 = unlimited semantics?
-			GetDlgItemText(hwnd, IDC_PS_EDITLINECOUNT, buffer.data(), static_cast<int>(buffer.size()));
-			gSettings.iMaxConsoleLineCount = atoi (buffer.data());
-			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKLINECOUNT) == BST_CHECKED)
-			{
-				gSettings.bLimitConsoleLineCount = 1;
-				Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
-				Edit_ScrollToEnd(gWindows.hEditConsole);
-			}
-			else
-			{
-				gSettings.bLimitConsoleLineCount = 0;
-			}
-			
-			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKCOLORPLAYERS) == BST_CHECKED)
-				gSettings.bColorPlayers = true;
-			else
-				gSettings.bColorPlayers = false;
-				
-			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKCOLORPINGS) == BST_CHECKED)
-				gSettings.bColorPings = true;
-			else
-				gSettings.bColorPings = false;
-			
-			if (IsDlgButtonChecked(hwnd, IDC_PS_CHECKDISABLECONSOLE) == BST_CHECKED)
-				gSettings.bDisableConsole = true;
-			else
-				gSettings.bDisableConsole = false;
-			
-			RECT rc;
-			GetClientRect(gWindows.hWinMain, &rc);
-			OnMainWindowSize(gWindows.hWinMain, SIZE_RESTORED, rc.right, rc.bottom); // Redraw
+		RECT rc;
+		GetClientRect(gWindows.hWinMain, &rc);
+		OnMainWindowSize(gWindows.hWinMain, SIZE_RESTORED, rc.right, rc.bottom); // Redraw
 					
-			SendMessage(hwnd, WM_CLOSE, 0, 0); //Make sure to clear the handle so a new one is opened next time
-			return;
-		}
+		gWindows.hDlgSettings = NULL;
+		EndDialog(hwnd, 0);
+		return;
+	}
 		
-	case IDC_PS_BUTTONCANCEL:
-		{
-			SendMessage(hwnd, WM_CLOSE, 0, 0); //Make sure to clear the handle so a new one is opened next time
-			return;
-		}
+	case IDCANCEL: {
+		gWindows.hDlgSettings = NULL;
+		EndDialog(hwnd, 0);
+		return;
+	}
 	}
 }
 
 LRESULT CALLBACK ProgramSettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
-    switch (Msg)
-    {
-	HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnProgramSettingsInitDialog);
-	HANDLE_MSG(hWndDlg, WM_CLOSE,      OnProgramSettingsClose);
-	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnProgramSettingsCommand);
-	HANDLE_MSG(hWndDlg, WM_HSCROLL,     OnProgramSettingsHScroll);
+    switch (Msg) {
+		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnProgramSettingsInitDialog);
+		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnProgramSettingsCommand);
     }
     return FALSE;
 }
