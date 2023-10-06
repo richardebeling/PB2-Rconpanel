@@ -1936,86 +1936,50 @@ LRESULT CALLBACK ManageServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPA
 // Callback Forcejoin Dialog                                                                       |
 //{-------------------------------------------------------------------------------------------------
 
-BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
-{
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[r] Red");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[b] Blue");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[p] Purple");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[y] Yellow");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[a] Automatic");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_ADDSTRING, 0, (LPARAM) "[o] Observer");
-	SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_SETCURSEL, 0, 0);
+BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
+	const std::vector button_ids = { IDC_FJ_BUTTONRED, IDC_FJ_BUTTONBLUE, IDC_FJ_BUTTONPURPLE, IDC_FJ_BUTTONYELLOW, IDC_FJ_BUTTONOBSERVER, IDC_FJ_BUTTONAUTO };
+	const std::vector colors = { Color::RED, Color::BLUE, Color::PURPLE, Color::YELLOW, Color::WHITE };
+
+	// We want the bitmap to stay around for the lifetime of the dialog
+	// We want to change it the next time the dialog is opened (possibly with other DPI settings)
+	// We want all created bitmaps to be eventually deleted
+	static std::vector<DeleteObjectRAIIWrapper<HBITMAP>> bitmaps(colors.size());
+
+	RECT rect;
+	GetWindowRect(GetDlgItem(hwnd, IDC_FJ_BUTTONRED), &rect);
+	const int color_bitmap_side_length = static_cast<int>(0.4 * (rect.bottom - rect.top));
+
+	for (size_t i = 0; i < colors.size(); ++i) {
+		bitmaps[i] = GetFilledSquareBitmap(GetDC(hwnd), color_bitmap_side_length, colors[i]);
+		SendMessage(GetDlgItem(hwnd, button_ids[i]), BM_SETIMAGE, IMAGE_BITMAP, (LPARAM)(HBITMAP)(bitmaps[i]));
+	}
+
+	// show underlined keyboard shortcut without pressing alt
+	for (auto button_id : button_ids) {
+		SendMessage(GetDlgItem(hwnd, button_id), WM_UPDATEUISTATE, MAKEWPARAM(UIS_CLEAR, UISF_HIDEACCEL), 0);
+	}
+
 	return TRUE;
 }
 
 void OnForcejoinCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 {
-	switch (id)
-	{
-	case IDC_FJ_OK: { //return the char that can be used to join (r, b, p, y, a or o)
-		auto hwndColorList = GetDlgItem(hwnd, IDC_FJ_COLORLIST);
-		auto selectedColorIndex = SendMessage(hwndColorList, LB_GETCURSEL, 0, 0);
-		auto selectedColorLength = SendMessage(hwndColorList, LB_GETTEXTLEN, selectedColorIndex, 0);
-
-		std::vector<char> buffer(selectedColorLength + 1);
-		SendMessage(hwndColorList, LB_GETTEXT, selectedColorIndex, (LPARAM)buffer.data());
-
-		if (strlen(buffer.data()) > 1)
-			EndDialog(hwnd, (LPARAM)buffer[1]);
-		else
-			EndDialog(hwnd, -1);
-		return;
+	switch (id) {
+		case IDC_FJ_BUTTONRED: EndDialog(hwnd, (INT_PTR)'r'); return;
+		case IDC_FJ_BUTTONBLUE: EndDialog(hwnd, (INT_PTR)'b'); return;
+		case IDC_FJ_BUTTONYELLOW: EndDialog(hwnd, (INT_PTR)'y'); return;
+		case IDC_FJ_BUTTONPURPLE: EndDialog(hwnd, (INT_PTR)'p'); return;
+		case IDC_FJ_BUTTONAUTO: EndDialog(hwnd, (INT_PTR)'a'); return;
+		case IDC_FJ_BUTTONOBSERVER: EndDialog(hwnd, (INT_PTR)'o'); return;
+		case IDCANCEL: EndDialog(hwnd, (INT_PTR)-1); return;  // Allows closing with escape
 	}
-
-	case IDC_FJ_CANCEL: {
-		EndDialog(hwnd, -1);
-		return;
-	}
-	}
-}
-
-void OnForcejoinClose(HWND hwnd)
-{
-	EndDialog(hwnd, -1);
-}
-
-void OnForcejoinKeyDown(HWND hwnd, UINT vk, BOOL fDown, int cRepeat, UINT flags)
-{
-	char szColor[14] = {'\0'}; //[a] Automatic\0
-
-	switch(vk)
-	{
-		case 0x41: //a - auto
-			sprintf(szColor, "[a] Automatic"); break;
-		case 0x42: //b - blue
-			sprintf(szColor, "[b] Blue"); break;
-		case 0x50: //p - purple
-			sprintf(szColor, "[p] Purple"); break;
-		case 0x52: //r - red
-			sprintf(szColor, "[r] Red"); break;
-		case 0x4F: //o - observer
-			sprintf(szColor, "[o] Observer"); break;
-		case 0x59: //y - yellow
-			sprintf(szColor, "[y] Yellow"); break;
-		case VK_ESCAPE:
-		{
-			EndDialog(hwnd, -1);
-			return;
-		}
-	}
-	
-	if (strlen(szColor) > 0)
-		SendMessage(GetDlgItem(hwnd, IDC_FJ_COLORLIST), LB_SELECTSTRING, -1, (LPARAM) szColor);
 }
 
 LRESULT CALLBACK ForcejoinDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
-	switch(Msg)
-	{
+	switch(Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnForcejoinInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnForcejoinCommand);
-		HANDLE_MSG(hWndDlg, WM_CLOSE,      OnForcejoinClose);
-		HANDLE_MSG(hWndDlg, WM_KEYDOWN,    OnForcejoinKeyDown);
 	}
 	return FALSE;
 }
@@ -2289,6 +2253,22 @@ UINT RegisterWindowMessageOrCriticalError(const std::string& message_name) noexc
 		HandleCriticalError("Registering window message failed. GetLastError() = " + std::to_string(GetLastError()));
 	}
 	return result;
+}
+
+DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC device_context, int side_length, DWORD color) {
+	HBITMAP result_bitmap = CreateCompatibleBitmap(device_context, side_length, side_length);
+
+	HDC bitmap_context = CreateCompatibleDC(device_context);
+	auto default_bitmap = static_cast<HBITMAP>(SelectObject(bitmap_context, result_bitmap));
+
+	RECT rect = { .left = 0, .top = 0, .right = side_length, .bottom = side_length };
+	DeleteObjectRAIIWrapper<HBRUSH> brush = CreateSolidBrush(color);
+	FillRect(bitmap_context, &rect, brush);
+
+	SelectObject(bitmap_context, default_bitmap);
+	DeleteDC(bitmap_context);
+
+	return result_bitmap;
 }
 
 std::string GetHttpResponse(const std::string& url)

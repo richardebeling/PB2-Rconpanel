@@ -27,18 +27,19 @@
 #include <Gdiplus.h>
 
 
-template <typename HandleT>
+template <typename HandleT, HandleT InvalidHandle = static_cast<HandleT>(NULL)>
 class DeleteObjectRAIIWrapper {
 public:
+	DeleteObjectRAIIWrapper() = default;
 	DeleteObjectRAIIWrapper(HandleT handle) : handle_{ handle } {}
 	DeleteObjectRAIIWrapper(const DeleteObjectRAIIWrapper&) = delete;
-	DeleteObjectRAIIWrapper(DeleteObjectRAIIWrapper&&) = delete;
+	DeleteObjectRAIIWrapper(DeleteObjectRAIIWrapper&& other) { *this = std::move(other); };
 	DeleteObjectRAIIWrapper& operator= (const DeleteObjectRAIIWrapper&) = delete;
-	DeleteObjectRAIIWrapper& operator= (DeleteObjectRAIIWrapper&&) = delete;
+	DeleteObjectRAIIWrapper& operator= (DeleteObjectRAIIWrapper&& other) { std::swap(this->handle_, other.handle_); return *this; };
 	~DeleteObjectRAIIWrapper() { DeleteObject(handle_); }
 	operator HandleT() noexcept { return handle_; };
 private:
-	HandleT handle_;
+	HandleT handle_ = InvalidHandle;
 };
 
 struct WindowHandles {
@@ -110,6 +111,7 @@ void SetClipboardContent(const std::string& content);
 std::string GetHttpResponse(const std::string& url);
 void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3);
 
+DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC hDC, int side_length, DWORD color);
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
 // original [List|Combo]Box_FindItemData doesn't find item data but item string.
@@ -166,10 +168,8 @@ void OnMainWindowHostnameReady(Server* server_instance) noexcept;
 // Forcejoin Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ForcejoinDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnForcejoinClose(HWND hwnd);
 void OnForcejoinCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
-void OnForcejoinKeyDown(HWND hwnd, UINT vk, BOOL fDown, int cRepeat, UINT flags);
 
 //--------------------------------------------------------------------------------------------------
 // Manage IDs Dialog

@@ -35,9 +35,12 @@
 #define IDC_DM_EDITPORT						149
 
 #define IDD_FORCEJOIN						150
-#define IDC_FJ_OK							151
-#define IDC_FJ_CANCEL						152
-#define IDC_FJ_COLORLIST					153
+#define IDC_FJ_BUTTONRED					151
+#define IDC_FJ_BUTTONBLUE					152
+#define IDC_FJ_BUTTONPURPLE					153
+#define IDC_FJ_BUTTONYELLOW					154
+#define IDC_FJ_BUTTONAUTO					155
+#define IDC_FJ_BUTTONOBSERVER				156
 
 #define IDD_MANAGEIPS						160
 #define IDC_MIPS_BUTTONOK					161
