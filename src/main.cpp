@@ -1614,13 +1614,7 @@ void ManageServersFetchHostname(HWND hDlg, Server* server) noexcept {
 	});
 }
 
-void OnManageServersClose(HWND hwnd) {
-	gWindows.hDlgManageServers = NULL;
-	EndDialog(hwnd, 1);
-}
-
-BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
-{
+BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	for (const auto& ptr : g_ServersWithRcon) {
 		ManageServersAddOrUpdateServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), ptr.get());
 	}
@@ -1676,8 +1670,7 @@ void OnManageServersHostnameReady(HWND hWndDlg, Server* server_instance) {
 	}
 }
 
-void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
-{
+void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	auto server_from_inputs = [&]() -> std::optional<Server> {
 		EDITBALLOONTIP balloon_tip = { 0 };
 		balloon_tip.cbStruct = sizeof(EDITBALLOONTIP);
@@ -1716,15 +1709,13 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		return server;
 	};
 
-	switch(id)
-	{
-		case IDC_DM_BUTTONOK:
-		{
+	switch(id) {
+		case IDCANCEL: {
+			gWindows.hDlgManageServers = NULL;
 			EndDialog(hwnd, 0);
 			return;
 		}
-		case IDC_DM_BUTTONADD:
-		{
+		case IDC_DM_BUTTONADD: {
 			std::optional<Server> server = server_from_inputs();
 			if (!server) {
 				return;
@@ -1738,8 +1729,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			ManageServersAddOrUpdateServer(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), raw_server_ptr);
 			return;
 		}
-		case IDC_DM_BUTTONREMOVE:
-		{
+		case IDC_DM_BUTTONREMOVE: {
 			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_DM_LISTRIGHT));
 			if (selected_index == LB_ERR) return;
 
@@ -1755,8 +1745,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 			return;
 		}
-		case IDC_DM_BUTTONSAVE:
-		{
+		case IDC_DM_BUTTONSAVE: {
 			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_DM_LISTRIGHT));
 			if (selected_index == LB_ERR) return;
 			Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, IDC_DM_LISTRIGHT), selected_index));
@@ -1774,8 +1763,7 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			return;
 		}
 	}
-	if (codeNotify == LBN_SELCHANGE)
-	{
+	if (codeNotify == LBN_SELCHANGE) {
 		auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, id));
 		if (selected_index == LB_ERR) return;
 		Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, id), selected_index));
@@ -1801,11 +1789,8 @@ void OnManageServersCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	}
 }
 
-LRESULT CALLBACK ManageServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
-{
-	switch(Msg)
-	{
-		HANDLE_MSG(hWndDlg, WM_CLOSE,      OnManageServersClose);
+LRESULT CALLBACK ManageServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
+	switch(Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageServersInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageServersCommand);
 	}

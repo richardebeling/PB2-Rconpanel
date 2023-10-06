@@ -204,7 +204,6 @@ void ManageServersRemoveServer(HWND list, const Server* stored_server_ptr) noexc
 void ManageServersFetchHostname(HWND hDlg, Server* server) noexcept;
 
 LRESULT CALLBACK ManageServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnManageServersClose(HWND hwnd);
 BOOL OnManageServersInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 void OnManageServersServerlistReady(HWND hWndDlg) noexcept;
 void OnManageServersHostnameReady(HWND hWndDlg, Server* server_instance);
