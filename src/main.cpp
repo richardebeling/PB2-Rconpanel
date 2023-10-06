@@ -945,7 +945,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			break;
 		case IDM_FILE_SETTINGS:
 			if (!gWindows.hDlgSettings)
-				gWindows.hDlgSettings = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_PROGRAMSETTINGS), hwnd, (DLGPROC) ProgramSettingsDlgProc);
+				gWindows.hDlgSettings = CreateDialog(NULL, MAKEINTRESOURCE(IDD_PROGRAMSETTINGS), hwnd, (DLGPROC) ProgramSettingsDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgSettings);
 			break;
@@ -962,19 +962,19 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			}
 		case IDM_SERVER_MANAGE:
 			if (!gWindows.hDlgManageServers)
-				gWindows.hDlgManageServers = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, ManageServersDlgProc);
+				gWindows.hDlgManageServers = CreateDialog(NULL, MAKEINTRESOURCE(IDD_MANAGESERVERS), hwnd, ManageServersDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgManageServers);
 			break;
 		case IDM_SERVER_ROTATION:
 			if (!gWindows.hDlgManageRotation)
-				gWindows.hDlgManageRotation = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, ManageRotationDlgProc);
+				gWindows.hDlgManageRotation = CreateDialog(NULL, MAKEINTRESOURCE(IDD_MANAGEROTATION), hwnd, ManageRotationDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgManageRotation);			
 			break;
 		case IDM_SERVER_BANNEDIPS:
 			if (!gWindows.hDlgManageIps)
-				gWindows.hDlgManageIps = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, ManageIPsDlgProc);
+				gWindows.hDlgManageIps = CreateDialog(NULL, MAKEINTRESOURCE(IDD_MANAGEIPS), hwnd, ManageIPsDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgManageIps);
 			break;
@@ -987,7 +987,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			break;
 		case IDM_AUTOKICK_MANAGEIDS:
 			if (!gWindows.hDlgManageIds)
-				gWindows.hDlgManageIds = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_MANAGEIDS), hwnd, ManageIDsDlgProc);
+				gWindows.hDlgManageIds = CreateDialog(NULL, MAKEINTRESOURCE(IDD_MANAGEIDS), hwnd, ManageIDsDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgManageIds);
 			break;
@@ -996,7 +996,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			break;
 		case IDM_HELP_RCONCOMMANDS:
 			if (!gWindows.hDlgRconCommands)
-				gWindows.hDlgRconCommands = CreateDialog(GetModuleHandle(NULL), MAKEINTRESOURCE(IDD_RCONCOMMANDS), hwnd, RCONCommandsDlgProc);
+				gWindows.hDlgRconCommands = CreateDialog(NULL, MAKEINTRESOURCE(IDD_RCONCOMMANDS), hwnd, RCONCommandsDlgProc);
 			else
 				SetForegroundWindow(gWindows.hDlgRconCommands);
 			break;
@@ -2010,6 +2010,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	switch(id) {
 		case IDC_MIDS_BUTTONADD:
 		{
+			// TODO: Select
 			AutoKickEntry entry;
 			std::vector<char> buffer(static_cast<size_t>(GetWindowTextLength(GetDlgItem(hwnd, IDC_MIDS_EDIT))) + 1);
 
@@ -2040,6 +2041,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 
 		case IDC_MIDS_BUTTONREMOVE:
 		{
+			// TODO: Restore selection
 			auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETITEMDATA,
 						SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETCURSEL, 0, 0),
 						0);
@@ -2127,8 +2129,7 @@ LRESULT CALLBACK ManageIDsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 // Callback Manage IPs Dialog                                                                      |
 //{-------------------------------------------------------------------------------------------------
 
-void LoadBannedIPsToListbox(HWND hListBox)
-{
+void LoadBannedIPsToListbox(HWND hListBox) {
 	auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
@@ -2147,16 +2148,9 @@ void LoadBannedIPsToListbox(HWND hListBox)
 	}, "loading banned IPs");
 }
 
-BOOL OnManageIPsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
-{
+BOOL OnManageIPsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
 	return TRUE;
-}
-
-void OnManageIPsClose(HWND hwnd)
-{
-	gWindows.hDlgManageIps = NULL;
-	EndDialog(hwnd, 1);
 }
 
 void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
@@ -2179,16 +2173,18 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
 	};
 
-	switch(id)
-	{
+	switch(id) {
 		case IDC_MIPS_BUTTONADD:
+			// TODO: Select created item
 			return helper_run_rcon_command_with_current_ip("sv addip ");
 	
 		case IDC_MIPS_BUTTONREMOVE:
+			// TODO: Select new item in listview
 			return helper_run_rcon_command_with_current_ip("sv removeip ");
 	
-		case IDC_MIPS_BUTTONOK:
-			SendMessage(hwnd, WM_CLOSE, 0, 0);
+		case IDCANCEL:
+			gWindows.hDlgManageIps = NULL;
+			EndDialog(hwnd, 0);
 			return;
 		
 		case IDC_MIPS_LIST:
@@ -2204,22 +2200,20 @@ void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 #pragma warning (suppress : 26451)
 				SendMessage(GetDlgItem(hwnd, IDC_MIPS_IPCONTROL), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
 			}
+			return;
 		}
 	}
 }
 
-void OnManageIPsReloadContent(HWND hwnd)
-{
+void OnManageIPsReloadContent(HWND hwnd) {
 	LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_MIPS_LIST));
 }
 
 LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
-	switch(Msg)
-	{
+	switch(Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageIPsInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageIPsCommand);
-		HANDLE_MSG(hWndDlg, WM_CLOSE,      OnManageIPsClose);
 	}
 
 	if (Msg == WM_SERVERCHANGED) {

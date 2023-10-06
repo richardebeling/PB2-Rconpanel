@@ -43,7 +43,6 @@
 #define IDC_FJ_BUTTONOBSERVER				156
 
 #define IDD_MANAGEIPS						160
-#define IDC_MIPS_BUTTONOK					161
 #define IDC_MIPS_LIST						162
 #define IDC_MIPS_IPCONTROL					163
 #define IDC_MIPS_BUTTONADD					164

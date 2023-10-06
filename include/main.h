@@ -175,7 +175,6 @@ BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 // Manage IDs Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ManageIDsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnManageIDsClose(HWND hwnd);
 void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnManageIDsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 
@@ -183,7 +182,6 @@ BOOL OnManageIDsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 // Manage IPs Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ManageIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnManageIPsClose(HWND hwnd);
 void OnManageIPsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnManageIPsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 void OnManageIPsReloadContent(HWND hwnd);
