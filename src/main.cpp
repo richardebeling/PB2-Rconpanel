@@ -1998,14 +1998,7 @@ BOOL OnManageIDsInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
 	return TRUE;
 }
 
-void OnManageIDsClose(HWND hwnd)
-{
-	gWindows.hDlgManageIds = NULL;
-	EndDialog(hwnd, 1);
-}
-
-void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
-{
+void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	auto refillListbox = [&]() {
 		SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_RESETCONTENT, 0, 0);
 		for (size_t i = 0; i < g_vAutoKickEntries.size(); i++) {
@@ -2014,8 +2007,7 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		}
 	};
 
-	switch(id)
-	{
+	switch(id) {
 		case IDC_MIDS_BUTTONADD:
 		{
 			AutoKickEntry entry;
@@ -2045,12 +2037,6 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			refillListbox();
 			return;
 		}
-		
-		case IDC_MIDS_BUTTONOK:
-		{
-			SendMessage(hwnd, WM_CLOSE, 0, 0); //Make sure to clear the handle so a new one is opened next time
-			return;
-		}
 
 		case IDC_MIDS_BUTTONREMOVE:
 		{
@@ -2064,7 +2050,8 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			refillListbox();
 			return;
 		}
-		case IDC_MIDS_BUTTONSAVE:
+		
+		case IDC_MIDS_BUTTONOVERWRITE:
 		{
 			auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETITEMDATA,
 						SendMessage(GetDlgItem(hwnd, IDC_MIDS_LIST), LB_GETCURSEL, 0, 0),
@@ -2116,16 +2103,21 @@ void OnManageIDsCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 					SendMessage(GetDlgItem(hwnd, IDC_MIDS_RADIOID), BM_SETCHECK, BST_UNCHECKED, 1);
 				}
 			}
+			return;
+		}
+		
+		case IDCANCEL: {
+			gWindows.hDlgManageIds = NULL;
+			EndDialog(hwnd, 1);
+			return;
 		}
 	}
 }
 
 LRESULT CALLBACK ManageIDsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
-	switch(Msg)
-	{
+	switch(Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageIDsInitDialog);
-		HANDLE_MSG(hWndDlg, WM_CLOSE,      OnManageIDsClose);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageIDsCommand);
 	}
 	return FALSE;
