@@ -1396,8 +1396,7 @@ LRESULT CALLBACK ProgramSettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, 
 // Callback Manage Rotation Dialog                                                                 |
 //{-------------------------------------------------------------------------------------------------
 
-void LoadRotationToListbox(HWND hListBox)
-{
+void LoadRotationToListbox(HWND hListBox) {
 	auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
@@ -1416,15 +1415,12 @@ void LoadRotationToListbox(HWND hListBox)
 	}, "loading rotation");
 }
 
-BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam)
-{
+BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam) {
 	OnManageRotationReloadContent(hwnd);
 	return TRUE;
 }
 
-
-void OnManageRotationReloadContent(HWND hwnd)
-{
+void OnManageRotationReloadContent(HWND hwnd) {
 	auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
@@ -1447,9 +1443,7 @@ void OnManageRotationReloadContent(HWND hwnd)
 	g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
 }
 
-
-void OnManageRotationPaint(HWND hwnd)
-{
+void OnManageRotationPaint(HWND hwnd) {
 	PAINTSTRUCT ps;
 	HDC hdc = BeginPaint(GetDlgItem(hwnd, IDC_MROT_MAPSHOT), &ps);
 	const RECT ui_rect = ps.rcPaint;
@@ -1481,16 +1475,7 @@ void OnManageRotationPaint(HWND hwnd)
 	DeleteDC(hdc);
 }
 
-
-void OnManageRotationClose(HWND hwnd)
-{	
-	gWindows.hDlgManageRotation = NULL;
-	
-	EndDialog(hwnd, 0);
-}
-
-void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
-{
+void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	auto executeSubcommandOnSelectedServer = [&](std::string subcommand) {
 		auto* server = MainWindowGetSelectedServerOrLoggedNull();
 		if (!server) {
@@ -1517,54 +1502,52 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		return executeSubcommandOnSelectedServer(command);
 	};
 
-	switch (id)
-	{
-		case IDC_MROT_BUTTONADD:
-		{
+	switch (id) {
+		case IDC_MROT_BUTTONADD: {
+			// TODO: Update selection
 			executeMapSubcommandOnSelectedServer("add");
-			break;
+			return;
 		}
 	
-		case IDC_MROT_BUTTONREMOVE:
-		{
+		case IDC_MROT_BUTTONREMOVE: {
+			// TODO: Update selection
 			executeMapSubcommandOnSelectedServer("remove");
-			break;
+			return;
 		}
 	
-		case IDC_MROT_BUTTONCLEAR:
-		{
+		case IDC_MROT_BUTTONCLEAR: {
 			executeSubcommandOnSelectedServer("clear");
-			break;
+			return;
 		}
 	
-		case IDC_MROT_BUTTONWRITE:
-		{
-			auto sAnswer = executeSubcommandOnSelectedServer("write");
+		case IDC_MROT_BUTTONWRITE: {
+			std::vector<char> buffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_MROT_EDITFILE)) + 1);
+			GetDlgItemText(hwnd, IDC_MROT_EDITFILE, buffer.data(), static_cast<int>(buffer.size()));
+			auto sAnswer = executeSubcommandOnSelectedServer("save "s + buffer.data());
 
 			if (sAnswer.find("Saved maplist to") != std::string::npos)
 				MessageBox(hwnd, "The maplist was saved successfully", "Success", MB_OK | MB_ICONINFORMATION);
-			else
-			{
+			else {
 				std::string sContent = "An error occured. The server answered: " + sAnswer;
 				MessageBox(hwnd, sContent.c_str(), "Error", MB_OK | MB_ICONERROR);
 			}
-			break;
+			return;
 		}
 	
-		case IDC_MROT_BUTTONREAD:
-		{
-			executeSubcommandOnSelectedServer("load");
-			break;
+		case IDC_MROT_BUTTONREAD: {
+			std::vector<char> buffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_MROT_EDITFILE)) + 1);
+			GetDlgItemText(hwnd, IDC_MROT_EDITFILE, buffer.data(), static_cast<int>(buffer.size()));
+			executeSubcommandOnSelectedServer("load "s + buffer.data());
+			return;
 		}
 	
-		case IDC_MROT_BUTTONOK:
-		{
-			SendMessage(hwnd, WM_CLOSE, 0, 0);
-			break;
+		case IDCANCEL: {
+			gWindows.hDlgManageRotation = NULL;
+			EndDialog(hwnd, 0);
+			return;
 		}
 		
-		case IDC_MROT_LIST:
-		{
+		case IDC_MROT_LIST: {
 			if (codeNotify == LBN_SELCHANGE)
 			{
 				auto iCurSel = SendMessage(GetDlgItem(hwnd, IDC_MROT_LIST), LB_GETCURSEL, 0, 0);
@@ -1575,11 +1558,10 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 				SendMessage(GetDlgItem(hwnd, IDC_MROT_LIST), LB_GETTEXT, iCurSel, (LPARAM) mapnameBuffer.data());
 				SetDlgItemText(hwnd, IDC_MROT_EDITMAP, mapnameBuffer.data());
 			}
-			break;
+			return;
 		}
 	
-		case IDC_MROT_EDITMAP:
-		{
+		case IDC_MROT_EDITMAP: {
 			if (codeNotify == EN_CHANGE)
 			{
 				std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
@@ -1607,22 +1589,20 @@ void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 				RedrawWindow(hwnd, NULL, NULL, RDW_UPDATENOW | RDW_INVALIDATE);
 			}
+			return;
 		}
 	}
 }
 
 LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
-    switch (Msg)
-    {
+    switch (Msg) {
     	HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnManageRotationInitDialog);
-    	HANDLE_MSG(hWndDlg, WM_CLOSE,      OnManageRotationClose);
     	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnManageRotationCommand);
     	HANDLE_MSG(hWndDlg, WM_PAINT,      OnManageRotationPaint);
     }
     
-    if (Msg == WM_SERVERCHANGED)
-	{
+    if (Msg == WM_SERVERCHANGED) {
 		OnManageRotationReloadContent(hWndDlg);
 		return TRUE;
 	}

@@ -190,7 +190,6 @@ void OnManageIPsReloadContent(HWND hwnd);
 // Manage Rotation Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK ManageRotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
-void OnManageRotationClose(HWND hwnd);
 void OnManageRotationCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnManageRotationInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
 void OnManageRotationPaint(HWND hwnd);
