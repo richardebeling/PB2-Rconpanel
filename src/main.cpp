@@ -648,8 +648,6 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						MulDiv(8  , HIWORD(dwBaseUnits), 8),
 						hwnd, NULL, NULL, NULL);
 
-	// TODO: Specified accelerator keys don't work (main window and most dialogs (all except forcejoin)?)
-
 	//The following controls will be resized when the window is shown and HandleResize is called.
 	gWindows.hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX", "",
 						CBS_DROPDOWNLIST | CBS_SORT | WS_CHILD | WS_VISIBLE,
@@ -1923,7 +1921,7 @@ void AutoKickEntriesDlgRefillList(HWND list) {
 
 BOOL OnAutoKickEntriesDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	AutoKickEntriesDlgRefillList(GetDlgItem(hwnd, IDC_AUTOKICK_LIST));
-	Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), true);
+	Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIONAME), true);
 	return TRUE;
 }
 
@@ -1942,6 +1940,17 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 			entry.value = text;
 		}
 		return entry;
+	};
+
+	auto update_edit_field = [&]() {
+		auto old_flags = GetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE);
+		if (Button_GetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID))) {
+			SetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE, old_flags | ES_NUMBER);
+			SetDlgItemInt(hwnd, IDC_AUTOKICK_EDIT, GetDlgItemInt(hwnd, IDC_AUTOKICK_EDIT, NULL, FALSE), FALSE);
+		}
+		else {
+			SetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE, old_flags & ~ES_NUMBER);
+		}
 	};
 
 	switch(id) {
@@ -1988,7 +1997,15 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 				
 				Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), std::holds_alternative<AutoKickEntry::IdT>(selected_entry->value));
 				Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIONAME), std::holds_alternative<AutoKickEntry::NameT>(selected_entry->value));
+
+				update_edit_field();
 			}
+			return;
+		}
+
+		case IDC_AUTOKICK_RADIOID:
+		case IDC_AUTOKICK_RADIONAME: {
+			update_edit_field();
 			return;
 		}
 		
@@ -2001,7 +2018,6 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 }
 
 LRESULT CALLBACK AutoKickEntriesDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
-	// TODO: Make input number-only when ID is selected?
 	switch(Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnAutoKickEntriesDlgInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnAutoKickEntriesDlgCommand);
