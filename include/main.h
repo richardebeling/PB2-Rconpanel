@@ -4,10 +4,6 @@
 #include "pb2lib.h" // Seems like we need to include winsock2.h before defining WIN32_LEAN_AND_MEAN
 
 #define WIN32_LEAN_AND_MEAN
-#if _WIN32_IE < 0x401
-#define _WIN32_IE 0x401 //needed for commctrl.h so it includes InitCommonControls (0x300) and the ability to color subitems differently (0x400)
-#endif
-
 #include <cassert>
 #include <ctime>
 #include <map>
@@ -18,6 +14,7 @@
 #include <string_view>
 #include <sstream>
 #include <vector>
+#include <variant>
 
 #include <Windows.h>
 #include <windowsx.h>
@@ -25,6 +22,12 @@
 #include <shellapi.h>
 #include <wininet.h>
 #include <Gdiplus.h>
+
+
+template<class... Functors>
+struct Overload : Functors... {
+	using Functors::operator()...;
+};
 
 
 template <typename HandleT, HandleT InvalidHandle = static_cast<HandleT>(NULL)>
@@ -69,13 +72,19 @@ struct WindowHandles {
 };
 
 struct AutoKickEntry {
-	enum class Type {
-		ID = 0,
-		NAME = 1,
-	};
+	using NameT = std::string;
+	using IdT = int;
 
-    Type tType = Type::ID;
-    std::string sText;
+	std::variant<NameT, IdT> value;
+
+	static AutoKickEntry from_type_and_value(std::string_view type, std::string_view value);
+
+	bool matches(NameT name) const;
+	bool matches(IdT id) const;
+
+	std::string type_string() const;
+	std::string value_string() const;
+	explicit operator std::string() const;
 };
 
 struct Server {
@@ -118,6 +127,8 @@ void Edit_ScrollToEnd(HWND hEdit);
 // original [List|Combo]Box_FindItemData doesn't find item data but item string.
 int ComboBox_CustomFindItemData(HWND hComboBox, const void* itemData) noexcept;
 int ListBox_CustomFindItemData(HWND hList, const void* itemData) noexcept;
+void ListBox_CustomDeleteString(HWND list, int index) noexcept;
+void ListBox_AddOrUpdateString(HWND list, const std::string& item_text, const void* item_data);
 
 std::optional<std::string> GetPb2InstallPath(void);
 void StartServerbrowser(void);
@@ -150,7 +161,7 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct);
 void OnMainWindowDestroy(HWND hwnd);
 void OnMainWindowForcejoin(void);
-HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type);
+HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type_string);
 void OnMainWindowGetMinMaxInfo(HWND hwnd, LPMINMAXINFO lpMinMaxInfo);
 void OnMainWindowJoinServer(void);
 void OnMainWindowKickPlayer(void);
@@ -175,6 +186,9 @@ BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 //--------------------------------------------------------------------------------------------------
 // Auto Kick Dialog
 //--------------------------------------------------------------------------------------------------
+void AutoKickEntriesDlgAddOrUpdateEntry(HWND list, const AutoKickEntry* stable_entry_ptr);
+void AutoKickEntriesDlgRefillList(HWND list);
+
 LRESULT CALLBACK AutoKickEntriesDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnAutoKickEntriesDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
@@ -200,7 +214,6 @@ void OnRotationDlgReloadContent(HWND hwnd);
 // Servers Dialog
 //--------------------------------------------------------------------------------------------------
 void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept;
-void ServersDlgRemoveServer(HWND list, const Server* stored_server_ptr) noexcept;
 void ServersDlgFetchHostname(HWND hDlg, Server* server) noexcept;
 
 LRESULT CALLBACK ServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);

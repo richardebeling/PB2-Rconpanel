@@ -18,6 +18,7 @@
 
 #include <thread>
 #include <future>
+#include <charconv>
 
 using namespace std::string_literals;
 using namespace std::chrono_literals;
@@ -29,7 +30,7 @@ std::vector<std::unique_ptr<Server>> g_ServersWithRcon;
 std::vector<std::future<std::string>> g_RconResponses;
 std::vector<pb2lib::Player> g_vPlayers; // players on the current server, shown in the listview
 
-std::vector<AutoKickEntry> 	g_vAutoKickEntries;
+std::vector<std::unique_ptr<AutoKickEntry>> g_vAutoKickEntries;
 
 std::future<std::vector<std::unique_ptr<Server>>> g_ServerlistFuture;
 std::vector<std::unique_ptr<Server>> g_Serverlist;
@@ -39,7 +40,7 @@ AsyncRepeatedTimer g_AutoKickTimer;
 
 pb2lib::AsyncHostnameResolver g_HostnameResolver;
 
-UINT WM_REFETCHPLAYERS, WM_SERVERCHANGED, WM_PLAYERSREADY, WM_SERVERCVARSREADY, WM_RCONRESPONSEREADY, WM_HOSTNAMEREADY, WM_SERVERLISTREADY;
+UINT WM_REFETCHPLAYERS, WM_SERVERCHANGED, WM_PLAYERSREADY, WM_SERVERCVARSREADY, WM_RCONRESPONSEREADY, WM_HOSTNAMEREADY, WM_SERVERLISTREADY, WM_AUTOKICKENTRYADDED;
 
 DeleteObjectRAIIWrapper<HFONT> g_MainFont, g_MonospaceFont;
 
@@ -60,6 +61,60 @@ Server::operator std::string() const {
 
 	return display_hostname + " [" + static_cast<std::string>(address) + "]";
 }
+
+AutoKickEntry AutoKickEntry::from_type_and_value(std::string_view type, std::string_view value) {
+	AutoKickEntry result;
+	if (type == "id" || type == "0") {
+		AutoKickEntry::IdT parsed;
+		std::from_chars(value.data(), value.data() + value.size(), parsed);
+		result.value = parsed;
+	}
+	else if (type == "name" || type == "1") {
+		result.value = AutoKickEntry::NameT(value);
+	}
+	else {
+		assert(false);
+	}
+	return result;
+}
+
+
+
+bool AutoKickEntry::matches(AutoKickEntry::IdT id) const {
+	return std::visit(Overload(
+		[&](const IdT& stored_id) { return stored_id == id; },
+		[](const NameT&) { return false; }
+	), value);
+}
+
+bool AutoKickEntry::matches(AutoKickEntry::NameT name) const {
+	return std::visit(Overload(
+		[](const IdT&) { return false; },
+		[&](const NameT& stored_name) { return strcasecmp(stored_name.c_str(), name.c_str()) == 0; }
+	), value);
+}
+
+std::string AutoKickEntry::type_string() const {
+	return std::visit(Overload(
+		[](const IdT& id) { return "id"; },
+		[](const NameT& name) { return "name"; }
+	), value);
+}
+
+std::string AutoKickEntry::value_string() const {
+	return std::visit(Overload(
+		[](const IdT& id) { return std::to_string(id); },
+		[](const NameT& name) { return name; }
+	), value);
+}
+
+AutoKickEntry::operator std::string() const {
+	return std::visit(Overload(
+		[](const IdT& id) { return "ID: " + std::to_string(id); },
+		[](const NameT& name) { return "Name: " + name; }
+	), value);
+}
+
 
 ServerCvars ServerCvars::from_server(const Server& server, double timeout) {
 	const std::vector<std::string> status_vars = { "mapname", "password", "elim", "timelimit", "maxclients" };
@@ -93,6 +148,7 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 	WM_RCONRESPONSEREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_RCONRESPONSEREADY");
 	WM_HOSTNAMEREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_HOSTNAMEREADY");
 	WM_SERVERLISTREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_SERVERLISTREADY");
+	WM_AUTOKICKENTRYADDED = RegisterWindowMessageOrCriticalError("RCONPANEL_AUTOKICKENTRYADDED");
 	
 	if (OleInitialize(NULL) != S_OK) {
 		HandleCriticalError("OleInitialize returned non-ok status");
@@ -825,21 +881,24 @@ void OnMainWindowBanIP(void)
 	MainWindowSendRcon("sv addip " + player->address->ip);
 }
 
-void OnMainWindowAutoKick(void)
-{
+void OnMainWindowAutoKick(void) {
 	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
 	if (!player) {
 		return;
 	}
 
+	AutoKickEntry entry;
 	if (player->id) {
-		g_vAutoKickEntries.emplace_back(AutoKickEntry::Type::ID, std::to_string(*player->id));
+		entry.value = *player->id;
 		MainWindowWriteConsole("AutoKick entry added for ID " + std::to_string(*player->id));
 	}
 	else {
-		g_vAutoKickEntries.emplace_back(AutoKickEntry::Type::NAME, player->name);
+		entry.value = player->name;
 		MainWindowWriteConsole("AutoKick entry added for name " + player->name);
 	}
+	g_vAutoKickEntries.push_back(std::make_unique<AutoKickEntry>(entry));
+
+	SendMessage(gWindows.hDlgAutoKickEntries, WM_AUTOKICKENTRYADDED, 0, 0);
 }
 
 void OnMainWindowPlayersReady() noexcept {
@@ -1134,7 +1193,7 @@ void OnMainWindowGetMinMaxInfo(HWND hwnd, LPMINMAXINFO lpMinMaxInfo)
 	FORWARD_WM_GETMINMAXINFO(hwnd, lpMinMaxInfo, DefWindowProc);
 }
 
-HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type)
+HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type_string)
 {
 	static DeleteObjectRAIIWrapper<HBRUSH> consoleBackgroundBrush(CreateSolidBrush(RGB(255, 255, 255)));
 
@@ -1587,38 +1646,8 @@ LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPA
 //{-------------------------------------------------------------------------------------------------
 
 void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept {
-	const Server& server = *stable_server_ptr;
-	std::string display_string = static_cast<std::string>(server);
-
-	const auto selected_index = ListBox_GetCurSel(list);
-
-	const auto found_index = ListBox_CustomFindItemData(list, stable_server_ptr);
-	if (found_index >= 0) {
-		std::vector<char> buffer(1ull + ListBox_GetTextLen(list, found_index));
-		ListBox_GetText(list, found_index, buffer.data());
-		if (std::string_view(buffer.data(), buffer.size() - 1) == display_string) {
-			return;
-		}
-		ListBox_DeleteString(list, found_index);
-	}
-
-	const auto created_index = ListBox_AddString(list, display_string.c_str());
-	ListBox_SetItemData(list, created_index, stable_server_ptr);
-
-	if (selected_index != LB_ERR && selected_index == found_index) {
-		ListBox_SetCurSel(list, created_index);
-	}
-}
-
-void ServersDlgRemoveServer(HWND list, const Server* stored_server_ptr) noexcept {
-	const auto selected_index = ListBox_GetCurSel(list);
-	const auto found_index = ListBox_CustomFindItemData(list, stored_server_ptr);
-	ListBox_DeleteString(list, found_index);
-
-	if (found_index == selected_index) {
-		const auto new_index = min(ListBox_GetCount(list) - 1, selected_index);
-		ListBox_SetCurSel(list, new_index);
-	}
+	std::string display_string = static_cast<std::string>(*stable_server_ptr);
+	ListBox_AddOrUpdateString(list, display_string, stable_server_ptr);
 }
 
 void ServersDlgFetchHostname(HWND hDlg, Server* server) noexcept {
@@ -1656,6 +1685,9 @@ BOOL OnServersDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 		PostMessage(hwnd, WM_SERVERLISTREADY, 0, 0);
 	}, std::move(promise));
 	thread.detach();
+
+	EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONREMOVE), FALSE);
+	EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONSAVE), FALSE);
 
 	return TRUE;
 }
@@ -1757,7 +1789,9 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			g_ServersWithRcon.erase(it);
 
 			MainWindowRemoveOwnedServer(stored_server);
-			ServersDlgRemoveServer(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), stored_server);
+
+			const auto found_index = ListBox_CustomFindItemData(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), stored_server);
+			ListBox_CustomDeleteString(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), found_index);
 
 			return;
 		}
@@ -1873,140 +1907,109 @@ LRESULT CALLBACK ForcejoinDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 // Callback AutoKick Entries Dialog                                                                |
 //{-------------------------------------------------------------------------------------------------
 
-BOOL OnAutoKickEntriesDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam)
-{
-	for (size_t i = 0; i<g_vAutoKickEntries.size(); i++) {
-		auto index = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_ADDSTRING, 0, (LPARAM) g_vAutoKickEntries[i].sText.c_str());
-		SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_SETITEMDATA, index, i);
+
+void AutoKickEntriesDlgAddOrUpdateEntry(HWND list, const AutoKickEntry* stable_entry_ptr) {
+	std::string display_string = static_cast<std::string>(*stable_entry_ptr);
+	ListBox_AddOrUpdateString(list, display_string, stable_entry_ptr);
+}
+
+void AutoKickEntriesDlgRefillList(HWND list) {
+	for (auto& entry : g_vAutoKickEntries) {
+		AutoKickEntriesDlgAddOrUpdateEntry(list, entry.get());
 	}
-	SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), BM_SETCHECK, BST_CHECKED, 1);
+}
+
+BOOL OnAutoKickEntriesDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
+	AutoKickEntriesDlgRefillList(GetDlgItem(hwnd, IDC_AUTOKICK_LIST));
+	Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), true);
 	return TRUE;
 }
 
 void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
-	auto refillListbox = [&]() {
-		SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_RESETCONTENT, 0, 0);
-		for (size_t i = 0; i < g_vAutoKickEntries.size(); i++) {
-			auto index = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_ADDSTRING, 0, (LPARAM)g_vAutoKickEntries[i].sText.c_str());
-			SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_SETITEMDATA, index, i);
+	auto entry_from_inputs = [&]() {
+		std::vector<char> buffer(static_cast<size_t>(GetWindowTextLength(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT))) + 1);
+		GetWindowText(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), buffer.data(), static_cast<int>(buffer.size()));
+		std::string text = buffer.data();
+
+		AutoKickEntry entry;
+		if (IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIOID)) {
+			entry.value = atoi(text.c_str());
 		}
+		else {
+			assert(IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIONAME));
+			entry.value = text;
+		}
+		return entry;
 	};
 
 	switch(id) {
-		case IDC_AUTOKICK_BUTTONADD:
-		{
-			// TODO: Select
-			AutoKickEntry entry;
-			std::vector<char> buffer(static_cast<size_t>(GetWindowTextLength(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT))) + 1);
-
-			SendMessage (GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), WM_GETTEXT, buffer.size(), (LPARAM) buffer.data()); //set text
-			entry.sText = buffer.data();
-
-			if (IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIOID)) //Set ID / NAME flag
-			{
-				std::vector<char> compareBuffer(buffer.size());
-				sprintf(compareBuffer.data(), "%d", atoi(buffer.data())); //check if it's a valid ID
-				
-				if (strcmp (buffer.data(), compareBuffer.data()) != 0) {
-					MessageBox(gWindows.hWinMain, "The ID you have entered is not valid.", "Error: Invalid ID", MB_OK | MB_ICONERROR);
-					return ;
-				}
-				entry.tType = AutoKickEntry::Type::ID;
-			}
-			else {
-				assert(IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIONAME));
-				entry.tType = AutoKickEntry::Type::NAME;
-			}
-
-			g_vAutoKickEntries.push_back(entry);
-
-			refillListbox();
+		case IDC_AUTOKICK_BUTTONADD: {
+			g_vAutoKickEntries.push_back(std::make_unique<AutoKickEntry>(entry_from_inputs()));
+			AutoKickEntriesDlgAddOrUpdateEntry(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), g_vAutoKickEntries.back().get());
 			return;
 		}
 
-		case IDC_AUTOKICK_BUTTONREMOVE:
-		{
-			// TODO: Restore selection
-			auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETITEMDATA,
-						SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETCURSEL, 0, 0),
-						0);
-			if (selectedPlayerIndex == LB_ERR) return;
+		case IDC_AUTOKICK_BUTTONREMOVE: {
+			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_AUTOKICK_LIST));
+			if (selected_index == LB_ERR)
+				return; // TODO: Disable button if nothing is selected. Probably also disable on edit?
 
-			g_vAutoKickEntries.erase(g_vAutoKickEntries.begin() + selectedPlayerIndex); //delete the entry
+			AutoKickEntry* selected_entry = (AutoKickEntry*)ListBox_GetItemData(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), selected_index);
 
-			refillListbox();
+			auto it = std::ranges::find_if(g_vAutoKickEntries, [selected_entry](auto&& element) {return element.get() == selected_entry; });
+			assert(it != g_vAutoKickEntries.end());
+			g_vAutoKickEntries.erase(it);
+
+			ListBox_CustomDeleteString(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), selected_index);
 			return;
 		}
 		
-		case IDC_AUTOKICK_BUTTONOVERWRITE:
-		{
-			auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETITEMDATA,
-						SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETCURSEL, 0, 0),
-						0);
-			if (selectedPlayerIndex == LB_ERR) return;
+		case IDC_AUTOKICK_BUTTONOVERWRITE: {
+			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_AUTOKICK_LIST));
+			if (selected_index == LB_ERR)
+				return;
 
-			int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT)) + 1;
-			std::vector<char> buffer(iBufferSize);
-			SendMessage (GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), WM_GETTEXT, iBufferSize, (LPARAM) buffer.data());
-			g_vAutoKickEntries[selectedPlayerIndex].sText = buffer.data();
-
-			if (IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIOID))
-			{
-				std::vector<char> comparisonBuffer(buffer.size());
-				sprintf(comparisonBuffer.data(), "%d", atoi(buffer.data())); //check if it's a valid ID
-				if (strcmp (buffer.data(), comparisonBuffer.data()) != 0) {
-					MessageBoxA(gWindows.hWinMain, "The ID you have entered is not valid.", "Error: Invalid ID", MB_OK | MB_ICONERROR);
+			AutoKickEntry* selected_entry = (AutoKickEntry*)ListBox_GetItemData(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), selected_index);
+			*selected_entry = entry_from_inputs();
+			AutoKickEntriesDlgAddOrUpdateEntry(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), selected_entry);
+			return;
+		}
+		
+		case IDC_AUTOKICK_LIST: {
+			if (codeNotify == LBN_SELCHANGE) {
+				auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_AUTOKICK_LIST));
+				if (selected_index == LB_ERR)
 					return;
-				}
-				g_vAutoKickEntries[selectedPlayerIndex].tType = AutoKickEntry::Type::ID;
-			}
-			else {
-				assert(IsDlgButtonChecked(hwnd, IDC_AUTOKICK_RADIONAME));
-				g_vAutoKickEntries[selectedPlayerIndex].tType = AutoKickEntry::Type::NAME;
-			}
+				AutoKickEntry* selected_entry = (AutoKickEntry*)ListBox_GetItemData(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), selected_index);
 
-			refillListbox();
-			return;
-		}
-		
-		case IDC_AUTOKICK_LIST:
-		{
-			if (codeNotify == LBN_SELCHANGE)
-			{
-				auto selectedPlayerIndex = SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETITEMDATA,
-						SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), LB_GETCURSEL, 0, 0),
-						0);
-				if (selectedPlayerIndex == LB_ERR) return;
-				SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), WM_SETTEXT,  0, (LPARAM) g_vAutoKickEntries[selectedPlayerIndex].sText.c_str());
+				Edit_SetText(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), selected_entry->value_string().c_str());
 				
-				if (g_vAutoKickEntries[selectedPlayerIndex].tType == AutoKickEntry::Type::ID)
-				{
-					SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), BM_SETCHECK, BST_CHECKED, 1);
-					SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIONAME), BM_SETCHECK, BST_UNCHECKED, 1);
-				}
-				else
-				{
-					SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIONAME), BM_SETCHECK, BST_CHECKED, 1);
-					SendMessage(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), BM_SETCHECK, BST_UNCHECKED, 1);
-				}
+				Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), std::holds_alternative<AutoKickEntry::IdT>(selected_entry->value));
+				Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIONAME), std::holds_alternative<AutoKickEntry::NameT>(selected_entry->value));
 			}
 			return;
 		}
 		
 		case IDCANCEL: {
 			gWindows.hDlgAutoKickEntries = NULL;
-			EndDialog(hwnd, 1);
+			EndDialog(hwnd, 0);
 			return;
 		}
 	}
 }
 
-LRESULT CALLBACK AutoKickEntriesDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK AutoKickEntriesDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
+	// TODO: Make input number-only when ID is selected?
 	switch(Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnAutoKickEntriesDlgInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnAutoKickEntriesDlgCommand);
 	}
+
+	if (Msg == WM_AUTOKICKENTRYADDED) {
+		AutoKickEntriesDlgRefillList(GetDlgItem(hWndDlg, IDC_AUTOKICK_LIST));
+		return TRUE;
+	}
+
 	return FALSE;
 }
 
@@ -2232,6 +2235,38 @@ int ListBox_CustomFindItemData(HWND hList, const void* itemData) noexcept {
 	return found_index;
 }
 
+void ListBox_AddOrUpdateString(HWND list, const std::string& item_text, const void* item_data) {
+	const auto selected_index = ListBox_GetCurSel(list);
+	const auto found_index = ListBox_CustomFindItemData(list, item_data);
+
+	if (found_index >= 0) {
+		std::vector<char> buffer(1ull + ListBox_GetTextLen(list, found_index));
+		ListBox_GetText(list, found_index, buffer.data());
+		if (std::string_view(buffer.data(), buffer.size() - 1) == item_text) {
+			return;
+		}
+		ListBox_DeleteString(list, found_index);
+	}
+
+	const auto created_index = ListBox_AddString(list, item_text.c_str());
+	ListBox_SetItemData(list, created_index, item_data);
+
+	if (selected_index != LB_ERR && selected_index == found_index) {
+		ListBox_SetCurSel(list, created_index);
+	}
+}
+
+void ListBox_CustomDeleteString(HWND list, int index) noexcept {
+	const auto selected_index = ListBox_GetCurSel(list);
+	ListBox_DeleteString(list, index);
+
+	if (index == selected_index) {
+		const auto new_index = min(ListBox_GetCount(list) - 1, selected_index);
+		ListBox_SetCurSel(list, new_index);
+		SendMessage(GetParent(list), WM_COMMAND, MAKEWPARAM(GetWindowLong(list, GWL_ID), LBN_SELCHANGE), (LPARAM)list);
+	}
+}
+
 void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3)
 {
 	*pb0 = *pb1 = *pb2 = *pb3 = NULL;
@@ -2291,8 +2326,6 @@ void StartServerbrowser(void)
 }
 
 void AutoKickTimerFunction() noexcept {
-	std::vector <AutoKickEntry> autokick_entries = g_vAutoKickEntries;
-
 	// TODO: Put in MainWindowLogPb2Exceptions scope
 
 	// todo: mutex -- currently race condition
@@ -2313,12 +2346,11 @@ void AutoKickTimerFunction() noexcept {
 				continue;
 			}
 
-			auto autokick_it = std::ranges::find_if(autokick_entries, [&](const AutoKickEntry& entry) {
-				return (entry.tType == AutoKickEntry::Type::NAME && strcasecmp(player.name.c_str(), entry.sText.c_str()) == 0)
-					|| (entry.tType == AutoKickEntry::Type::ID && player.id == std::stoi(entry.sText));
+			auto autokick_it = std::ranges::find_if(g_vAutoKickEntries, [&](const auto& entry) {
+				return entry->matches(player.id.value_or(0)) || entry->matches(player.name);
 			});
 
-			if (autokick_it == autokick_entries.end()) {
+			if (autokick_it == g_vAutoKickEntries.end()) {
 				continue;
 			}
 
@@ -2416,25 +2448,23 @@ int LoadConfig() // loads the servers and settings from the config file
 	}
 
 	GetPrivateProfileString("bans", "count", "0", szCount, sizeof(szCount), path.c_str());
-	for (int i = 0; i < atoi(szCount); i++)
-	{
-		char szKeyBuffer[512];
-		sprintf(szKeyBuffer, "%d", i);
-		GetPrivateProfileString("bans", szKeyBuffer, "", szReadBuffer, sizeof(szReadBuffer), path.c_str());
+	for (int i = 0; i < atoi(szCount); i++) {
+		std::string key_buffer = std::to_string(i);
+		GetPrivateProfileString("bans", key_buffer.c_str(), "", szReadBuffer, sizeof(szReadBuffer), path.c_str());
 		if (strcmp(szReadBuffer, "") == 0) {
 			return -2;
 		}
+		const std::string value = szReadBuffer;
 
-		AutoKickEntry ban;
-		ban.sText = szReadBuffer;
-
-		sprintf(szKeyBuffer, "%dtype", i);
-		GetPrivateProfileString("bans", szKeyBuffer, "-1", szReadBuffer, 6, path.c_str());
+		key_buffer = std::to_string(i) + "type";
+		GetPrivateProfileString("bans", key_buffer.c_str(), "-1", szReadBuffer, sizeof(szReadBuffer), path.c_str());
 		if (strcmp(szReadBuffer, "-1") == 0) {
 			return -2;
 		}
-		ban.tType = (AutoKickEntry::Type)atoi(szReadBuffer);
-		g_vAutoKickEntries.push_back(ban);
+		const std::string type = szReadBuffer;
+
+		AutoKickEntry entry = AutoKickEntry::from_type_and_value(type, value);
+		g_vAutoKickEntries.push_back(std::make_unique<AutoKickEntry>(entry));
 	}
 	return 1;
 }
@@ -2494,10 +2524,9 @@ void SaveConfig() // Saves all servers and settings in the config file
 	for (unsigned int i = 0; i < g_vAutoKickEntries.size(); i++)
 	{
 		sKeyBuffer = std::to_string(i);
-		WritePrivateProfileString("bans", sKeyBuffer.c_str(), g_vAutoKickEntries[i].sText.c_str(), path.c_str());
+		WritePrivateProfileString("bans", sKeyBuffer.c_str(), g_vAutoKickEntries[i]->value_string().c_str(), path.c_str());
 
 		sKeyBuffer = std::to_string(i) + "type";
-		sWriteBuffer = std::to_string(static_cast<int>(g_vAutoKickEntries[i].tType));
-		WritePrivateProfileString("bans", sKeyBuffer.c_str(), sWriteBuffer.c_str(), path.c_str());
+		WritePrivateProfileString("bans", sKeyBuffer.c_str(), g_vAutoKickEntries[i]->type_string().c_str(), path.c_str());
 	}
 }
