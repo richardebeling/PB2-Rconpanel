@@ -130,11 +130,28 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 
 	ShowWindow(gWindows.hWinMain, nCmdShow);
 
-	MSG messages;
-	while (GetMessage(&messages, NULL, 0, 0))
-	{
-		TranslateMessage(&messages);
-		DispatchMessage(&messages);
+	MSG message;
+	while (GetMessage(&message, NULL, 0, 0)) {
+		// Tried playing with IsDialogMessage for the main window here to allow for nice keyboard navigation
+		// * It takes the SELENDOK of the rcon input and tries to submit using the default push button.
+		//     Correctly maintaining the default push button (none or the "Send" button) seems complicated.
+		//     DM_SETDEFID on focus/unfocus of the rcon input didn't work.
+		// * Pressing the alt-key will show the mnemonics / keyboard shortcuts for all buttons, but they will never hide again
+		//	   Manually hiding them correctly doesn't seem to be easy (tried WM_CHANGEUISTATE, but they were only hidden after a successive draw?)
+		//     Especially annoying: Alt-tab will trigger them
+		// * Mnemonics will only work if some child window is selected, which isn't the case after startup or after alt-tabbing out and back in.
+		// See https://devblogs.microsoft.com/oldnewthing/20031021-00/?p=42083
+		// TODO: Maybe check out how other native WinAPI guis handle this.
+
+		if (IsDialogMessage(gWindows.hDlgAutoKickEntries, &message)) continue;
+		if (IsDialogMessage(gWindows.hDlgBannedIps, &message)) continue;
+		if (IsDialogMessage(gWindows.hDlgRconCommands, &message)) continue;
+		if (IsDialogMessage(gWindows.hDlgRotation, &message)) continue;
+		if (IsDialogMessage(gWindows.hDlgServers, &message)) continue;
+		if (IsDialogMessage(gWindows.hDlgSettings, &message)) continue;
+
+		TranslateMessage(&message);
+		DispatchMessage(&message);
 	}
 	return 0;
 }
@@ -1133,12 +1150,12 @@ HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type)
 LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message) {
-		HANDLE_MSG(hwnd, WM_CREATE,         OnMainWindowCreate);
-		HANDLE_MSG(hwnd, WM_DESTROY,        OnMainWindowDestroy);
-		HANDLE_MSG(hwnd, WM_COMMAND,        OnMainWindowCommand);
-		HANDLE_MSG(hwnd, WM_NOTIFY,         OnMainWindowNotify);
-		HANDLE_MSG(hwnd, WM_SIZE,           OnMainWindowSize);
-		HANDLE_MSG(hwnd, WM_GETMINMAXINFO,  OnMainWindowGetMinMaxInfo);
+		HANDLE_MSG(hwnd, WM_CREATE, OnMainWindowCreate);
+		HANDLE_MSG(hwnd, WM_DESTROY, OnMainWindowDestroy);
+		HANDLE_MSG(hwnd, WM_COMMAND, OnMainWindowCommand);
+		HANDLE_MSG(hwnd, WM_NOTIFY, OnMainWindowNotify);
+		HANDLE_MSG(hwnd, WM_SIZE, OnMainWindowSize);
+		HANDLE_MSG(hwnd, WM_GETMINMAXINFO, OnMainWindowGetMinMaxInfo);
 		HANDLE_MSG(hwnd, WM_CTLCOLORSTATIC, OnMainWindowCtlColorStatic);
 	}
 

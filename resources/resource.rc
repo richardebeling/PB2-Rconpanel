@@ -111,7 +111,7 @@ FONT 9, "Segoe UI"
     EDITTEXT        IDC_ROTATION_EDITMAP, 14, 215, 143, 12, ES_AUTOHSCROLL
     PUSHBUTTON      "&Add", IDC_ROTATION_BUTTONADD, 31, 229, 50, 12
     PUSHBUTTON      "&Remove", IDC_ROTATION_BUTTONREMOVE, 86, 229, 50, 12
-    PUSHBUTTON      "Remove all maps", IDC_ROTATION_BUTTONCLEAR, 41, 246, 85, 12
+    PUSHBUTTON      "Re&move all maps", IDC_ROTATION_BUTTONCLEAR, 41, 246, 85, 12
     GROUPBOX        "Mapshot", IDC_STATIC, 172, 7, 199, 171
     LTEXT           "", IDC_ROTATION_MAPSHOT, 178, 18, 187, 156
     GROUPBOX        "Rotation file", IDC_STATIC, 172, 185, 199, 45
@@ -144,8 +144,8 @@ FONT 9, "Segoe UI"
     AUTOCHECKBOX    "Color the row backgrounds in the player's team colors.", IDC_SETTINGS_CHECKCOLORPLAYERS, 14, 118, 253, 8
     AUTOCHECKBOX    "Color the pings from green to red", IDC_SETTINGS_CHECKCOLORPINGS, 14, 134, 253, 8
     AUTOCHECKBOX    "Don't show the lower part of the GUI (manual rcon)", IDC_SETTINGS_CHECKDISABLECONSOLE, 14, 150, 253, 8
-    PUSHBUTTON      "Cancel", IDCANCEL, 168, 172, 50, 12
-    DEFPUSHBUTTON   "OK", IDC_SETTINGS_BUTTONOK, 223, 172, 50, 12
+    PUSHBUTTON      "&Cancel", IDCANCEL, 168, 172, 50, 12
+    DEFPUSHBUTTON   "&OK", IDC_SETTINGS_BUTTONOK, 223, 172, 50, 12
 }
 
 // Text is set in OnRCONCommandsInitDialog because the microsoft .rc compiler truncates text here.
@@ -166,8 +166,8 @@ FONT 9, "Segoe UI"
     CTEXT           "Maximum allowed ping (0 = unlimited):", IDC_STATIC, 7, 10, 159, 8, SS_CENTER
     EDITTEXT        IDC_SP_EDIT, 41, 24, 40, 12, ES_NUMBER
     LTEXT           "milliseconds", IDC_STATIC, 86, 26, 46, 8
-    PUSHBUTTON      "Cancel", IDCANCEL, 34, 46, 50, 12
-    DEFPUSHBUTTON   "OK", IDC_SP_BUTTONOK, 89, 46, 50, 12
+    PUSHBUTTON      "&Cancel", IDCANCEL, 34, 46, 50, 12
+    DEFPUSHBUTTON   "&OK", IDC_SP_BUTTONOK, 89, 46, 50, 12
 }
 
 VS_VERSION_INFO VERSIONINFO
