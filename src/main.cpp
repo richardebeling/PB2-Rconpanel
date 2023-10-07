@@ -537,14 +537,14 @@ void MainWindowWriteConsole(const std::string_view str) // prints text to gWindo
 	formatted = std::regex_replace(formatted, std::regex{"\n"}, "\r\n");
 
 	// add linebreak (if its not the first line) and the the text to the end of gWindows.hEditConsole
-	SendMessage(gWindows.hEditConsole, EM_SETSEL, -2, -2);
+	Edit_SetSel(gWindows.hEditConsole, -2, -2);
 	DWORD start = 0, end = 0;
 	SendMessage(gWindows.hEditConsole, EM_GETSEL, (WPARAM)&start, (LPARAM)&end);
 	if (start != 0)
-		SendMessage(gWindows.hEditConsole, EM_REPLACESEL, 0, (LPARAM)"\r\n");
+		Edit_ReplaceSel(gWindows.hEditConsole, "\r\n");
 
 	// Add new text
-	SendMessage(gWindows.hEditConsole, EM_REPLACESEL, 0, (LPARAM)formatted.c_str());
+	Edit_ReplaceSel(gWindows.hEditConsole, formatted.c_str());
 
 	//remove first line until linecount is equal to gSettings.iMaxConsoleLineCount
 	if (gSettings.bLimitConsoleLineCount)
@@ -711,7 +711,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	EnumChildWindows(hwnd, EnumWindowsSetFontCallback, (LPARAM)(HFONT)g_MainFont);
 	SendMessage(gWindows.hEditConsole, WM_SETFONT, (WPARAM)(HFONT)g_MonospaceFont, true);
 
-	SendMessage(gWindows.hEditConsole, EM_SETLIMITTEXT, WPARAM(0), LPARAM(0));
+	Edit_LimitText(gWindows.hEditConsole, 0);
 
 	LVCOLUMN lvc = { 0 };
 	std::string buffer;
@@ -734,7 +734,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 		lvc.pszText = const_cast<char*>(buffer.c_str());
 		ListView_InsertColumn(gWindows.hListPlayers, i, &lvc);
 	}
-	SendMessage(gWindows.hListPlayers, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+	ListView_SetExtendedListViewStyle(gWindows.hListPlayers, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
 	int retVal = LoadConfig();
 	
@@ -1383,7 +1383,7 @@ void LoadRotationToListbox(HWND hListBox) {
 		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv maplist", gSettings.fTimeoutSecs);
 		const std::regex rx(R"(^\d+ (.*?)$)");
 
-		SendMessage(hListBox, LB_RESETCONTENT, 0, 0);
+		ListBox_ResetContent(hListBox);
 		for (auto it = std::sregex_iterator(response.begin(), response.end(), rx); it != std::sregex_iterator{}; ++it){
 			const std::smatch match = *it;
 			const std::string map = match[1];
@@ -1525,15 +1525,14 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		}
 		
 		case IDC_ROTATION_LIST: {
-			if (codeNotify == LBN_SELCHANGE)
-			{
-				auto iCurSel = SendMessage(GetDlgItem(hwnd, IDC_ROTATION_LIST), LB_GETCURSEL, 0, 0);
-				if (iCurSel == LB_ERR) return;
+			if (codeNotify == LBN_SELCHANGE) {
+				const auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_ROTATION_LIST));
+				if (selected_index == LB_ERR)
+					return;
 
-				auto iBufferSize = SendMessage(GetDlgItem(hwnd, IDC_ROTATION_LIST), LB_GETTEXTLEN, iCurSel, 0) + 1;
-				std::vector<char> mapnameBuffer(iBufferSize);
-				SendMessage(GetDlgItem(hwnd, IDC_ROTATION_LIST), LB_GETTEXT, iCurSel, (LPARAM) mapnameBuffer.data());
-				SetDlgItemText(hwnd, IDC_ROTATION_EDITMAP, mapnameBuffer.data());
+				std::vector<char> buffer(1ull + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_ROTATION_LIST), selected_index));
+				ListBox_GetText(GetDlgItem(hwnd, IDC_ROTATION_LIST), selected_index, buffer.data());
+				Edit_SetText(GetDlgItem(hwnd, IDC_ROTATION_EDITMAP), buffer.data());
 			}
 			return;
 		}
@@ -1735,7 +1734,7 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 
 		std::vector<char> buffer;
 		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT)));
-		SendMessage(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
+		Edit_GetText(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT), buffer.data(), static_cast<int>(buffer.size()));
 		server.address.port = atoi(buffer.data());
 
 		if (dwIP == 0 || server.address.port == 0) {
@@ -1746,7 +1745,7 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		}
 
 		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SERVERS_EDITPW)));
-		SendMessage(GetDlgItem(hwnd, IDC_SERVERS_EDITPW), WM_GETTEXT, buffer.size(), (LPARAM)buffer.data());
+		Edit_GetText(GetDlgItem(hwnd, IDC_SERVERS_EDITPW), buffer.data(), static_cast<int>(buffer.size()));
 		server.rcon_password = buffer.data();
 		if (server.rcon_password.empty()) {
 			balloon_tip.pszText = L"Please enter the rcon_password of the server";
@@ -1779,7 +1778,8 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		}
 		case IDC_SERVERS_BUTTONREMOVE: {
 			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT));
-			if (selected_index == LB_ERR) return;
+			if (selected_index == LB_ERR)
+				return;
 
 			const Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), selected_index));
 			auto it = std::ranges::find_if(g_ServersWithRcon, [&](const auto& unique_ptr) { return unique_ptr.get() == stored_server; });
@@ -1797,7 +1797,8 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		}
 		case IDC_SERVERS_BUTTONSAVE: {
 			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT));
-			if (selected_index == LB_ERR) return;
+			if (selected_index == LB_ERR)
+				return;
 			Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), selected_index));
 
 			std::optional<Server> input_data_server = server_from_inputs();
@@ -1815,7 +1816,8 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	}
 	if (codeNotify == LBN_SELCHANGE) {
 		auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, id));
-		if (selected_index == LB_ERR) return;
+		if (selected_index == LB_ERR)
+			return;
 		Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, id), selected_index));
 
 		BYTE b0, b1, b2, b3;
@@ -1823,8 +1825,8 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 
 #pragma warning (suppress : 26451)
 		SendMessage(GetDlgItem(hwnd, IDC_SERVERS_EDITIP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
-		SetWindowText(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT), std::to_string(stored_server->address.port).c_str());
-		SetWindowText(GetDlgItem(hwnd, IDC_SERVERS_EDITPW), stored_server->rcon_password.c_str());
+		Edit_SetText(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT), std::to_string(stored_server->address.port).c_str());
+		Edit_SetText(GetDlgItem(hwnd, IDC_SERVERS_EDITPW), stored_server->rcon_password.c_str());
 
 		if (id == IDC_SERVERS_LISTLEFT) {
 			ListBox_SetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), -1);
@@ -2199,10 +2201,9 @@ void Edit_ReduceLines(HWND hEdit, int iLines)
 	if (iLines <= 0)
 		return;
 	
-	while (SendMessage(hEdit, EM_GETLINECOUNT, 0, 0) > iLines)
-	{
-		SendMessage(hEdit, EM_SETSEL, 0, 1 + SendMessage(hEdit, EM_LINELENGTH, 0, 0));
-		SendMessage(hEdit, EM_REPLACESEL, 0, (LPARAM) "");
+	while (Edit_GetLineCount(hEdit) > iLines) {
+		Edit_SetSel(hEdit, 0, 1 + Edit_LineLength(hEdit, 0));
+		Edit_ReplaceSel(hEdit, "");
 	}
 }
 
