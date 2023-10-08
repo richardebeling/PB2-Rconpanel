@@ -1439,7 +1439,6 @@ void OnRotationDlgPaint(HWND hwnd) {
 	PAINTSTRUCT ps;
 	HDC hdc = BeginPaint(GetDlgItem(hwnd, IDC_ROTATION_MAPSHOT), &ps);
 	const RECT ui_rect = ps.rcPaint;
-	FillRect(hdc, &ui_rect, (HBRUSH) (COLOR_WINDOW));
 
 	const int ui_width = ui_rect.right - ui_rect.left;
 	const int ui_height = ui_rect.bottom - ui_rect.top;
@@ -1460,7 +1459,19 @@ void OnRotationDlgPaint(HWND hwnd) {
 		const int offset_y = (ui_height - draw_height) / 2;
 
 		Gdiplus::Graphics graphics(hdc);
+		auto win_color = GetSysColor(COLOR_BTNFACE);
+		Gdiplus::Color gdi_color(GetRValue(win_color), GetGValue(win_color), GetBValue(win_color));
+		Gdiplus::SolidBrush brush(gdi_color);
 		graphics.DrawImage(g_pMapshotBitmap.get(), offset_x, offset_y, draw_width, draw_height);
+
+		graphics.FillRectangle(&brush, 0, 0, draw_width, offset_y);  // top bar
+		graphics.FillRectangle(&brush, 0, offset_y + draw_height, draw_width, offset_y + 1);  // bottom bar
+
+		graphics.FillRectangle(&brush, 0, 0, offset_x, ui_height); // left bar
+		graphics.FillRectangle(&brush, offset_y + draw_width, 0, offset_x + 100, ui_height); // right bar
+	}
+	else {
+		FillRect(hdc, &ui_rect, (HBRUSH)(COLOR_WINDOW));
 	}
 
 	EndPaint(GetDlgItem(hwnd, IDC_ROTATION_MAPSHOT), &ps);
