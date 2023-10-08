@@ -1505,6 +1505,8 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		return executeSubcommandOnSelectedServer(command);
 	};
 
+	// TODO: Add map on "return"
+
 	switch (id) {
 		case IDC_ROTATION_BUTTONADD: {
 			// TODO: Update selection
@@ -1553,8 +1555,11 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		case IDC_ROTATION_LIST: {
 			if (codeNotify == LBN_SELCHANGE) {
 				const auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_ROTATION_LIST));
-				if (selected_index == LB_ERR)
+				if (selected_index == LB_ERR) {
+					EnableWindow(GetDlgItem(hwnd, IDC_ROTATION_BUTTONREMOVE), false);
 					return;
+				}
+				EnableWindow(GetDlgItem(hwnd, IDC_ROTATION_BUTTONREMOVE), true);
 
 				std::vector<char> buffer(1ull + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_ROTATION_LIST), selected_index));
 				ListBox_GetText(GetDlgItem(hwnd, IDC_ROTATION_LIST), selected_index, buffer.data());
