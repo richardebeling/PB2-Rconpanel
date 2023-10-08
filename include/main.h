@@ -122,6 +122,8 @@ void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2,
 
 DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC hDC, int side_length, DWORD color);
 BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font);
+void AddStyle(HWND hwnd, LONG style);
+void RemoveStyle(HWND hwnd, LONG style);
 void Edit_ReduceLines(HWND hEdit, int iLines);
 void Edit_ScrollToEnd(HWND hEdit);
 // original [List|Combo]Box_FindItemData doesn't find item data but item string.
@@ -206,6 +208,7 @@ void OnBannedIPsDlgReloadContent(HWND hwnd);
 // Rotation Dialog
 //--------------------------------------------------------------------------------------------------
 LRESULT CALLBACK RotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
+int OnRotationDlgVkeyToItem(HWND hwnd, UINT vk, HWND hwndListbox, int iCaret);
 void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnRotationDlgInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam);
 void OnRotationDlgPaint(HWND hwnd);

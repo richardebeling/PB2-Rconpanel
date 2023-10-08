@@ -1372,13 +1372,6 @@ LRESULT CALLBACK SettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 //{-------------------------------------------------------------------------------------------------
 
 void LoadRotationToListbox(HWND hListBox) {
-	auto selected_index = ListBox_GetCurSel(hListBox);
-	std::vector<char> selected_map_buffer;
-	if (selected_index >= 0) {
-		selected_map_buffer.resize(1ull + ListBox_GetTextLen(hListBox, selected_index));
-		ListBox_GetText(hListBox, selected_index, selected_map_buffer.data());
-	}
-
 	auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
@@ -1394,21 +1387,15 @@ void LoadRotationToListbox(HWND hListBox) {
 			const std::string map = match[1];
 			ListBox_AddString(hListBox, map.c_str());
 		}
-
-		if (selected_index >= 0) {
-			auto new_index = ListBox_FindString(hListBox, 0, selected_map_buffer.data());
-			if (new_index < 0) {
-				new_index = min(selected_index, ListBox_GetCount(hListBox) - 1);
-			}
-			ListBox_SetCurSel(hListBox, new_index);
-			ListBox_SendSelChange(hListBox);
-		}
 	}, "loading rotation");
 }
 
 BOOL OnRotationDlgInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam) {
 	OnRotationDlgReloadContent(hwnd);
 	ListBox_SendSelChange(GetDlgItem(hwnd, IDC_ROTATION_LIST));
+
+	// Focus the map edit field
+	PostMessage(hwnd, WM_NEXTDLGCTL, (WPARAM)GetDlgItem(hwnd, IDC_ROTATION_EDITMAP), TRUE);
 	return TRUE;
 }
 
@@ -1479,6 +1466,9 @@ void OnRotationDlgPaint(HWND hwnd) {
 }
 
 void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+	HWND hList = GetDlgItem(hwnd, IDC_ROTATION_LIST);
+	HWND hEdit = GetDlgItem(hwnd, IDC_ROTATION_EDITMAP);
+
 	auto executeSubcommandOnSelectedServer = [&](std::string subcommand) {
 		auto* server = MainWindowGetSelectedServerOrLoggedNull();
 		if (!server) {
@@ -1492,36 +1482,47 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			answer = pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
 		}, "changing rotation");
 
-		LoadRotationToListbox(GetDlgItem(hwnd, IDC_ROTATION_LIST));
+		LoadRotationToListbox(hList);
 		return answer;
 	};
 
-	auto executeMapSubcommandOnSelectedServer = [&](std::string mapSubcommand) {
-		auto iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITMAP)) + 1;
-		std::vector<char> buffer(iBufferSize);
-		GetDlgItemText(hwnd, IDC_ROTATION_EDITMAP, buffer.data(), iBufferSize);
-
-		std::string command = mapSubcommand + " " + buffer.data();
-		return executeSubcommandOnSelectedServer(command);
+	auto update_button_enabled = [&]() {
+		const auto selected_index = ListBox_GetCurSel(hList);
+		EnableWindow(GetDlgItem(hwnd, IDC_ROTATION_BUTTONREMOVE), selected_index != LB_ERR);
 	};
-
-	// TODO: Add map on "return"
 
 	switch (id) {
 		case IDC_ROTATION_BUTTONADD: {
-			// TODO: Update selection
-			executeMapSubcommandOnSelectedServer("add");
+			std::vector<char> buffer(1ull + Edit_GetTextLength(hEdit));
+			Edit_GetText(hEdit, buffer.data(), static_cast<int>(buffer.size()));
+			executeSubcommandOnSelectedServer("add "s + buffer.data());
+
+			auto index = ListBox_FindStringExact(hList, 0, buffer.data());
+			ListBox_SetCurSel(hList, index);
+			if (index >= 0) {
+				Edit_SetText(hEdit, "");
+			}
+			update_button_enabled();
+			SetFocus(hEdit);
+
 			return;
 		}
 	
 		case IDC_ROTATION_BUTTONREMOVE: {
-			// TODO: Update selection
-			executeMapSubcommandOnSelectedServer("remove");
+			auto selected_index = ListBox_GetCurSel(hList);
+
+			std::vector<char> buffer(1ull + Edit_GetTextLength(hEdit));
+			Edit_GetText(hEdit, buffer.data(), static_cast<int>(buffer.size()));
+			executeSubcommandOnSelectedServer("remove "s + buffer.data());
+
+			ListBox_SetCurSel(hList, min(selected_index, ListBox_GetCount(hList) - 1));
+			ListBox_SendSelChange(hList);
 			return;
 		}
 	
 		case IDC_ROTATION_BUTTONCLEAR: {
 			executeSubcommandOnSelectedServer("clear");
+			update_button_enabled();
 			return;
 		}
 	
@@ -1554,42 +1555,55 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		
 		case IDC_ROTATION_LIST: {
 			if (codeNotify == LBN_SELCHANGE) {
-				const auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_ROTATION_LIST));
+				update_button_enabled();
+
+				const auto selected_index = ListBox_GetCurSel(hList);
 				if (selected_index == LB_ERR) {
-					EnableWindow(GetDlgItem(hwnd, IDC_ROTATION_BUTTONREMOVE), false);
 					return;
 				}
-				EnableWindow(GetDlgItem(hwnd, IDC_ROTATION_BUTTONREMOVE), true);
 
-				std::vector<char> buffer(1ull + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_ROTATION_LIST), selected_index));
+				std::vector<char> buffer(1ull + ListBox_GetTextLen(hList, selected_index));
 				ListBox_GetText(GetDlgItem(hwnd, IDC_ROTATION_LIST), selected_index, buffer.data());
-				Edit_SetText(GetDlgItem(hwnd, IDC_ROTATION_EDITMAP), buffer.data());
+				Edit_SetText(hEdit, buffer.data());
 			}
 			return;
 		}
 	
 		case IDC_ROTATION_EDITMAP: {
-			if (codeNotify == EN_CHANGE)
-			{
+			if (codeNotify == EN_SETFOCUS) {
+				SendMessage(hwnd, DM_SETDEFID, IDC_ROTATION_BUTTONADD, 0);
+				return;
+			}
+			if (codeNotify == EN_KILLFOCUS) {
+				SendMessage(hwnd, DM_SETDEFID, IDC_ROTATION_BUTTONOK, 0);
+				Button_SetStyle(GetDlgItem(hwnd, IDC_ROTATION_BUTTONADD), BS_PUSHBUTTON, true);
+				return;
+			}
+
+			if (codeNotify == EN_CHANGE) {
+				std::vector<char> buffer(1ull + Edit_GetTextLength(hEdit));
+				Edit_GetText(hEdit, buffer.data(), static_cast<int>(buffer.size()));
+
+				auto index = ListBox_FindStringExact(hList, 0, buffer.data());
+				ListBox_SetCurSel(hList, index);
+
+				update_button_enabled();
+
 				std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
 				if (!pb2InstallPath)
 					return;
 
 				std::string sMapshot = pb2InstallPath.value() + R"(\pball\pics\mapshots\)";
-				int iBufferSize = GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITMAP)) + 1;
+				int iBufferSize = GetWindowTextLength(hEdit) + 1;
 				std::vector<char> mapnameBuffer(iBufferSize);
 				GetDlgItemText(hwnd, IDC_ROTATION_EDITMAP, mapnameBuffer.data(), iBufferSize);
 				sMapshot += mapnameBuffer.data();
 				sMapshot += ".jpg";
 
 				DWORD dwAttributes = GetFileAttributes(sMapshot.c_str());
-				if (dwAttributes == INVALID_FILE_ATTRIBUTES || (dwAttributes & FILE_ATTRIBUTE_DIRECTORY))
-				{
+				if (dwAttributes == INVALID_FILE_ATTRIBUTES || (dwAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
 					sMapshot = pb2InstallPath.value() + R"(\pball\pics\mapshots\-no-preview-.jpg)";
 				}
-
-				RECT rcMapshotImageRect;
-				GetClientRect(GetDlgItem(hwnd, IDC_ROTATION_MAPSHOT), &rcMapshotImageRect);
 
 				std::wstring sWideMapshot(sMapshot.begin(), sMapshot.end());
 				g_pMapshotBitmap = std::make_unique<Gdiplus::Bitmap>(sWideMapshot.c_str());
@@ -1601,12 +1615,20 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	}
 }
 
-LRESULT CALLBACK RotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
-{
+int OnRotationDlgVkeyToItem(HWND hwnd, UINT vk, HWND hwndListbox, int iCaret) {
+	if (vk == VK_DELETE && hwndListbox == GetDlgItem(hwnd, IDC_ROTATION_LIST)) {
+		SendMessage(hwnd, WM_COMMAND, MAKEWPARAM(IDC_ROTATION_BUTTONREMOVE, BN_CLICKED), (LPARAM)GetDlgItem(hwnd, IDC_ROTATION_BUTTONREMOVE));
+		return -2;
+	}
+	return -1;
+}
+
+LRESULT CALLBACK RotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
     switch (Msg) {
     	HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnRotationDlgInitDialog);
     	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnRotationDlgCommand);
     	HANDLE_MSG(hWndDlg, WM_PAINT,      OnRotationDlgPaint);
+		HANDLE_MSG(hWndDlg, WM_VKEYTOITEM, OnRotationDlgVkeyToItem);
     }
     
     if (Msg == WM_SERVERCHANGED) {
@@ -1977,13 +1999,12 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 	};
 
 	auto update_edit_field = [&]() {
-		auto old_flags = GetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE);
 		if (Button_GetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID))) {
-			SetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE, old_flags | ES_NUMBER);
+			AddStyle(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), ES_NUMBER);
 			SetDlgItemInt(hwnd, IDC_AUTOKICK_EDIT, GetDlgItemInt(hwnd, IDC_AUTOKICK_EDIT, NULL, FALSE), FALSE);
 		}
 		else {
-			SetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE, old_flags & ~ES_NUMBER);
+			RemoveStyle(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), ES_NUMBER);
 		}
 	};
 
@@ -2203,8 +2224,7 @@ DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC device_context, int s
 	return result_bitmap;
 }
 
-std::string GetHttpResponse(const std::string& url)
-{
+std::string GetHttpResponse(const std::string& url) {
 	const char* user_agent = ""; // TODO?
 	HINTERNET hInternet = InternetOpen(user_agent, INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 	HINTERNET hFile = InternetOpenUrl(hInternet, url.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
@@ -2252,8 +2272,17 @@ BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font) {
 	return true;
 };
 
-void Edit_ReduceLines(HWND hEdit, int iLines)
-{
+void AddStyle(HWND hwnd, LONG style) {
+	auto old_style = GetWindowLong(hwnd, GWL_STYLE);
+	SetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE, old_style | style);
+}
+
+void RemoveStyle(HWND hwnd, LONG style) {
+	auto old_style = GetWindowLong(hwnd, GWL_STYLE);
+	SetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE, old_style & ~style);
+}
+
+void Edit_ReduceLines(HWND hEdit, int iLines) {
 	if (iLines <= 0)
 		return;
 	
@@ -2263,8 +2292,7 @@ void Edit_ReduceLines(HWND hEdit, int iLines)
 	}
 }
 
-void Edit_ScrollToEnd(HWND hEdit)
-{
+void Edit_ScrollToEnd(HWND hEdit) {
 	auto text_length = Edit_GetTextLength(hEdit);
 	Edit_SetSel(hEdit, text_length, text_length);
 	Edit_ScrollCaret(hEdit);
@@ -2328,8 +2356,7 @@ void ListBox_SendSelChange(HWND list) noexcept {
 	SendMessage(GetParent(list), WM_COMMAND, MAKEWPARAM(GetWindowLong(list, GWL_ID), LBN_SELCHANGE), (LPARAM)list);
 }
 
-void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3)
-{
+void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3) {
 	*pb0 = *pb1 = *pb2 = *pb3 = NULL;
 
 	auto substrings = ip
@@ -2347,8 +2374,7 @@ void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2,
 	*pb3 = atoi((*it++).c_str());
 }
 
-std::optional<std::string> GetPb2InstallPath()
-{
+std::optional<std::string> GetPb2InstallPath() {
 	for (auto root : { HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE }) {
 		HKEY key;
 		if (RegOpenKeyEx(root, "SOFTWARE\\Digital Paint\\Paintball2", 0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS)
@@ -2370,8 +2396,7 @@ std::optional<std::string> GetPb2InstallPath()
 	return std::nullopt;
 }
 
-void StartServerbrowser(void)
-{
+void StartServerbrowser(void) {
 	std::optional<std::string> pb2InstallPath = GetPb2InstallPath();
 	if (!pb2InstallPath) {
 		MainWindowWriteConsole("Could not find the path of your DP:PB2 install directory in the registry.");
