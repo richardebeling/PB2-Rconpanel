@@ -1372,6 +1372,13 @@ LRESULT CALLBACK SettingsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 //{-------------------------------------------------------------------------------------------------
 
 void LoadRotationToListbox(HWND hListBox) {
+	auto selected_index = ListBox_GetCurSel(hListBox);
+	std::vector<char> selected_map_buffer;
+	if (selected_index >= 0) {
+		selected_map_buffer.resize(1ull + ListBox_GetTextLen(hListBox, selected_index));
+		ListBox_GetText(hListBox, selected_index, selected_map_buffer.data());
+	}
+
 	auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
@@ -1387,11 +1394,21 @@ void LoadRotationToListbox(HWND hListBox) {
 			const std::string map = match[1];
 			ListBox_AddString(hListBox, map.c_str());
 		}
+
+		if (selected_index >= 0) {
+			auto new_index = ListBox_FindString(hListBox, 0, selected_map_buffer.data());
+			if (new_index < 0) {
+				new_index = min(selected_index, ListBox_GetCount(hListBox) - 1);
+			}
+			ListBox_SetCurSel(hListBox, new_index);
+			ListBox_SendSelChange(hListBox);
+		}
 	}, "loading rotation");
 }
 
 BOOL OnRotationDlgInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam) {
 	OnRotationDlgReloadContent(hwnd);
+	ListBox_SendSelChange(GetDlgItem(hwnd, IDC_ROTATION_LIST));
 	return TRUE;
 }
 
@@ -1922,6 +1939,7 @@ void AutoKickEntriesDlgRefillList(HWND list) {
 BOOL OnAutoKickEntriesDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	AutoKickEntriesDlgRefillList(GetDlgItem(hwnd, IDC_AUTOKICK_LIST));
 	Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIONAME), true);
+	ListBox_SendSelChange(GetDlgItem(hwnd, IDC_AUTOKICK_LIST));
 	return TRUE;
 }
 
@@ -1963,7 +1981,7 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 		case IDC_AUTOKICK_BUTTONREMOVE: {
 			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_AUTOKICK_LIST));
 			if (selected_index == LB_ERR)
-				return; // TODO: Disable button if nothing is selected. Probably also disable on edit?
+				return;
 
 			AutoKickEntry* selected_entry = (AutoKickEntry*)ListBox_GetItemData(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), selected_index);
 
@@ -1989,14 +2007,20 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 		case IDC_AUTOKICK_LIST: {
 			if (codeNotify == LBN_SELCHANGE) {
 				auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_AUTOKICK_LIST));
-				if (selected_index == LB_ERR)
+				if (selected_index == LB_ERR) {
+					EnableWindow(GetDlgItem(hwnd, IDC_AUTOKICK_BUTTONOVERWRITE), false);
+					EnableWindow(GetDlgItem(hwnd, IDC_AUTOKICK_BUTTONREMOVE), false);
 					return;
+				}
 				AutoKickEntry* selected_entry = (AutoKickEntry*)ListBox_GetItemData(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), selected_index);
 
 				Edit_SetText(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), selected_entry->value_string().c_str());
 				
 				Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIOID), std::holds_alternative<AutoKickEntry::IdT>(selected_entry->value));
 				Button_SetCheck(GetDlgItem(hwnd, IDC_AUTOKICK_RADIONAME), std::holds_alternative<AutoKickEntry::NameT>(selected_entry->value));
+
+				EnableWindow(GetDlgItem(hwnd, IDC_AUTOKICK_BUTTONOVERWRITE), true);
+				EnableWindow(GetDlgItem(hwnd, IDC_AUTOKICK_BUTTONREMOVE), true);
 
 				update_edit_field();
 			}
@@ -2280,8 +2304,12 @@ void ListBox_CustomDeleteString(HWND list, int index) noexcept {
 	if (index == selected_index) {
 		const auto new_index = min(ListBox_GetCount(list) - 1, selected_index);
 		ListBox_SetCurSel(list, new_index);
-		SendMessage(GetParent(list), WM_COMMAND, MAKEWPARAM(GetWindowLong(list, GWL_ID), LBN_SELCHANGE), (LPARAM)list);
+		ListBox_SendSelChange(list);
 	}
+}
+
+void ListBox_SendSelChange(HWND list) noexcept {
+	SendMessage(GetParent(list), WM_COMMAND, MAKEWPARAM(GetWindowLong(list, GWL_ID), LBN_SELCHANGE), (LPARAM)list);
 }
 
 void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3)

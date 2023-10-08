@@ -129,6 +129,7 @@ int ComboBox_CustomFindItemData(HWND hComboBox, const void* itemData) noexcept;
 int ListBox_CustomFindItemData(HWND hList, const void* itemData) noexcept;
 void ListBox_CustomDeleteString(HWND list, int index) noexcept;
 void ListBox_AddOrUpdateString(HWND list, const std::string& item_text, const void* item_data);
+void ListBox_SendSelChange(HWND list) noexcept;
 
 std::optional<std::string> GetPb2InstallPath(void);
 void StartServerbrowser(void);
