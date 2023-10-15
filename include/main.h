@@ -138,6 +138,16 @@ void ListBox_SendSelChange(HWND list) noexcept;
 std::optional<std::string> GetPb2InstallPath(void);
 void StartServerbrowser(void);
 
+template<typename T>
+std::vector<T> FlatCopyVectorOfUniquePtrs(const std::vector<std::unique_ptr<T>>& input) {
+	std::vector<T> result;
+	result.reserve(input.size());
+	for (const auto& ptr : input) {
+		result.push_back(*ptr);
+	}
+	return result;
+}
+
 
 //--------------------------------------------------------------------------------------------------
 // Main Window

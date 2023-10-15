@@ -26,23 +26,28 @@
 using namespace std::string_literals;
 using namespace std::chrono_literals;
 
+std::mutex g_ThreadGlobalReadMutex; // Locked by helper threads accessing the following globals. Also locked by the main thread when writing to them
+
+std::vector<std::unique_ptr<Server>> g_ServersWithRcon;
+std::vector<std::unique_ptr<Server>> g_Serverlist;
+std::vector<std::unique_ptr<AutoKickEntry>> g_vAutoKickEntries;
+
+// end of variables protected by g_ThreadGlobalReadMutex. All following variables may only be accessed by the main thread.
+
 std::future<ServerCvars> g_FetchServerCvarsFuture;
 std::future<std::vector<pb2lib::Player>> g_FetchPlayersFuture;
 
-std::vector<std::unique_ptr<Server>> g_ServersWithRcon;
 std::vector<std::future<std::string>> g_RconResponses;
-std::vector<pb2lib::Player> g_vPlayers; // players on the current server, shown in the listview
-
-std::vector<std::unique_ptr<AutoKickEntry>> g_vAutoKickEntries;
+std::vector<pb2lib::Player> g_vPlayers;
 
 std::future<std::vector<std::unique_ptr<Server>>> g_ServerlistFuture;
-std::vector<std::unique_ptr<Server>> g_Serverlist;
 
 AsyncRepeatedTimer g_AutoReloadTimer;
 AsyncRepeatedTimer g_AutoKickTimer;
 
 pb2lib::AsyncHostnameResolver g_HostnameResolver;
 
+// read-only after program initialization. Can be read by threads.
 UINT WM_REFETCHPLAYERS, WM_SERVERCHANGED, WM_PLAYERSREADY, WM_SERVERCVARSREADY, WM_RCONRESPONSEREADY, WM_HOSTNAMEREADY, WM_SERVERLISTREADY, WM_AUTOKICKENTRYADDED;
 
 DeleteObjectRAIIWrapper<HFONT> g_MainFont, g_MonospaceFont;
@@ -909,6 +914,8 @@ void OnMainWindowAutoKick(void) {
 		entry.value = player->name;
 		MainWindowWriteConsole("AutoKick entry added for name " + player->name);
 	}
+
+	std::lock_guard guard(g_ThreadGlobalReadMutex);
 	g_vAutoKickEntries.push_back(std::make_unique<AutoKickEntry>(entry));
 
 	SendMessage(gWindows.hDlgAutoKickEntries, WM_AUTOKICKENTRYADDED, 0, 0);
@@ -959,6 +966,7 @@ void OnMainWindowRconResponseReady() noexcept {
 }
 
 void OnMainWindowHostnameReady(Server* server_instance) noexcept {
+	std::lock_guard guard(g_ThreadGlobalReadMutex);
 	for (const auto& server_ptr : g_ServersWithRcon) {
 		if (server_ptr.get() == server_instance) {
 			MainWindowAddOrUpdateOwnedServer(server_ptr.get());
@@ -1783,6 +1791,8 @@ void OnServersDlgServerlistReady(HWND hWndDlg) noexcept {
 }
 
 void OnServersDlgHostnameReady(HWND hWndDlg, Server* server_instance) {
+	std::lock_guard guard(g_ThreadGlobalReadMutex);
+
 	for (const auto& server_ptr : g_Serverlist) {
 		if (server_ptr.get() == server_instance) {
 			ServersDlgAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_SERVERS_LISTLEFT), server_ptr.get());
@@ -1864,8 +1874,11 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			auto it = std::ranges::find_if(g_ServersWithRcon, [&](const auto& unique_ptr) { return unique_ptr.get() == stored_server; });
 			assert(it != g_ServersWithRcon.end());
 
-			std::unique_ptr<Server> moved_out = std::move(*it);
-			g_ServersWithRcon.erase(it);
+			{
+				std::lock_guard guard(g_ThreadGlobalReadMutex);
+				std::unique_ptr<Server> moved_out = std::move(*it);
+				g_ServersWithRcon.erase(it);
+			}
 
 			MainWindowRemoveOwnedServer(stored_server);
 
@@ -1883,7 +1896,10 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			std::optional<Server> input_data_server = server_from_inputs();
 			if (!input_data_server) return;
 
-			*stored_server = input_data_server.value();
+			{
+				std::lock_guard guard(g_ThreadGlobalReadMutex);
+				*stored_server = input_data_server.value();
+			}
 			auto it = std::ranges::find_if(g_ServersWithRcon, [&](const auto& unique_ptr) { return unique_ptr.get() == stored_server; });
 			assert(it != g_ServersWithRcon.end());
 
@@ -2072,6 +2088,7 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 
 	switch(id) {
 		case IDC_AUTOKICK_BUTTONADD: {
+			std::lock_guard guard(g_ThreadGlobalReadMutex);
 			g_vAutoKickEntries.push_back(std::make_unique<AutoKickEntry>(entry_from_inputs()));
 			AutoKickEntriesDlgAddOrUpdateEntry(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), g_vAutoKickEntries.back().get());
 			SetFocus(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT));
@@ -2087,7 +2104,11 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 
 			auto it = std::ranges::find_if(g_vAutoKickEntries, [selected_entry](auto&& element) {return element.get() == selected_entry; });
 			assert(it != g_vAutoKickEntries.end());
-			g_vAutoKickEntries.erase(it);
+
+			{
+				std::lock_guard guard(g_ThreadGlobalReadMutex);
+				g_vAutoKickEntries.erase(it);
+			}
 
 			ListBox_CustomDeleteString(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), selected_index);
 			return;
@@ -2571,10 +2592,18 @@ void StartServerbrowser(void) {
 }
 
 void AutoKickTimerFunction() {
-	// todo: mutex -- currently race condition
-    for (const auto& server_ptr : g_ServersWithRcon)
+
+	std::vector<Server> servers;
+	std::vector<AutoKickEntry> autokick_entries;
+
 	{
-		const Server& server = *server_ptr;
+		std::lock_guard guard(g_ThreadGlobalReadMutex);
+		servers = FlatCopyVectorOfUniquePtrs(g_ServersWithRcon);
+		autokick_entries = FlatCopyVectorOfUniquePtrs(g_vAutoKickEntries);
+	}
+
+    for (const auto& server : servers)
+	{
 		std::vector <pb2lib::Player> players = pb2lib::get_players(server.address, server.rcon_password, gSettings.fTimeoutSecs);
 			
         for (const auto& player : players)
@@ -2589,11 +2618,11 @@ void AutoKickTimerFunction() {
 				continue;
 			}
 
-			auto autokick_it = std::ranges::find_if(g_vAutoKickEntries, [&](const auto& entry) {
-				return entry->matches(player.id.value_or(0)) || entry->matches(player.name);
+			auto autokick_it = std::ranges::find_if(autokick_entries, [&](const auto& entry) {
+				return entry.matches(player.id.value_or(0)) || entry.matches(player.name);
 			});
 
-			if (autokick_it == g_vAutoKickEntries.end()) {
+			if (autokick_it == autokick_entries.end()) {
 				continue;
 			}
 
