@@ -143,7 +143,7 @@ void StartServerbrowser(void);
 // Main Window
 //--------------------------------------------------------------------------------------------------
 
-void AutoKickTimerFunction() noexcept;
+void AutoKickTimerFunction();
 void MainWindowLogPb2LibExceptionsToConsole(std::function<void()> func, std::string_view action_description);
 void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr) noexcept;
 void MainWindowRemoveOwnedServer(const Server* stored_server_ptr) noexcept;

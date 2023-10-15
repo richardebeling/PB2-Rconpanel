@@ -648,8 +648,8 @@ int CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lPa
 
 BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 {
-	g_AutoReloadTimer.set_trigger_action([hwnd]() { PostMessage(hwnd, WM_REFETCHPLAYERS, 0, 0); });
-	g_AutoKickTimer.set_trigger_action(AutoKickTimerFunction);
+	g_AutoReloadTimer.set_trigger_action([hwnd](){ PostMessage(hwnd, WM_REFETCHPLAYERS, 0, 0); });
+	g_AutoKickTimer.set_trigger_action([](){ MainWindowLogPb2LibExceptionsToConsole(AutoKickTimerFunction, "performing auto-kick checks"); });
 
 	DWORD dwBaseUnits = GetDialogBaseUnits();
 
@@ -2572,9 +2572,7 @@ void StartServerbrowser(void) {
 	}
 }
 
-void AutoKickTimerFunction() noexcept {
-	// TODO: Put in MainWindowLogPb2Exceptions scope
-
+void AutoKickTimerFunction() {
 	// todo: mutex -- currently race condition
     for (const auto& server_ptr : g_ServersWithRcon)
 	{
