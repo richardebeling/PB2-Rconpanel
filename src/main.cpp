@@ -2394,8 +2394,8 @@ DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC device_context, int s
 }
 
 std::string GetHttpResponse(const std::string& url) {
-	const char* user_agent = ""; // TODO?
-	HINTERNET hInternet = InternetOpen(user_agent, INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+	std::string user_agent = std::format("Digital Paint: Paintball2 Rconpanel v{}.{}.{}", Version::MAJOR, Version::MINOR, Version::BUILD);
+	HINTERNET hInternet = InternetOpen(user_agent.c_str(), INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
 	HINTERNET hFile = InternetOpenUrl(hInternet, url.c_str(), NULL, 0, INTERNET_FLAG_RELOAD, 0);
 
 	std::string response;
