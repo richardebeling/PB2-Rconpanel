@@ -139,7 +139,7 @@ void SingleRemoteEndpointUdpSocket::receive(std::vector<char>* buffer, double ti
 	sockaddr_in sender_address = { 0 };
 	socket_.receive(buffer, &sender_address, timeout);
 
-	if (memcmp(&(sender_address.sin_addr), &(remote_address_.sin_addr), sizeof(sender_address.sin_addr)) != 0) {
+	if (!buffer->empty() && memcmp(&(sender_address.sin_addr), &(remote_address_.sin_addr), sizeof(sender_address.sin_addr)) != 0) {
 		throw Exception("Received packet from wrong remote address");
 	}
 }

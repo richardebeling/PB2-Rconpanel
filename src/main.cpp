@@ -1338,8 +1338,6 @@ void OnSettingsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		
 	case IDC_SETTINGS_BUTTONOK: {
 		std::vector<char> buffer;
-
-		// TODO: Too small setting will give "Received packet from wrong remote address" error
 		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS)) + 1);
 		GetDlgItemText(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.fTimeoutSecs = atoi(buffer.data()) / 1000.0f;
