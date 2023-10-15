@@ -21,6 +21,7 @@
 #include <thread>
 #include <future>
 #include <charconv>
+#include <array>
 
 using namespace std::string_literals;
 using namespace std::chrono_literals;
@@ -207,12 +208,18 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 		// See https://devblogs.microsoft.com/oldnewthing/20031021-00/?p=42083
 		// TODO: Maybe check out how other native WinAPI guis handle this.
 
-		if (IsDialogMessage(gWindows.hDlgAutoKickEntries, &message)) continue;
-		if (IsDialogMessage(gWindows.hDlgBannedIps, &message)) continue;
-		if (IsDialogMessage(gWindows.hDlgRconCommands, &message)) continue;
-		if (IsDialogMessage(gWindows.hDlgRotation, &message)) continue;
-		if (IsDialogMessage(gWindows.hDlgServers, &message)) continue;
-		if (IsDialogMessage(gWindows.hDlgSettings, &message)) continue;
+		HWND hwndFocus = GetFocus();
+		bool isKeyMessage = (message.message == WM_KEYDOWN || message.message == WM_KEYUP);
+		if (isKeyMessage && HasClass(hwndFocus, "ListBox") && HasStyle(hwndFocus, LBS_WANTKEYBOARDINPUT)) {
+			// ListBoxes with LBS_WANTKEYBOARDINPUT should handle their inputs even in dialogs.
+		} else {
+			if (IsDialogMessage(gWindows.hDlgAutoKickEntries, &message)) continue;
+			if (IsDialogMessage(gWindows.hDlgBannedIps, &message)) continue;
+			if (IsDialogMessage(gWindows.hDlgRconCommands, &message)) continue;
+			if (IsDialogMessage(gWindows.hDlgRotation, &message)) continue;
+			if (IsDialogMessage(gWindows.hDlgServers, &message)) continue;
+			if (IsDialogMessage(gWindows.hDlgSettings, &message)) continue;
+		}
 
 		TranslateMessage(&message);
 		DispatchMessage(&message);
@@ -1830,8 +1837,6 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		return server;
 	};
 
-	// TODO: If focus is on password-edit, "Add" should be the default button
-	// TODO: doubleclicking / enter-selecting a server in the browser should set keyboard focus to the password edit field
 	switch(id) {
 		case IDCANCEL: {
 			gWindows.hDlgServers = NULL;
@@ -1890,29 +1895,50 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			return;
 		}
 	}
-	if (codeNotify == LBN_SELCHANGE) {
-		auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, id));
-		if (selected_index == LB_ERR)
-			return;
-		Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, id), selected_index));
+	
+	switch (codeNotify) {
+		case LBN_SELCHANGE: {
+			auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, id));
+			if (selected_index == LB_ERR)
+				return;
+			Server* stored_server = reinterpret_cast<Server*>(ListBox_GetItemData(GetDlgItem(hwnd, id), selected_index));
 
-		BYTE b0, b1, b2, b3;
-		SplitIpAddressToBytes(stored_server->address.ip, &b0, &b1, &b2, &b3);
+			BYTE b0, b1, b2, b3;
+			SplitIpAddressToBytes(stored_server->address.ip, &b0, &b1, &b2, &b3);
 
 #pragma warning (suppress : 26451)
-		SendMessage(GetDlgItem(hwnd, IDC_SERVERS_EDITIP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
-		Edit_SetText(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT), std::to_string(stored_server->address.port).c_str());
-		Edit_SetText(GetDlgItem(hwnd, IDC_SERVERS_EDITPW), stored_server->rcon_password.c_str());
+			SendMessage(GetDlgItem(hwnd, IDC_SERVERS_EDITIP), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
+			Edit_SetText(GetDlgItem(hwnd, IDC_SERVERS_EDITPORT), std::to_string(stored_server->address.port).c_str());
+			Edit_SetText(GetDlgItem(hwnd, IDC_SERVERS_EDITPW), stored_server->rcon_password.c_str());
 
-		if (id == IDC_SERVERS_LISTLEFT) {
-			ListBox_SetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), -1);
-			EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONREMOVE), FALSE);
-			EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONSAVE), FALSE);
+			if (id == IDC_SERVERS_LISTLEFT) {
+				ListBox_SetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT), -1);
+				EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONREMOVE), FALSE);
+				EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONSAVE), FALSE);
+			}
+			else if (id == IDC_SERVERS_LISTRIGHT) {
+				ListBox_SetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTLEFT), -1);
+				EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONREMOVE), TRUE);
+				EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONSAVE), TRUE);
+			}
+			return;
 		}
-		else if (id == IDC_SERVERS_LISTRIGHT) {
-			ListBox_SetCurSel(GetDlgItem(hwnd, IDC_SERVERS_LISTLEFT), -1);
-			EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONREMOVE), TRUE);
-			EnableWindow(GetDlgItem(hwnd, IDC_SERVERS_BUTTONSAVE), TRUE);
+		case LBN_DBLCLK: {
+			if (id == IDC_SERVERS_LISTLEFT) {
+				SetFocus(GetDlgItem(hwnd, IDC_SERVERS_EDITPW));
+			}
+		}
+
+		case EN_SETFOCUS: {
+			if (id == IDC_SERVERS_EDITPW) {
+				SendMessage(hwnd, DM_SETDEFID, IDC_SERVERS_BUTTONADD, 0);
+			}
+			return;
+		}
+		case EN_KILLFOCUS: {
+			SendMessage(hwnd, DM_SETDEFID, 0, 0);
+			Button_SetStyle(GetDlgItem(hwnd, IDC_SERVERS_BUTTONADD), BS_PUSHBUTTON, true);
+			return;
 		}
 	}
 }
@@ -1922,6 +1948,12 @@ int OnServersDlgVkeyToItem(HWND hwnd, UINT vk, HWND hwndListbox, int iCaret) {
 		SendMessage(hwnd, WM_COMMAND, MAKEWPARAM(IDC_SERVERS_BUTTONREMOVE, BN_CLICKED), (LPARAM)GetDlgItem(hwnd, IDC_SERVERS_BUTTONREMOVE));
 		return -2;
 	}
+
+	if (vk == VK_RETURN && hwndListbox == GetDlgItem(hwnd, IDC_SERVERS_LISTLEFT)) {
+		SendMessage(hwnd, WM_COMMAND, MAKEWPARAM(IDC_SERVERS_LISTLEFT, LBN_DBLCLK), (LPARAM)GetDlgItem(hwnd, IDC_SERVERS_LISTLEFT));
+		return -2;
+	}
+
 	return -1;
 }
 
@@ -2337,6 +2369,17 @@ void AddStyle(HWND hwnd, LONG style) {
 void RemoveStyle(HWND hwnd, LONG style) {
 	auto old_style = GetWindowLong(hwnd, GWL_STYLE);
 	SetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE, old_style & ~style);
+}
+
+bool HasStyle(HWND hwnd, LONG style) {
+	auto set_style = GetWindowLong(hwnd, GWL_STYLE);
+	return set_style & style;
+}
+
+bool HasClass(HWND hwnd, std::string_view classname) {
+	std::array<char, 512> buffer;
+	GetClassName(hwnd, buffer.data(), buffer.size());
+	return classname == buffer.data();
 }
 
 void Edit_ReduceLines(HWND hEdit, int iLines) {
