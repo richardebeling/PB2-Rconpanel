@@ -2191,6 +2191,9 @@ void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 				auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_IPS_LIST));
 				std::vector<char> buffer(1ull + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_IPS_LIST), selected_index));
 				ListBox_GetText(GetDlgItem(hwnd, IDC_IPS_LIST), selected_index, buffer.data());
+				if (selected_index < 0 || buffer.empty()) {
+					return;
+				}
 
 				BYTE b0, b1, b2, b3;
 				SplitIpAddressToBytes({ buffer.data(), buffer.size() - 1}, &b0, &b1, &b2, &b3);
