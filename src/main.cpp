@@ -996,6 +996,19 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			}
 			break;
 		}
+
+		case CBN_SETFOCUS: {
+			if (hwndCtl == gWindows.hComboRcon) {
+				Button_SetStyle(gWindows.hButtonSend, BS_DEFPUSHBUTTON, true);
+			}
+			break;
+		}
+		case CBN_KILLFOCUS: {
+			if (hwndCtl == gWindows.hComboRcon) {
+				Button_SetStyle(gWindows.hButtonSend, BS_PUSHBUTTON, true);
+			}
+			break;
+		}
 	}	
 	
 	switch (id) {
