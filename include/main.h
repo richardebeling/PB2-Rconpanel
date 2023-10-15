@@ -33,12 +33,12 @@ struct Overload : Functors... {
 template <typename HandleT, HandleT InvalidHandle = static_cast<HandleT>(NULL)>
 class DeleteObjectRAIIWrapper {
 public:
-	DeleteObjectRAIIWrapper() = default;
-	DeleteObjectRAIIWrapper(HandleT handle) : handle_{ handle } {}
+	DeleteObjectRAIIWrapper() noexcept = default;
+	DeleteObjectRAIIWrapper(HandleT handle) noexcept : handle_{ handle } {}
 	DeleteObjectRAIIWrapper(const DeleteObjectRAIIWrapper&) = delete;
-	DeleteObjectRAIIWrapper(DeleteObjectRAIIWrapper&& other) { *this = std::move(other); };
+	DeleteObjectRAIIWrapper(DeleteObjectRAIIWrapper&& other) noexcept { *this = std::move(other); };
 	DeleteObjectRAIIWrapper& operator= (const DeleteObjectRAIIWrapper&) = delete;
-	DeleteObjectRAIIWrapper& operator= (DeleteObjectRAIIWrapper&& other) { std::swap(this->handle_, other.handle_); return *this; };
+	DeleteObjectRAIIWrapper& operator= (DeleteObjectRAIIWrapper&& other) noexcept { std::swap(this->handle_, other.handle_); return *this; };
 	~DeleteObjectRAIIWrapper() { DeleteObject(handle_); }
 	operator HandleT() noexcept { return handle_; };
 private:

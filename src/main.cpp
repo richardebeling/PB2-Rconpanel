@@ -1275,7 +1275,7 @@ BOOL OnSetMaxPingDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 void OnSetMaxPingDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	switch (id) {
 		case IDC_SP_BUTTONOK: {
-			std::vector<char> maxPingBuffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_SP_EDIT)) + 1);
+			std::vector<char> maxPingBuffer(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SP_EDIT)));
 			GetDlgItemText(hwnd, IDC_SP_EDIT, maxPingBuffer.data(), static_cast<int>(maxPingBuffer.size()));
 			gSettings.iAutoKickCheckMaxPingMsecs = atoi(maxPingBuffer.data());
 			MainWindowUpdateAutoKickState();
@@ -1345,22 +1345,21 @@ void OnSettingsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	}
 		
 	case IDC_SETTINGS_BUTTONOK: {
-		std::vector<char> buffer;
-		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS)) + 1);
+		std::vector<char> buffer(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS)));
 		GetDlgItemText(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.fTimeoutSecs = atoi(buffer.data()) / 1000.0f;
 		
-		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL)) + 1);
+		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL)));
 		GetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.iAutoKickCheckDelay = atoi(buffer.data());
 		MainWindowUpdateAutoKickState();
 		
-		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITAUTORELOAD)) + 1);
+		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITAUTORELOAD)));
 		GetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTORELOAD, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.iAutoReloadDelaySecs = atoi(buffer.data());
 		g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
 			
-		buffer.resize(GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITLINECOUNT)) + 1);
+		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITLINECOUNT)));
 		// TODO: Also use 0 = unlimited semantics?
 		GetDlgItemText(hwnd, IDC_SETTINGS_EDITLINECOUNT, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.iMaxConsoleLineCount = atoi (buffer.data());
@@ -1561,7 +1560,7 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		}
 	
 		case IDC_ROTATION_BUTTONWRITE: {
-			std::vector<char> buffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITFILE)) + 1);
+			std::vector<char> buffer(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITFILE)));
 			GetDlgItemText(hwnd, IDC_ROTATION_EDITFILE, buffer.data(), static_cast<int>(buffer.size()));
 			auto sAnswer = executeSubcommandOnSelectedServer("save "s + buffer.data());
 
@@ -1575,7 +1574,7 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		}
 	
 		case IDC_ROTATION_BUTTONREAD: {
-			std::vector<char> buffer(GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITFILE)) + 1);
+			std::vector<char> buffer(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_ROTATION_EDITFILE)));
 			GetDlgItemText(hwnd, IDC_ROTATION_EDITFILE, buffer.data(), static_cast<int>(buffer.size()));
 			executeSubcommandOnSelectedServer("load "s + buffer.data());
 			return;
@@ -1941,6 +1940,7 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			if (id == IDC_SERVERS_LISTLEFT) {
 				SetFocus(GetDlgItem(hwnd, IDC_SERVERS_EDITPW));
 			}
+			return;
 		}
 
 		case EN_SETFOCUS: {
@@ -1999,7 +1999,7 @@ BOOL OnForcejoinInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 
 	RECT rect;
 	GetWindowRect(GetDlgItem(hwnd, IDC_FJ_BUTTONRED), &rect);
-	const int color_bitmap_side_length = static_cast<int>(0.4 * (rect.bottom - rect.top));
+	const int color_bitmap_side_length = static_cast<int>(0.4 * (0ll + rect.bottom - rect.top));
 
 	for (size_t i = 0; i < colors.size(); ++i) {
 		bitmaps[i] = GetFilledSquareBitmap(GetDC(hwnd), color_bitmap_side_length, colors[i]);
@@ -2458,7 +2458,7 @@ bool HasStyle(HWND hwnd, LONG style) {
 
 bool HasClass(HWND hwnd, std::string_view classname) {
 	std::array<char, 512> buffer;
-	GetClassName(hwnd, buffer.data(), buffer.size());
+	GetClassName(hwnd, buffer.data(), static_cast<int>(buffer.size()));
 	return classname == buffer.data();
 }
 
@@ -2467,7 +2467,7 @@ void Edit_ReduceLines(HWND hEdit, int iLines) {
 		return;
 	
 	while (Edit_GetLineCount(hEdit) > iLines) {
-		Edit_SetSel(hEdit, 0, 1 + Edit_LineLength(hEdit, 0));
+		Edit_SetSel(hEdit, 0, 1ull + Edit_LineLength(hEdit, 0));
 		Edit_ReplaceSel(hEdit, "");
 	}
 }
