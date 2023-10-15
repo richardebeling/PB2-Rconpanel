@@ -194,6 +194,7 @@ void AutoKickEntriesDlgRefillList(HWND list);
 
 LRESULT CALLBACK AutoKickEntriesDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
+int OnAutoKickEntriesDlgVkeyToItem(HWND hwnd, UINT vk, HWND hwndListbox, int iCaret);
 BOOL OnAutoKickEntriesDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 
 //--------------------------------------------------------------------------------------------------
@@ -202,6 +203,7 @@ BOOL OnAutoKickEntriesDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 LRESULT CALLBACK BannedIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 BOOL OnBannedIPsDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
+int OnBannedIPsDlgVkeyToItem(HWND hwnd, UINT vk, HWND hwndListbox, int iCaret);
 void OnBannedIPsDlgReloadContent(HWND hwnd);
 
 //--------------------------------------------------------------------------------------------------
@@ -224,6 +226,7 @@ LRESULT CALLBACK ServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lP
 BOOL OnServersDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);
 void OnServersDlgServerlistReady(HWND hWndDlg) noexcept;
 void OnServersDlgHostnameReady(HWND hWndDlg, Server* server_instance);
+int OnServersDlgVkeyToItem(HWND hwnd, UINT vk, HWND hwndListbox, int iCaret);
 void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify);
 
 //--------------------------------------------------------------------------------------------------

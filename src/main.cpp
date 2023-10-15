@@ -1830,7 +1830,6 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		return server;
 	};
 
-	// TODO: "Delete" on right list should delete
 	// TODO: If focus is on password-edit, "Add" should be the default button
 	// TODO: doubleclicking / enter-selecting a server in the browser should set keyboard focus to the password edit field
 	switch(id) {
@@ -1918,10 +1917,19 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	}
 }
 
+int OnServersDlgVkeyToItem(HWND hwnd, UINT vk, HWND hwndListbox, int iCaret) {
+	if (vk == VK_DELETE && hwndListbox == GetDlgItem(hwnd, IDC_SERVERS_LISTRIGHT)) {
+		SendMessage(hwnd, WM_COMMAND, MAKEWPARAM(IDC_SERVERS_BUTTONREMOVE, BN_CLICKED), (LPARAM)GetDlgItem(hwnd, IDC_SERVERS_BUTTONREMOVE));
+		return -2;
+	}
+	return -1;
+}
+
 LRESULT CALLBACK ServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
 	switch(Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnServersDlgInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnServersDlgCommand);
+		HANDLE_MSG(hWndDlg, WM_VKEYTOITEM, OnServersDlgVkeyToItem);
 	}
 
 	if (Msg == WM_HOSTNAMEREADY) { OnServersDlgHostnameReady(hWndDlg, (Server*)lParam); return 0; }
@@ -2038,7 +2046,6 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 			AutoKickEntriesDlgAddOrUpdateEntry(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), g_vAutoKickEntries.back().get());
 			// TODO: Return keyboard focus to edit field
 			// TODO: Focus on edit field should make "add" the default button
-			// TODO: "Delete" button should delete from the listview if it has focus
 			return;
 		}
 
@@ -2105,10 +2112,19 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 	}
 }
 
+int OnAutoKickEntriesDlgVkeyToItem(HWND hwnd, UINT vk, HWND hwndListbox, int iCaret) {
+	if (vk == VK_DELETE && hwndListbox == GetDlgItem(hwnd, IDC_AUTOKICK_LIST)) {
+		SendMessage(hwnd, WM_COMMAND, MAKEWPARAM(IDC_AUTOKICK_BUTTONREMOVE, BN_CLICKED), (LPARAM)GetDlgItem(hwnd, IDC_AUTOKICK_BUTTONREMOVE));
+		return -2;
+	}
+	return -1;
+}
+
 LRESULT CALLBACK AutoKickEntriesDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam) {
 	switch(Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnAutoKickEntriesDlgInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnAutoKickEntriesDlgCommand);
+		HANDLE_MSG(hWndDlg, WM_VKEYTOITEM, OnAutoKickEntriesDlgVkeyToItem);
 	}
 
 	if (Msg == WM_AUTOKICKENTRYADDED) {
@@ -2175,7 +2191,6 @@ void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 			return helper_run_rcon_command_with_current_ip("sv addip ");
 	
 		case IDC_IPS_BUTTONREMOVE:
-			// TODO: Allow pressing delete
 			// TODO: Select new item in listview
 			return helper_run_rcon_command_with_current_ip("sv removeip ");
 	
@@ -2209,11 +2224,20 @@ void OnBannedIPsDlgReloadContent(HWND hwnd) {
 	LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_IPS_LIST));
 }
 
+int OnBannedIPsDlgVkeyToItem(HWND hwnd, UINT vk, HWND hwndListbox, int iCaret) {
+	if (vk == VK_DELETE && hwndListbox == GetDlgItem(hwnd, IDC_IPS_LIST)) {
+		SendMessage(hwnd, WM_COMMAND, MAKEWPARAM(IDC_IPS_BUTTONREMOVE, BN_CLICKED), (LPARAM)GetDlgItem(hwnd, IDC_IPS_BUTTONREMOVE));
+		return -2;
+	}
+	return -1;
+}
+
 LRESULT CALLBACK BannedIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	switch(Msg) {
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnBannedIPsDlgInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnBannedIPsDlgCommand);
+		HANDLE_MSG(hWndDlg, WM_VKEYTOITEM, OnBannedIPsDlgVkeyToItem);
 	}
 
 	if (Msg == WM_SERVERCHANGED) {
