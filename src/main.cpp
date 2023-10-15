@@ -2195,7 +2195,7 @@ void LoadBannedIPsToListbox(HWND hListBox) {
 
 	MainWindowLogPb2LibExceptionsToConsole([&]() {
 		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv listip", gSettings.fTimeoutSecs);
-		const std::regex rx(R"(\s*\d+\.\s*\d+\.\s*\d+\.\s*\d+)");
+		const std::regex rx(R"([\d ]{3}\.[\d ]{3}\.[\d ]{3}\.[\d ]{3})");
 
 		ListBox_ResetContent(hListBox);
 		for (auto it = std::sregex_iterator(response.begin(), response.end(), rx); it != std::sregex_iterator{}; ++it) {
@@ -2208,22 +2208,31 @@ void LoadBannedIPsToListbox(HWND hListBox) {
 
 BOOL OnBannedIPsDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 	LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_IPS_LIST));
+	ListBox_SendSelChange(GetDlgItem(hwnd, IDC_IPS_LIST));
+
+	PostMessage(hwnd, WM_NEXTDLGCTL, (WPARAM)GetDlgItem(hwnd, IDC_IPS_IPCONTROL), TRUE); // Focus the edit field
+
+	SendMessage(GetDlgItem(hwnd, IDC_IPS_LIST), WM_SETFONT, (LPARAM)(HFONT)g_MonospaceFont, true);
 	return TRUE;
 }
 
 void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
+	HWND hList = GetDlgItem(hwnd, IDC_IPS_LIST);
+	HWND hEdit = GetDlgItem(hwnd, IDC_IPS_IPCONTROL);
+
+	DWORD ip = 0;
+	SendMessage(hEdit, IPM_GETADDRESS, 0, (LPARAM)&ip);
+
+	const std::string edit_ip = std::format("{:3}.{:3}.{:3}.{:3}", FIRST_IPADDRESS(ip), SECOND_IPADDRESS(ip), THIRD_IPADDRESS(ip), FOURTH_IPADDRESS(ip));
+	const std::string compact_edit_ip = std::format("{}.{}.{}.{}", FIRST_IPADDRESS(ip), SECOND_IPADDRESS(ip), THIRD_IPADDRESS(ip), FOURTH_IPADDRESS(ip));
+
 	auto helper_run_rcon_command_with_current_ip = [&](std::string command) {
 		auto* server = MainWindowGetSelectedServerOrLoggedNull();
 		if (!server) {
 			return;
 		}
 
-		DWORD ip = 0;
-		SendMessage(GetDlgItem(hwnd, IDC_IPS_IPCONTROL), IPM_GETADDRESS, 0, (LPARAM)&ip);
-
-		command += std::to_string(FIRST_IPADDRESS(ip)) + "." + std::to_string(SECOND_IPADDRESS(ip))
-			+ "." + std::to_string(THIRD_IPADDRESS(ip)) + "." + std::to_string(FOURTH_IPADDRESS(ip));
-
+		command += compact_edit_ip;
 		MainWindowLogPb2LibExceptionsToConsole([&]() {
 			pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
 		}, "modifying banned IPs");
@@ -2231,37 +2240,73 @@ void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_IPS_LIST));
 	};
 
-	// TODO: Editing the IP should reselect item on the list (like with rotation)
+	auto update_button_enabled = [&]() {
+		const auto selected_index = ListBox_GetCurSel(hList);
+		EnableWindow(GetDlgItem(hwnd, IDC_IPS_BUTTONREMOVE), selected_index != LB_ERR);
+	};
+
 	switch(id) {
-		case IDC_IPS_BUTTONADD:
-			// TODO: Allow pressing return
-			// TODO: Select created item
-			return helper_run_rcon_command_with_current_ip("sv addip ");
+		case IDC_IPS_BUTTONADD: {
+			helper_run_rcon_command_with_current_ip("sv addip ");
+			ListBox_SetCurSel(hList, ListBox_FindStringExact(hList, 0, edit_ip.c_str()));
+			update_button_enabled();
+			SetFocus(hEdit);
+			return;
+		}
 	
-		case IDC_IPS_BUTTONREMOVE:
-			// TODO: Select new item in listview
-			return helper_run_rcon_command_with_current_ip("sv removeip ");
+		case IDC_IPS_BUTTONREMOVE: {
+			auto selected_index = ListBox_GetCurSel(hList);
+			helper_run_rcon_command_with_current_ip("sv removeip ");
+			ListBox_SetCurSel(hList, min(selected_index, ListBox_GetCount(hList) - 1));
+			ListBox_SendSelChange(hList);
+			return;
+		}
 	
+		case IDC_IPS_IPCONTROL:
+			switch (codeNotify) {
+				case EN_CHANGE: {
+					auto index = ListBox_FindStringExact(hList, 0, edit_ip.c_str());
+					ListBox_SetCurSel(hList, index);
+					update_button_enabled();
+					break;
+				}
+				case EN_SETFOCUS: {
+					SendMessage(hwnd, DM_SETDEFID, IDC_IPS_BUTTONADD, 0);
+					break;
+				}
+				case EN_KILLFOCUS: {
+					SendMessage(hwnd, DM_SETDEFID, 0, 0);
+					Button_SetStyle(GetDlgItem(hwnd, IDC_IPS_BUTTONADD), BS_PUSHBUTTON, true);
+					break;
+				}
+			}
+			return;
+
 		case IDCANCEL:
 			gWindows.hDlgBannedIps = NULL;
 			EndDialog(hwnd, 0);
 			return;
 		
-		case IDC_IPS_LIST:
-		{
-			if (codeNotify == LBN_SELCHANGE)
-			{
-				auto selected_index = ListBox_GetCurSel(GetDlgItem(hwnd, IDC_IPS_LIST));
-				std::vector<char> buffer(1ull + ListBox_GetTextLen(GetDlgItem(hwnd, IDC_IPS_LIST), selected_index));
-				ListBox_GetText(GetDlgItem(hwnd, IDC_IPS_LIST), selected_index, buffer.data());
-				if (selected_index < 0 || buffer.empty()) {
-					return;
-				}
+		case IDC_IPS_LIST: {
+			switch (codeNotify) {
+				case LBN_SELCHANGE: {
+					auto selected_index = ListBox_GetCurSel(hList);
+					std::vector<char> buffer(1ull + ListBox_GetTextLen(hList, selected_index));
+					ListBox_GetText(hList, selected_index, buffer.data());
+					if (selected_index < 0 || buffer.empty()) {
+						return;
+					}
 
-				BYTE b0, b1, b2, b3;
-				SplitIpAddressToBytes({ buffer.data(), buffer.size() - 1}, &b0, &b1, &b2, &b3);
-#pragma warning (suppress : 26451)
-				SendMessage(GetDlgItem(hwnd, IDC_IPS_IPCONTROL), IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
+					BYTE b0, b1, b2, b3;
+					SplitIpAddressToBytes({ buffer.data(), buffer.size() - 1 }, &b0, &b1, &b2, &b3);
+	#pragma warning (suppress : 26451)
+					SendMessage(hEdit, IPM_SETADDRESS, 0, MAKEIPADDRESS(b0, b1, b2, b3));
+					break;
+				}
+				case LBN_DBLCLK: {
+					SetFocus(hEdit);
+					break;
+				}
 			}
 			return;
 		}
