@@ -4,6 +4,8 @@
 
 //TODO: Save and restore window position?
 
+// TODO: Make everything in the main window accessible via keyboard through menus?
+
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
 #define strcasecmp _stricmp
@@ -133,6 +135,12 @@ ServerCvars ServerCvars::from_server(const Server& server, double timeout) {
 //--------------------------------------------------------------------------------------------------
 // Program Entry Point                                                                             |
 //{-------------------------------------------------------------------------------------------------
+
+#ifdef _DEBUG
+int main() {
+	WinMain(GetModuleHandle(NULL), NULL, (PSTR)"", SW_NORMAL);
+}
+#endif
 
 #pragma warning (suppress : 28251)
 int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszArgument, int nCmdShow)
@@ -1809,6 +1817,9 @@ void OnServersDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		return server;
 	};
 
+	// TODO: "Delete" on right list should delete
+	// TODO: If focus is on password-edit, "Add" should be the default button
+	// TODO: doubleclicking / enter-selecting a server in the browser should set keyboard focus to the password edit field
 	switch(id) {
 		case IDCANCEL: {
 			gWindows.hDlgServers = NULL;
@@ -2012,6 +2023,9 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 		case IDC_AUTOKICK_BUTTONADD: {
 			g_vAutoKickEntries.push_back(std::make_unique<AutoKickEntry>(entry_from_inputs()));
 			AutoKickEntriesDlgAddOrUpdateEntry(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), g_vAutoKickEntries.back().get());
+			// TODO: Return keyboard focus to edit field
+			// TODO: Focus on edit field should make "add" the default button
+			// TODO: "Delete" button should delete from the listview if it has focus
 			return;
 		}
 
@@ -2140,12 +2154,15 @@ void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_IPS_LIST));
 	};
 
+	// TODO: Editing the IP should reselect item on the list (like with rotation)
 	switch(id) {
 		case IDC_IPS_BUTTONADD:
+			// TODO: Allow pressing return
 			// TODO: Select created item
 			return helper_run_rcon_command_with_current_ip("sv addip ");
 	
 		case IDC_IPS_BUTTONREMOVE:
+			// TODO: Allow pressing delete
 			// TODO: Select new item in listview
 			return helper_run_rcon_command_with_current_ip("sv removeip ");
 	
