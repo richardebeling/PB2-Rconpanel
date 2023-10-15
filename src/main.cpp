@@ -2076,8 +2076,7 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 		case IDC_AUTOKICK_BUTTONADD: {
 			g_vAutoKickEntries.push_back(std::make_unique<AutoKickEntry>(entry_from_inputs()));
 			AutoKickEntriesDlgAddOrUpdateEntry(GetDlgItem(hwnd, IDC_AUTOKICK_LIST), g_vAutoKickEntries.back().get());
-			// TODO: Return keyboard focus to edit field
-			// TODO: Focus on edit field should make "add" the default button
+			SetFocus(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT));
 			return;
 		}
 
@@ -2127,6 +2126,9 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 
 				update_edit_field();
 			}
+			else if (codeNotify == LBN_DBLCLK) {
+				SetFocus(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT));
+			}
 			return;
 		}
 
@@ -2139,6 +2141,20 @@ void OnAutoKickEntriesDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotif
 		case IDCANCEL: {
 			gWindows.hDlgAutoKickEntries = NULL;
 			EndDialog(hwnd, 0);
+			return;
+		}
+	}
+
+	switch (codeNotify) {
+		case EN_SETFOCUS: {
+			if (id == IDC_AUTOKICK_EDIT) {
+				SendMessage(hwnd, DM_SETDEFID, IDC_AUTOKICK_BUTTONADD, 0);
+			}
+			return;
+		}
+		case EN_KILLFOCUS: {
+			SendMessage(hwnd, DM_SETDEFID, 0, 0);
+			Button_SetStyle(GetDlgItem(hwnd, IDC_AUTOKICK_BUTTONADD), BS_PUSHBUTTON, true);
 			return;
 		}
 	}
