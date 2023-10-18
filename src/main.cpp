@@ -151,6 +151,8 @@ int main() {
 #pragma warning (suppress : 28251)
 int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszArgument, int nCmdShow)
 {
+	SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
 	INITCOMMONCONTROLSEX icex = { 0 }; // needed for list view control
 	icex.dwICC = ICC_LISTVIEW_CLASSES;
 	InitCommonControlsEx(&icex);
@@ -190,6 +192,7 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 		HandleCriticalError("Could not register window class");
 	}
 
+	// TODO: Get initial window size from dialog size also?
 	DWORD dwBaseUnits = GetDialogBaseUnits();
 	CreateWindowEx (0, classname, "DP:PB2 Rconpanel",
 					WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
@@ -656,19 +659,11 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	g_AutoReloadTimer.set_trigger_action([hwnd](){ PostMessage(hwnd, WM_REFETCHPLAYERS, 0, 0); });
 	g_AutoKickTimer.set_trigger_action([](){ MainWindowLogPb2LibExceptionsToConsole(AutoKickTimerFunction, "performing auto-kick checks"); });
 
-	DWORD dwBaseUnits = GetDialogBaseUnits();
-
 	gWindows.hWinMain = hwnd;
 
-	HWND hStaticServer = CreateWindowEx(0, "STATIC", "Server: ",
-						SS_SIMPLE | WS_CHILD | WS_VISIBLE,
-						MulDiv(3  , LOWORD(dwBaseUnits), 4), // Units to Pixel
-						MulDiv(4  , HIWORD(dwBaseUnits), 8),
-						MulDiv(30 , LOWORD(dwBaseUnits), 4),
-						MulDiv(8  , HIWORD(dwBaseUnits), 8),
-						hwnd, NULL, NULL, NULL);
-
 	//The following controls will be resized when the window is shown and HandleResize is called.
+	gWindows.hStaticServer = CreateWindowEx(0, "STATIC", "Server: ", SS_SIMPLE | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, NULL, NULL, NULL);
+
 	gWindows.hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX", "",
 						CBS_DROPDOWNLIST | CBS_SORT | WS_CHILD | WS_VISIBLE,
 						0, 0, 0, CW_USEDEFAULT,	//automatically adapt to content
@@ -719,15 +714,10 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	HDC hdc = GetDC(NULL);
-	LONG lfHeight = -MulDiv(9, GetDeviceCaps(hdc, LOGPIXELSY), 72);
-	ReleaseDC(NULL, hdc);
-
-	g_MainFont = CreateFont(lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Segoe UI");
-	g_MonospaceFont = CreateFont(lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Consolas");
-
-	EnumChildWindows(hwnd, EnumWindowsSetFontCallback, (LPARAM)(HFONT)g_MainFont);
-	SendMessage(gWindows.hEditConsole, WM_SETFONT, (WPARAM)(HFONT)g_MonospaceFont, true);
+	int dpi = GetDpiForWindow(gWindows.hWinMain);
+	RECT window_rect;
+	GetWindowRect(gWindows.hWinMain, &window_rect);
+	SendMessage(hwnd, WM_DPICHANGED, MAKEWPARAM(dpi, dpi), (LPARAM)&window_rect);
 
 	Edit_LimitText(gWindows.hEditConsole, 0);
 
@@ -1152,6 +1142,7 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
     //printf ("Player : left: %d; top: %d; right: %d; bottom: %d\n", rcPlayers.left, rcPlayers.top, rcPlayers.right, rcPlayers.bottom);
     //printf ("Console: left: %d; top: %d; right: %d; bottom: %d\n", rcConsole.left, rcConsole.top, rcConsole.right, rcConsole.bottom);
 
+	MoveWindow(gWindows.hStaticServer, 3 * iMW, 4 * iMH, 30 * iMW, 8 * iMH, false);
 	MoveWindow(gWindows.hComboServer	 , 24*iMW, 3  *iMH, cx - 71*iMW, 8*iMH, FALSE);
 	MoveWindow(gWindows.hStaticServerInfo, 24*iMW, 15 *iMH, cx - 71*iMW, 8*iMH, FALSE);
 	
@@ -1240,6 +1231,56 @@ HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type_s
 	return FORWARD_WM_CTLCOLORSTATIC(hwnd, hdc, hwndChild, DefWindowProc);
 }
 
+void OnMainWindowDpiChanged(HWND hwnd, int newDpiX, int newDpiY, RECT* suggestedPos) {
+	SetWindowPos(hwnd, NULL,
+		suggestedPos->left,
+		suggestedPos->top,
+		suggestedPos->right - suggestedPos->left,
+		suggestedPos->bottom - suggestedPos->top,
+		SWP_NOZORDER | SWP_NOACTIVATE);
+
+	constexpr int fontSize = 9;
+
+	HDC hdc = GetDC(hwnd);
+	LONG lfHeight = -MulDiv(fontSize, GetDeviceCaps(hdc, LOGPIXELSY), 72);
+	ReleaseDC(NULL, hdc);
+	g_MainFont = CreateFont(lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Segoe UI");
+	g_MonospaceFont = CreateFont(lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Consolas");
+
+	EnumChildWindows(hwnd, EnumWindowsSetFontCallback, (LPARAM)(HFONT)g_MainFont);
+	SendMessage(gWindows.hEditConsole, WM_SETFONT, (WPARAM)(HFONT)g_MonospaceFont, true);
+
+
+	if (gWindows.hDlgDummy) {
+		EndDialog(gWindows.hDlgDummy, 0);
+	}
+	gWindows.hDlgDummy = CreateDialog(NULL, MAKEINTRESOURCE(IDD_DUMMY), hwnd, NULL);
+
+	/*
+	RECT rect = { 0 }, rect2 = { 0 };
+	GetWindowRect(GetDlgItem(gWindows.hDlgDummy, IDC_DUMMY_BUTTON), &rect);
+	gDimensions.button_height = rect.bottom - rect.top;
+	gDimensions.button_width = rect.right - right.left;
+
+	GetWindowRect(GetDlgItem(gWindows.hDlgDummy, IDC_DUMMY_BUTTON_PADDINGLARGE), &rect2);
+	gDimensions.padding_large = rect2.top - rect.top - gDimensions.button_height;
+
+	GetWindowRect(GetDlgItem(gWindows.hDlgDummy, IDC_DUMMY_BUTTON_PADDINGLARGE), &rect2);
+	gDimensions.padding_large = rect2.top - rect.top - gDimensions.button_height;
+
+
+	// TODO: store globally, use in WM_SIZE handler
+	/*
+	* Static height
+	* Static offset (button top to static top)
+	* Padding large
+	* Padding small
+	* Padding tiny
+	*/
+
+	SendMessage(hwnd, WM_SIZE, SIZE_RESTORED, MAKELPARAM(suggestedPos->right - suggestedPos->left, suggestedPos->bottom - suggestedPos->top));
+}
+
 LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message) {
@@ -1250,6 +1291,12 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 		HANDLE_MSG(hwnd, WM_SIZE, OnMainWindowSize);
 		HANDLE_MSG(hwnd, WM_GETMINMAXINFO, OnMainWindowGetMinMaxInfo);
 		HANDLE_MSG(hwnd, WM_CTLCOLORSTATIC, OnMainWindowCtlColorStatic);
+
+		case WM_DPICHANGED: {
+			// Can't get windows to send this to us, even with PerMonitorV2 set up. Currently only used for initial scaling at program startup.
+			OnMainWindowDpiChanged(hwnd, LOWORD(wParam), HIWORD(wParam), (RECT*)lParam);
+			return 0;
+		}
 	}
 
 	if (message == WM_REFETCHPLAYERS) { MainWindowRefetchServerInfo(); return 0; };

@@ -167,7 +167,8 @@
     <ClCompile Include="src\pb2lib.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Manifest Include="resources\common-controls-6.manifest" />
+    <Manifest Include="..\New Folder\common-controls-6.manifest" />
+    <Manifest Include="resources\dpi-awareness.manifest" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

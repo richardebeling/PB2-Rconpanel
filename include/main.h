@@ -54,6 +54,7 @@ struct WindowHandles {
 	HWND hDlgServers = NULL;
 	HWND hDlgSettings = NULL;
 	HWND hDlgRconCommands = NULL;
+	HWND hDlgDummy = NULL;
 
 	HWND hComboServer = NULL;
 	HWND hListPlayers = NULL;
@@ -69,6 +70,7 @@ struct WindowHandles {
 	HWND hButtonSend = NULL;
 	HWND hButtonJoin = NULL;
 	HWND hStaticServerInfo = NULL;
+	HWND hStaticServer = NULL;
 };
 
 struct AutoKickEntry {

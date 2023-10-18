@@ -60,7 +60,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Manifest Include="resources\common-controls-6.manifest">
+    <Manifest Include="..\New Folder\common-controls-6.manifest">
+      <Filter>Resource Files</Filter>
+    </Manifest>
+    <Manifest Include="resources\dpi-awareness.manifest">
       <Filter>Resource Files</Filter>
     </Manifest>
   </ItemGroup>
