@@ -1023,17 +1023,6 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			else
 				SetForegroundWindow(gWindows.hDlgSettings);
 			break;
-		case IDM_FILE_REMOVECONFIG:
-			{
-				int iResult = MessageBoxA(gWindows.hWinMain, "This will delete every information "
-										"stored in this program, including server IPs, ports and "
-										"passwords as well as AutoKick entries.\n"
-										"Are you sure you want to continue?",
-										"Are you sure?",
-										MB_ICONQUESTION | MB_YESNO);
-				if (iResult == IDYES) DeleteConfig();
-				break;
-			}
 		case IDM_SERVER_EDITSERVERS:
 			if (!gWindows.hDlgServers)
 				gWindows.hDlgServers = CreateDialog(NULL, MAKEINTRESOURCE(IDD_SERVERS), hwnd, ServersDlgProc);
@@ -2687,19 +2676,6 @@ std::string ConfigLocation() {
 	strcat(buffer, "ini");
 	return buffer;
 }
-
-void DeleteConfig() {
-	auto path = ConfigLocation();
-	if (DeleteFile(path.c_str())) {
-		MainWindowWriteConsole("The configuration file was deleted successfully.");
-	}
-	else {
-		MainWindowWriteConsole("The configuration file could not be removed.");
-		MainWindowWriteConsole("You need to delete it yourself:");
-		MainWindowWriteConsole(path);
-	}
-}
-
 void LoadConfig() {
 	auto path = ConfigLocation();
 

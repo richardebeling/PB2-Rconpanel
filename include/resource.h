@@ -10,7 +10,6 @@
 #define IDM									120
 #define IDM_FILE_EXIT						121
 #define IDM_FILE_SETTINGS					123
-#define IDM_FILE_REMOVECONFIG 				124
 #define IDM_SERVER_EDITSERVERS				125
 #define IDM_SERVER_ROTATION					126
 #define IDM_SERVER_CVARS					127

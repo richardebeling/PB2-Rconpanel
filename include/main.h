@@ -120,7 +120,6 @@ struct ServerCvars {
 std::string ConfigLocation(void);
 void LoadConfig(void);
 void SaveConfig(void);
-void DeleteConfig(void);
 
 UINT RegisterWindowMessageOrCriticalError(const std::string& message_name) noexcept;
 void SetClipboardContent(const std::string& content);

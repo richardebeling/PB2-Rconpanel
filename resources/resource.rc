@@ -13,7 +13,6 @@ IDM MENU
 {
 	POPUP "&File"
 	{
-		MENUITEM "&Remove Config File", IDM_FILE_REMOVECONFIG
 		MENUITEM "&Settings...", IDM_FILE_SETTINGS
 		MENUITEM "&Exit", IDM_FILE_EXIT
 	}
