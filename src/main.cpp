@@ -2460,12 +2460,12 @@ BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font) {
 
 void AddStyle(HWND hwnd, LONG style) {
 	auto old_style = GetWindowLong(hwnd, GWL_STYLE);
-	SetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE, old_style | style);
+	SetWindowLong(hwnd, GWL_STYLE, old_style | style);
 }
 
 void RemoveStyle(HWND hwnd, LONG style) {
 	auto old_style = GetWindowLong(hwnd, GWL_STYLE);
-	SetWindowLong(GetDlgItem(hwnd, IDC_AUTOKICK_EDIT), GWL_STYLE, old_style & ~style);
+	SetWindowLong(hwnd, GWL_STYLE, old_style & ~style);
 }
 
 bool HasStyle(HWND hwnd, LONG style) {
