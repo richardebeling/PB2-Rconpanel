@@ -11,6 +11,9 @@
 #include <map>
 #include <future>
 #include <utility>
+#include <chrono>
+
+using namespace std::literals::chrono_literals;
 
 
 namespace pb2lib {
@@ -87,8 +90,8 @@ public:
 
 	void clear_receive_queue(void) noexcept;
 	void send(const sockaddr_in& address, const std::string& packet_content);  // require std::string because pb2 requires terminating NULL in the packet.
-	bool wait_for_data(double timeout) const;
-	void receive(std::vector<char>* buffer, sockaddr_in* remote_address, double timeout);
+	bool wait_for_data(std::chrono::milliseconds timeout) const;
+	void receive(std::vector<char>* buffer, sockaddr_in* remote_address, std::chrono::milliseconds timeout);
 
 private:
 	WsaRaiiWrapper wsa_raii_wrapper_;
@@ -108,7 +111,7 @@ public:
 
 	void clear_receive_queue(void) noexcept;
 	void send(const std::string& packet_content);
-	void receive(std::vector<char>* buffer, double timeout);
+	void receive(std::vector<char>* buffer, std::chrono::milliseconds timeout);
 
 private:
 	UdpSocket socket_;
@@ -143,16 +146,16 @@ private:
 
 Team team_from_string(std::string_view team_string);
 
-std::string send_connectionless(const Address& address, std::string_view message, double timeout);
-std::string send_rcon(const Address& address, std::string_view rcon_password, std::string_view message, double timeout);
+std::string send_connectionless(const Address& address, std::string_view message, std::chrono::milliseconds timeout);
+std::string send_rcon(const Address& address, std::string_view rcon_password, std::string_view message, std::chrono::milliseconds timeout);
 
-std::string get_cvar(const Address& address, std::string_view rcon_password, std::string_view cvar, double timeout);
-std::vector<std::string> get_cvars(const Address& address, std::string_view rcon_password, const std::vector<std::string>& cvars, double timeout);
+std::string get_cvar(const Address& address, std::string_view rcon_password, std::string_view cvar, std::chrono::milliseconds timeout);
+std::vector<std::string> get_cvars(const Address& address, std::string_view rcon_password, const std::vector<std::string>& cvars, std::chrono::milliseconds timeout);
 
-std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std::string_view rcon_password, double timeout);
-void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, double timeout);
-void annotate_team_from_status(std::vector<Player>* players, const Address& address, double timeout);
-std::vector<Player> get_players(const Address& address, std::string_view rcon_password, double timeout);
+std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout);
+void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout);
+void annotate_team_from_status(std::vector<Player>* players, const Address& address, std::chrono::milliseconds timeout);
+std::vector<Player> get_players(const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout);
 }
 
 #endif // __PB2LIB_H_INCLUDED

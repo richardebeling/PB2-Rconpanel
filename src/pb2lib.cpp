@@ -73,13 +73,13 @@ void UdpSocket::send(const sockaddr_in& address, const std::string& packet_conte
 	}
 }
 
-bool UdpSocket::wait_for_data(double timeout) const {
+bool UdpSocket::wait_for_data(std::chrono::milliseconds timeout) const {
 	fd_set fdset = { 0 };
 	timeval time_val = { 0 };
 	FD_ZERO(&fdset);
 	FD_SET(socket_handle_, &fdset);
-	time_val.tv_sec = static_cast<long>(timeout);
-	time_val.tv_usec = static_cast<long>((fmod(timeout, 1)) * 1'000'000);
+	time_val.tv_sec = static_cast<long>(timeout.count() / 1000);
+	time_val.tv_usec = static_cast<long>((timeout.count() % 1000) * 1000l);
 
 	const int select_result = select(FD_SETSIZE, &fdset, 0, 0, &time_val);
 	if (select_result == SOCKET_ERROR) {
@@ -89,7 +89,7 @@ bool UdpSocket::wait_for_data(double timeout) const {
 	return select_result;
 }
 
-void UdpSocket::receive(std::vector<char>* buffer, sockaddr_in* remote_address, double timeout) {
+void UdpSocket::receive(std::vector<char>* buffer, sockaddr_in* remote_address, std::chrono::milliseconds timeout) {
 	const bool data_available = wait_for_data(timeout);
 	if (!data_available) {
 		buffer->resize(0);
@@ -135,7 +135,7 @@ void SingleRemoteEndpointUdpSocket::send(const std::string& packet_content) {
 }
 
 
-void SingleRemoteEndpointUdpSocket::receive(std::vector<char>* buffer, double timeout) {
+void SingleRemoteEndpointUdpSocket::receive(std::vector<char>* buffer, std::chrono::milliseconds timeout) {
 	sockaddr_in sender_address = { 0 };
 	socket_.receive(buffer, &sender_address, timeout);
 
@@ -168,7 +168,7 @@ std::future<std::string> AsyncHostnameResolver::resolve(const Address& address, 
 
 
 void AsyncHostnameResolver::thread_func(std::stop_token stop_token) {
-	constexpr double wake_up_interval = 0.1;
+	constexpr auto wake_up_interval = 100ms;
 
 	sockaddr_in remote_address;
 	std::vector<char> buffer;
@@ -180,7 +180,7 @@ void AsyncHostnameResolver::thread_func(std::stop_token stop_token) {
 		if (!data_available)
 			continue;
 
-		socket_.receive(&buffer, &remote_address, 0);
+		socket_.receive(&buffer, &remote_address, 0ms);
 		const char* response_begin = buffer.data();
 		const char* response_end = response_begin + buffer.size();
 
@@ -202,7 +202,7 @@ void AsyncHostnameResolver::thread_func(std::stop_token stop_token) {
 }
 
 
-std::string send_connectionless(const Address& address, std::string_view message, double timeout) {
+std::string send_connectionless(const Address& address, std::string_view message, std::chrono::milliseconds timeout) {
 	SingleRemoteEndpointUdpSocket socket(address);
 	socket.clear_receive_queue();
 
@@ -250,7 +250,7 @@ std::string send_connectionless(const Address& address, std::string_view message
 }
 
 
-std::string send_rcon(const Address& address, std::string_view rcon_password, std::string_view message, double timeout) {
+std::string send_rcon(const Address& address, std::string_view rcon_password, std::string_view message, std::chrono::milliseconds timeout) {
 	std::string packet = "rcon ";
 	packet += rcon_password;
 	packet += " ";
@@ -266,7 +266,7 @@ std::string send_rcon(const Address& address, std::string_view rcon_password, st
 }
 
 
-std::string get_cvar(const Address& address, std::string_view rcon_password, std::string_view cvar, double timeout) {
+std::string get_cvar(const Address& address, std::string_view rcon_password, std::string_view cvar, std::chrono::milliseconds timeout) {
 	// Separate implementation from get_cvars because it doesn't have the delimiter problem
 
 	std::string response = send_rcon(address, rcon_password, cvar, timeout);
@@ -285,7 +285,7 @@ std::string get_cvar(const Address& address, std::string_view rcon_password, std
 }
 
 
-std::vector<std::string> get_cvars(const Address& address, std::string_view rcon_password, const std::vector<std::string>& cvars, double timeout) {
+std::vector<std::string> get_cvars(const Address& address, std::string_view rcon_password, const std::vector<std::string>& cvars, std::chrono::milliseconds timeout) {
 	// PB2 rcon tokenizing (Cmd_TokenizeString) will treat any char <= 32 as a space, so we can't use ASCII End-of-transmission-block or similar.
 	static constexpr char delimiter = '\x9C'; // latin-1 "string terminator"
 
@@ -331,7 +331,7 @@ Team team_from_string(std::string_view team_string) {
 }
 
 
-std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std::string_view rcon_password, double timeout) {
+std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout) {
 	std::vector<Player> result;
 
 	const std::string response = send_rcon(address, rcon_password, "sv players", timeout);
@@ -411,7 +411,7 @@ std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std
 	return result;
 }
 
-void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, double timeout) {
+void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout) {
 	const std::string response = send_rcon(address, rcon_password, "status", timeout);
 
 	const std::regex rx(R"((\d+)\s*(\d+)\s*(\d+)\s{0,1}(.+?)\s*(\d+|CNCT)\s*(\d+\.\d+\.\d+\.\d+):(\d{1,5})\s*(\d{2,5}))");
@@ -449,7 +449,7 @@ void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, 
 	}
 }
 
-void annotate_team_from_status(std::vector<Player>* players, const Address& address, double timeout) {
+void annotate_team_from_status(std::vector<Player>* players, const Address& address, std::chrono::milliseconds timeout) {
 	// Currently doesn't annotate bot teams as bots are not reported in connectionless status response
 
 	const std::string response = send_connectionless(address, "status", timeout);
@@ -495,7 +495,7 @@ void annotate_team_from_status(std::vector<Player>* players, const Address& addr
 	}
 }
 
-std::vector<Player> get_players(const Address& address, std::string_view rcon_password, double timeout) {
+std::vector<Player> get_players(const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout) {
 	std::vector<Player> result = get_players_from_rcon_sv_players(address, rcon_password, timeout);
 	if (result.empty()) {
 		return result;

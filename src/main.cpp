@@ -73,6 +73,7 @@ Server::operator std::string() const {
 
 AutoKickEntry AutoKickEntry::from_type_and_value(std::string_view type, std::string_view value) {
 	AutoKickEntry result;
+	// "0" and "1" are backwards compatibility for < v1.4.0
 	if (type == "id" || type == "0") {
 		AutoKickEntry::IdT parsed;
 		std::from_chars(value.data(), value.data() + value.size(), parsed);
@@ -125,7 +126,7 @@ AutoKickEntry::operator std::string() const {
 }
 
 
-ServerCvars ServerCvars::from_server(const Server& server, double timeout) {
+ServerCvars ServerCvars::from_server(const Server& server, std::chrono::milliseconds timeout) {
 	const std::vector<std::string> status_vars = { "mapname", "password", "elim", "timelimit", "maxclients" };
 	auto values = pb2lib::get_cvars(server.address, server.rcon_password, status_vars, timeout);
 
@@ -262,7 +263,7 @@ void MainWindowSendRcon(const std::string& command) noexcept {
 
 	const pb2lib::Address& address = server->address;
 	const std::string rcon_password = server->rcon_password;
-	const auto timeout = gSettings.fTimeoutSecs;
+	const auto timeout = gSettings.timeout;
 	const HWND hwnd = gWindows.hWinMain;
 
 	std::promise<std::string> promise;
@@ -472,7 +473,7 @@ void MainWindowRefetchServerInfo() noexcept {
 		return;
 	}
 
-	auto fetch_players_thread_function = [](std::promise<std::vector<pb2lib::Player>> promise, Server server, HWND window, double timeout) {
+	auto fetch_players_thread_function = [](std::promise<std::vector<pb2lib::Player>> promise, Server server, HWND window, std::chrono::milliseconds timeout) {
 		try {
 			promise.set_value(pb2lib::get_players(server.address, server.rcon_password, timeout));
 		}
@@ -484,10 +485,10 @@ void MainWindowRefetchServerInfo() noexcept {
 
 	std::promise<std::vector<pb2lib::Player>> players_promise;
 	g_FetchPlayersFuture = players_promise.get_future();
-	std::jthread fetch_players_thread(fetch_players_thread_function, std::move(players_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
+	std::jthread fetch_players_thread(fetch_players_thread_function, std::move(players_promise), *server, gWindows.hWinMain, gSettings.timeout);
 	fetch_players_thread.detach();
 
-	auto fetch_cvars_thread_function = [](std::promise<ServerCvars> promise, Server server, HWND window, double timeout) {
+	auto fetch_cvars_thread_function = [](std::promise<ServerCvars> promise, Server server, HWND window, std::chrono::milliseconds timeout) {
 		try {
 			promise.set_value(ServerCvars::from_server(server, timeout));
 		}
@@ -499,7 +500,7 @@ void MainWindowRefetchServerInfo() noexcept {
 
 	std::promise<ServerCvars> cvars_promise;
 	g_FetchServerCvarsFuture = cvars_promise.get_future();
-	std::jthread fetch_cvars_thread(fetch_cvars_thread_function, std::move(cvars_promise), *server, gWindows.hWinMain, gSettings.fTimeoutSecs);
+	std::jthread fetch_cvars_thread(fetch_cvars_thread_function, std::move(cvars_promise), *server, gWindows.hWinMain, gSettings.timeout);
 	fetch_cvars_thread.detach();
 }
 
@@ -776,7 +777,7 @@ void OnMainWindowForcejoin(void)
 	}
 
 	MainWindowLogExceptionsToConsole([&]() {
-		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
+		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.timeout);
 		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
 			return updated_player.number == player->number && updated_player.name == player->name; });
 
@@ -858,7 +859,7 @@ void OnMainWindowKickPlayer(void)
 	}
 
 	MainWindowLogExceptionsToConsole([&]() {
-		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
+		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.timeout);
 		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
 			return updated_player.number == player->number && updated_player.name == player->name; });
 
@@ -1337,17 +1338,11 @@ LRESULT CALLBACK SetMaxPingDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARA
 //{-------------------------------------------------------------------------------------------------
 
 BOOL OnSettingsDlgInitDialog(HWND hwnd, HWND hwndFocux, LPARAM lParam) {	
-	std::string sBuffer = std::to_string(static_cast<int>(1000 * gSettings.fTimeoutSecs));
-	SetDlgItemText(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS, sBuffer.c_str());
-	
-	sBuffer = std::to_string(gSettings.iAutoKickCheckDelay);
-	SetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL, sBuffer.c_str());
-	
-	sBuffer = std::to_string(gSettings.iAutoReloadDelaySecs);
-	SetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTORELOAD, sBuffer.c_str());
+	SetDlgItemText(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS, std::to_string(gSettings.timeout.count()).c_str());
+	SetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL, std::to_string(gSettings.iAutoKickCheckDelay).c_str());
+	SetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTORELOAD, std::to_string(gSettings.iAutoReloadDelaySecs).c_str());
+	SetDlgItemText(hwnd, IDC_SETTINGS_EDITLINECOUNT, std::to_string(gSettings.iMaxConsoleLineCount).c_str());
 
-	sBuffer = std::to_string(gSettings.iMaxConsoleLineCount);
-	SetDlgItemText(hwnd, IDC_SETTINGS_EDITLINECOUNT, sBuffer.c_str());
 	if (gSettings.bLimitConsoleLineCount)
 		CheckDlgButton(hwnd, IDC_SETTINGS_CHECKLINECOUNT, BST_CHECKED);
 	else
@@ -1378,10 +1373,10 @@ void OnSettingsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	}
 		
 	case IDC_SETTINGS_BUTTONOK: {
+		gSettings.timeout = 1ms * GetDlgItemInt(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS, NULL, FALSE);
+
+		// TODO: Use GetDlgItemInt
 		std::vector<char> buffer(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS)));
-		GetDlgItemText(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS, buffer.data(), static_cast<int>(buffer.size()));
-		gSettings.fTimeoutSecs = atoi(buffer.data()) / 1000.0f;
-		
 		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL)));
 		GetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL, buffer.data(), static_cast<int>(buffer.size()));
 		gSettings.iAutoKickCheckDelay = atoi(buffer.data());
@@ -1444,7 +1439,7 @@ void LoadRotationToListbox(HWND hListBox) {
 	}
 	
 	MainWindowLogExceptionsToConsole([&]() {
-		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv maplist", gSettings.fTimeoutSecs);
+		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv maplist", gSettings.timeout);
 		const std::regex rx(R"(^\d+ (.*?)$)");
 
 		ListBox_ResetContent(hListBox);
@@ -1474,7 +1469,7 @@ void OnRotationDlgReloadContent(HWND hwnd) {
 	LoadRotationToListbox(GetDlgItem(hwnd, IDC_ROTATION_LIST));
 
 	MainWindowLogExceptionsToConsole([&]() {
-		std::string answer = pb2lib::get_cvar(server->address, server->rcon_password, "rot_file", gSettings.fTimeoutSecs);
+		std::string answer = pb2lib::get_cvar(server->address, server->rcon_password, "rot_file", gSettings.timeout);
 		SetDlgItemText(hwnd, IDC_ROTATION_EDITFILE, answer.c_str());
 	}, "getting rot_file");
 
@@ -1545,7 +1540,7 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		std::string answer;
 
 		MainWindowLogExceptionsToConsole([&]() {
-			answer = pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
+			answer = pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.timeout);
 		}, "changing rotation");
 
 		LoadRotationToListbox(hList);
@@ -2246,7 +2241,7 @@ void LoadBannedIPsToListbox(HWND hListBox) {
 	}
 
 	MainWindowLogExceptionsToConsole([&]() {
-		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv listip", gSettings.fTimeoutSecs);
+		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv listip", gSettings.timeout);
 		const std::regex rx(R"([\d ]{3}\.[\d ]{3}\.[\d ]{3}\.[\d ]{3})");
 
 		ListBox_ResetContent(hListBox);
@@ -2286,7 +2281,7 @@ void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 
 		command += compact_edit_ip;
 		MainWindowLogExceptionsToConsole([&]() {
-			pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
+			pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.timeout);
 		}, "modifying banned IPs");
 
 		LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_IPS_LIST));
@@ -2637,7 +2632,7 @@ void AutoKickTimerFunction() {
 
     for (const auto& server : servers)
 	{
-		std::vector <pb2lib::Player> players = pb2lib::get_players(server.address, server.rcon_password, gSettings.fTimeoutSecs);
+		std::vector <pb2lib::Player> players = pb2lib::get_players(server.address, server.rcon_password, gSettings.timeout);
 			
         for (const auto& player : players)
 		{
@@ -2645,7 +2640,7 @@ void AutoKickTimerFunction() {
 			{
 				MainWindowLogExceptionsToConsole([&]() {
 					std::string command = "kick " + std::to_string(player.number);
-					auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
+					auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.timeout);
 					MainWindowWriteConsole("Player " + player.name + " on server " + static_cast<std::string>(server) + " had a too high ping and was kicked.");
 				}, "auto-kicking");
 				continue;
@@ -2661,7 +2656,7 @@ void AutoKickTimerFunction() {
 
 			MainWindowLogExceptionsToConsole([&]() {
 				std::string command = "kick " + std::to_string(player.number);
-				auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
+				auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.timeout);
 				MainWindowWriteConsole("Found and kicked player " + player.name + " on server " + static_cast<std::string>(server));
 			}, "auto-kicking");
 		}
@@ -2686,9 +2681,11 @@ void LoadConfig() {
 	std::array<char, 4096> buffer = { 0 };
 	Settings defaults;
 
-	GetPrivateProfileString("general", "timeout", std::to_string(defaults.fTimeoutSecs).c_str(), buffer.data(), static_cast<int>(buffer.size()), path.c_str());
-	gSettings.fTimeoutSecs = static_cast<float>(atof(buffer.data()));
-	
+	gSettings.timeout = 1ms * GetPrivateProfileInt("general", "timeout", static_cast<int>(defaults.timeout.count()), path.c_str());
+	if (gSettings.timeout == 0ms) {
+		gSettings.timeout = 500ms;  // config format was changed for 1.4.0
+	}
+
 	gSettings.iMaxConsoleLineCount = GetPrivateProfileInt("general", "maxConsoleLineCount", defaults.iMaxConsoleLineCount, path.c_str());
 	gSettings.bLimitConsoleLineCount = GetPrivateProfileInt("general", "limitConsoleLineCount", defaults.iMaxConsoleLineCount, path.c_str());
 	gSettings.bColorPlayers = GetPrivateProfileInt("general", "colorPlayers", defaults.bColorPlayers, path.c_str());
@@ -2759,7 +2756,7 @@ void SaveConfig() {
 	WritePrivateProfileString("port", NULL, NULL, path.c_str());
 	WritePrivateProfileString("bans", NULL, NULL, path.c_str());
 
-	WritePrivateProfileString("general", "timeout", std::to_string(gSettings.fTimeoutSecs).c_str(), path.c_str());
+	WritePrivateProfileString("general", "timeout", std::to_string(gSettings.timeout.count()).c_str(), path.c_str());
 	WritePrivateProfileString("general", "maxConsoleLineCount", std::to_string(gSettings.iMaxConsoleLineCount).c_str(), path.c_str());
 	WritePrivateProfileString("general", "limitConsoleLineCount", std::to_string(gSettings.bLimitConsoleLineCount).c_str(), path.c_str());
 	WritePrivateProfileString("general", "autoReloadDelay", std::to_string(gSettings.iAutoReloadDelaySecs).c_str(), path.c_str());

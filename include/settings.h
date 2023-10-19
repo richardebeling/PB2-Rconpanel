@@ -1,6 +1,9 @@
 #ifndef __SETTINGS_H_INCLUDED
 #define __SETTINGS_H_INCLUDED
 
+#include <chrono>
+using namespace std::literals::chrono_literals;
+
 namespace Subitems {
 static constexpr int NUMBER = 0;
 static constexpr int NAME = 1;
@@ -23,8 +26,7 @@ struct Settings
 
 	int	  iAutoReloadDelaySecs = 0;			// delay for auto-reloading, 0 = disabled
 
-	// TODO: uniformly use chrono duration
-	float fTimeoutSecs = .5;				// timeout used for servers you have rcon access to
+	std::chrono::milliseconds timeout = 500ms; // timeout used for servers you have rcon access to
 	
 	bool  bColorPings = false;				// in the listview, the background color of the pings will vary from green to red
 	bool  bColorPlayers = true;				// in the listview, players will get their teamcolor as background

@@ -109,7 +109,7 @@ struct ServerCvars {
 	int timelimit = 0;
 	int maxclients = 0;
 
-	static ServerCvars from_server(const Server& server, double timeout);
+	static ServerCvars from_server(const Server& server, std::chrono::milliseconds timeout);
 };
 
 // TODO: Mark stuff as noexcept
