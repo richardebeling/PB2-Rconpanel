@@ -1309,11 +1309,8 @@ BOOL OnSetMaxPingDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam) {
 void OnSetMaxPingDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 	switch (id) {
 		case IDC_SP_BUTTONOK: {
-			std::vector<char> maxPingBuffer(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SP_EDIT)));
-			GetDlgItemText(hwnd, IDC_SP_EDIT, maxPingBuffer.data(), static_cast<int>(maxPingBuffer.size()));
-			gSettings.iAutoKickCheckMaxPingMsecs = atoi(maxPingBuffer.data());
+			gSettings.iAutoKickCheckMaxPingMsecs = GetDlgItemInt(hwnd, IDC_SP_EDIT, NULL, FALSE);
 			MainWindowUpdateAutoKickState();
-
 			EndDialog(hwnd, 0);
 			return;
 		}
@@ -1375,22 +1372,14 @@ void OnSettingsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 	case IDC_SETTINGS_BUTTONOK: {
 		gSettings.timeout = 1ms * GetDlgItemInt(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS, NULL, FALSE);
 
-		// TODO: Use GetDlgItemInt
-		std::vector<char> buffer(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITTIMEOUTOWNSERVERS)));
-		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL)));
-		GetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL, buffer.data(), static_cast<int>(buffer.size()));
-		gSettings.iAutoKickCheckDelay = atoi(buffer.data());
+		gSettings.iAutoKickCheckDelay = GetDlgItemInt(hwnd, IDC_SETTINGS_EDITAUTOKICKINTERVAL, NULL, FALSE);
 		MainWindowUpdateAutoKickState();
-		
-		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITAUTORELOAD)));
-		GetDlgItemText(hwnd, IDC_SETTINGS_EDITAUTORELOAD, buffer.data(), static_cast<int>(buffer.size()));
-		gSettings.iAutoReloadDelaySecs = atoi(buffer.data());
+
+		gSettings.iAutoReloadDelaySecs = GetDlgItemInt(hwnd, IDC_SETTINGS_EDITAUTORELOAD, NULL, FALSE);
 		g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
 			
-		buffer.resize(1ull + GetWindowTextLength(GetDlgItem(hwnd, IDC_SETTINGS_EDITLINECOUNT)));
 		// TODO: Also use 0 = unlimited semantics?
-		GetDlgItemText(hwnd, IDC_SETTINGS_EDITLINECOUNT, buffer.data(), static_cast<int>(buffer.size()));
-		gSettings.iMaxConsoleLineCount = atoi (buffer.data());
+		gSettings.iMaxConsoleLineCount = GetDlgItemInt(hwnd, IDC_SETTINGS_EDITLINECOUNT, NULL, FALSE);
 		gSettings.bLimitConsoleLineCount = 0;
 		if (IsDlgButtonChecked(hwnd, IDC_SETTINGS_CHECKLINECOUNT) == BST_CHECKED) {
 			gSettings.bLimitConsoleLineCount = 1;
