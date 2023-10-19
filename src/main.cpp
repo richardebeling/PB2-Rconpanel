@@ -22,6 +22,7 @@
 #include <future>
 #include <charconv>
 #include <array>
+#include <filesystem>
 
 using namespace std::string_literals;
 using namespace std::chrono_literals;
@@ -62,7 +63,7 @@ std::unique_ptr<Gdiplus::Bitmap> g_pMapshotBitmap;
 Server::operator std::string() const {
 	std::string display_hostname = "No response";
 	if (hostname.valid() && hostname.wait_for(0s) != std::future_status::timeout) {
-		MainWindowLogPb2LibExceptionsToConsole([&]() {
+		MainWindowLogExceptionsToConsole([&]() {
 			display_hostname = hostname.get();
 		}, "getting hostname");
 	}
@@ -241,11 +242,14 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 
 // TODO: Namespacing instead of function name prefixing
 
-void MainWindowLogPb2LibExceptionsToConsole(std::function<void()> func, std::string_view action_description) {
+void MainWindowLogExceptionsToConsole(std::function<void()> func, std::string_view action_description) {
 	try {
 		func();
 	}
 	catch (pb2lib::Exception& e) {
+		MainWindowWriteConsole("Error (" + std::string(action_description) + "): " + e.what());
+	}
+	catch (RconpanelException& e) {
 		MainWindowWriteConsole("Error (" + std::string(action_description) + "): " + e.what());
 	}
 }
@@ -657,7 +661,7 @@ int CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lPa
 BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 {
 	g_AutoReloadTimer.set_trigger_action([hwnd](){ PostMessage(hwnd, WM_REFETCHPLAYERS, 0, 0); });
-	g_AutoKickTimer.set_trigger_action([](){ MainWindowLogPb2LibExceptionsToConsole(AutoKickTimerFunction, "performing auto-kick checks"); });
+	g_AutoKickTimer.set_trigger_action([](){ MainWindowLogExceptionsToConsole(AutoKickTimerFunction, "performing auto-kick checks"); });
 
 	gWindows.hWinMain = hwnd;
 
@@ -744,17 +748,10 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	}
 	ListView_SetExtendedListViewStyle(gWindows.hListPlayers, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
-	int retVal = LoadConfig();
-	
-	// TODO: Use exceptions and Log-Wrapper
-	if (retVal == -1)
-		MainWindowWriteConsole("No configuration file found. The program will save its settings when you close it.");
-	else if (retVal == -2)
-		MainWindowWriteConsole("Error while reading AutoKick entries from config file.");
-	else if (retVal == 1)
+	MainWindowLogExceptionsToConsole([]() {
+		LoadConfig();
 		MainWindowWriteConsole("Configuration loaded.");
-	else
-		MainWindowWriteConsole("Unexpected error when loading the configuration file: " + std::to_string(retVal));
+	}, "loading configuration");
 	
 	MainWindowRefetchHostnames();
 
@@ -778,7 +775,7 @@ void OnMainWindowForcejoin(void)
 		return;
 	}
 
-	MainWindowLogPb2LibExceptionsToConsole([&]() {
+	MainWindowLogExceptionsToConsole([&]() {
 		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
 		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
 			return updated_player.number == player->number && updated_player.name == player->name; });
@@ -860,7 +857,7 @@ void OnMainWindowKickPlayer(void)
 		return;
 	}
 
-	MainWindowLogPb2LibExceptionsToConsole([&]() {
+	MainWindowLogExceptionsToConsole([&]() {
 		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.fTimeoutSecs);
 		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
 			return updated_player.number == player->number && updated_player.name == player->name; });
@@ -914,7 +911,7 @@ void OnMainWindowAutoKick(void) {
 void OnMainWindowPlayersReady() noexcept {
 	// Message might be from an outdated / older thread -> only process if the current future is ready
 	if (g_FetchPlayersFuture.valid() && g_FetchPlayersFuture.wait_for(0s) != std::future_status::timeout) {
-		MainWindowLogPb2LibExceptionsToConsole([&]() {
+		MainWindowLogExceptionsToConsole([&]() {
 			g_vPlayers = g_FetchPlayersFuture.get();
 			MainWindowUpdatePlayersListview();
 			MainWindowWriteConsole("The player list was reloaded.");
@@ -926,7 +923,7 @@ void OnMainWindowServerCvarsReady() noexcept {
 	if (g_FetchServerCvarsFuture.valid() && g_FetchServerCvarsFuture.wait_for(0s) != std::future_status::timeout) {
 		std::string display_text = "Error";
 
-		MainWindowLogPb2LibExceptionsToConsole([&]() {
+		MainWindowLogExceptionsToConsole([&]() {
 			auto values = g_FetchServerCvarsFuture.get();
 			display_text = "map: " + values.mapname;
 			display_text += " | pw: " + (values.password.size() > 0 ? values.password : "none");
@@ -947,7 +944,7 @@ void OnMainWindowRconResponseReady() noexcept {
 		if (future.wait_for(0s) == std::future_status::timeout) {
 			continue;
 		}
-		MainWindowLogPb2LibExceptionsToConsole([&]() {
+		MainWindowLogExceptionsToConsole([&]() {
 			std::string response = future.get();
 			MainWindowWriteConsole(response);
 		}, "getting rcon response");
@@ -1278,7 +1275,7 @@ void OnMainWindowDpiChanged(HWND hwnd, int newDpiX, int newDpiY, RECT* suggested
 	* Padding tiny
 	*/
 
-	SendMessage(hwnd, WM_SIZE, SIZE_RESTORED, MAKELPARAM(suggestedPos->right - suggestedPos->left, suggestedPos->bottom - suggestedPos->top));
+	SendMessage(hwnd, WM_SIZE, SIZE_RESTORED, MAKELPARAM(0ull + suggestedPos->right - suggestedPos->left, 0ull + suggestedPos->bottom - suggestedPos->top));
 }
 
 LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -1457,7 +1454,7 @@ void LoadRotationToListbox(HWND hListBox) {
 		return;
 	}
 	
-	MainWindowLogPb2LibExceptionsToConsole([&]() {
+	MainWindowLogExceptionsToConsole([&]() {
 		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv maplist", gSettings.fTimeoutSecs);
 		const std::regex rx(R"(^\d+ (.*?)$)");
 
@@ -1487,7 +1484,7 @@ void OnRotationDlgReloadContent(HWND hwnd) {
 
 	LoadRotationToListbox(GetDlgItem(hwnd, IDC_ROTATION_LIST));
 
-	MainWindowLogPb2LibExceptionsToConsole([&]() {
+	MainWindowLogExceptionsToConsole([&]() {
 		std::string answer = pb2lib::get_cvar(server->address, server->rcon_password, "rot_file", gSettings.fTimeoutSecs);
 		SetDlgItemText(hwnd, IDC_ROTATION_EDITFILE, answer.c_str());
 	}, "getting rot_file");
@@ -1558,7 +1555,7 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		std::string command = "sv rotation " + subcommand;
 		std::string answer;
 
-		MainWindowLogPb2LibExceptionsToConsole([&]() {
+		MainWindowLogExceptionsToConsole([&]() {
 			answer = pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
 		}, "changing rotation");
 
@@ -2259,7 +2256,7 @@ void LoadBannedIPsToListbox(HWND hListBox) {
 		return;
 	}
 
-	MainWindowLogPb2LibExceptionsToConsole([&]() {
+	MainWindowLogExceptionsToConsole([&]() {
 		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv listip", gSettings.fTimeoutSecs);
 		const std::regex rx(R"([\d ]{3}\.[\d ]{3}\.[\d ]{3}\.[\d ]{3})");
 
@@ -2299,7 +2296,7 @@ void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		}
 
 		command += compact_edit_ip;
-		MainWindowLogPb2LibExceptionsToConsole([&]() {
+		MainWindowLogExceptionsToConsole([&]() {
 			pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.fTimeoutSecs);
 		}, "modifying banned IPs");
 
@@ -2657,7 +2654,7 @@ void AutoKickTimerFunction() {
 		{
 			if (gSettings.iAutoKickCheckMaxPingMsecs != 0 && player.ping > gSettings.iAutoKickCheckMaxPingMsecs)
 			{
-				MainWindowLogPb2LibExceptionsToConsole([&]() {
+				MainWindowLogExceptionsToConsole([&]() {
 					std::string command = "kick " + std::to_string(player.number);
 					auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
 					MainWindowWriteConsole("Player " + player.name + " on server " + static_cast<std::string>(server) + " had a too high ping and was kicked.");
@@ -2673,7 +2670,7 @@ void AutoKickTimerFunction() {
 				continue;
 			}
 
-			MainWindowLogPb2LibExceptionsToConsole([&]() {
+			MainWindowLogExceptionsToConsole([&]() {
 				std::string command = "kick " + std::to_string(player.number);
 				auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.fTimeoutSecs);
 				MainWindowWriteConsole("Found and kicked player " + player.name + " on server " + static_cast<std::string>(server));
@@ -2691,161 +2688,125 @@ std::string ConfigLocation() {
 	return buffer;
 }
 
-void DeleteConfig() // deletes the config file, prints result to console, sets g_bDontWriteConfig to 1
-{
+void DeleteConfig() {
 	auto path = ConfigLocation();
-	if (DeleteFile(path.c_str()))
-	{
+	if (DeleteFile(path.c_str())) {
 		MainWindowWriteConsole("The configuration file was deleted successfully.");
 	}
-	else
-	{
+	else {
 		MainWindowWriteConsole("The configuration file could not be removed.");
 		MainWindowWriteConsole("You need to delete it yourself:");
 		MainWindowWriteConsole(path);
 	}
 }
 
-int LoadConfig() // loads the servers and settings from the config file
-{
-	char szReadBuffer[4096];
+void LoadConfig() {
 	auto path = ConfigLocation();
 
+	if (!std::filesystem::exists(path)) {
+		throw RconpanelException("No configuration file found. The program will save its settings when you close it.");
+	}
+
+	std::array<char, 4096> buffer = { 0 };
 	Settings defaults;
 
-	GetPrivateProfileString("general", "timeout", std::to_string(defaults.fTimeoutSecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.fTimeoutSecs = (float) atof(szReadBuffer);
+	GetPrivateProfileString("general", "timeout", std::to_string(defaults.fTimeoutSecs).c_str(), buffer.data(), static_cast<int>(buffer.size()), path.c_str());
+	gSettings.fTimeoutSecs = static_cast<float>(atof(buffer.data()));
 	
-	GetPrivateProfileString("general", "maxConsoleLineCount", std::to_string(defaults.iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.iMaxConsoleLineCount = atoi(szReadBuffer);
-	
-	GetPrivateProfileString("general", "limitConsoleLineCount", std::to_string(defaults.iMaxConsoleLineCount).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bLimitConsoleLineCount = atoi(szReadBuffer);
-	
-	GetPrivateProfileString("general", "colorPlayers", std::to_string(defaults.bColorPlayers).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bColorPlayers = atoi(szReadBuffer);
-	
-	GetPrivateProfileString("general", "colorPings", std::to_string(defaults.bColorPings).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bColorPings = atoi(szReadBuffer);
-	
-	GetPrivateProfileString("general", "disableConsole", std::to_string(defaults.bDisableConsole).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bDisableConsole = atoi(szReadBuffer);
-	
-	GetPrivateProfileString("general", "autoReloadDelay", std::to_string(defaults.iAutoReloadDelaySecs).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.iAutoReloadDelaySecs = atoi(szReadBuffer);
+	gSettings.iMaxConsoleLineCount = GetPrivateProfileInt("general", "maxConsoleLineCount", defaults.iMaxConsoleLineCount, path.c_str());
+	gSettings.bLimitConsoleLineCount = GetPrivateProfileInt("general", "limitConsoleLineCount", defaults.iMaxConsoleLineCount, path.c_str());
+	gSettings.bColorPlayers = GetPrivateProfileInt("general", "colorPlayers", defaults.bColorPlayers, path.c_str());
+	gSettings.bColorPings = GetPrivateProfileInt("general", "colorPings", defaults.bColorPings, path.c_str());
+	gSettings.bDisableConsole = GetPrivateProfileInt("general", "disableConsole", defaults.bDisableConsole, path.c_str());
+	gSettings.iAutoReloadDelaySecs = GetPrivateProfileInt("general", "autoReloadDelay", defaults.iAutoReloadDelaySecs, path.c_str());
 	g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
 	
-	GetPrivateProfileString("general", "serverlistAddress", defaults.sServerlistAddress.c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.sServerlistAddress = szReadBuffer;
-	
-	GetPrivateProfileString("bans", "runBanThread", std::to_string(defaults.bAutoKickCheckEnable).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.bAutoKickCheckEnable = atoi(szReadBuffer);
-	
-	GetPrivateProfileString("bans", "delay", std::to_string(defaults.iAutoKickCheckDelay).c_str(), szReadBuffer, sizeof(szReadBuffer), path.c_str());
-	gSettings.iAutoKickCheckDelay = atoi(szReadBuffer);
-	MainWindowUpdateAutoKickState();
+	GetPrivateProfileString("general", "serverlistAddress", defaults.sServerlistAddress.c_str(), buffer.data(), static_cast<int>(buffer.size()), path.c_str());
+	gSettings.sServerlistAddress = buffer.data();
 
-	char szCount[10];
-	GetPrivateProfileString("server", "count", "-1", szCount, sizeof(szCount), path.c_str());
-	if (strcmp (szCount, "-1") == 0 && GetLastError() == 0x2) return -1; //File not Found
-	for (int i = 0; i < atoi(szCount); i++) // load servers
-	{
-		char szKeyBuffer[512] = { 0 };
-		char szPortBuffer[6] = { 0 };
-		sprintf(szKeyBuffer, "%d", i);
-		GetPrivateProfileString("ip", szKeyBuffer, "0.0.0.0", szReadBuffer, sizeof(szReadBuffer), path.c_str());
-		GetPrivateProfileString("port", szKeyBuffer, "00000", szPortBuffer, 6, path.c_str());
+	int server_count = GetPrivateProfileInt("server", "count", 0, path.c_str());
+	g_ServersWithRcon.reserve(server_count);
+	for (int server_index = 0; server_index < server_count; server_index++) {
 		Server server;
-		server.address.ip = szReadBuffer;
-		server.address.port = atoi(szPortBuffer);
+		std::string key = std::to_string(server_index);
 
-		GetPrivateProfileString("pw", szKeyBuffer, "", szReadBuffer, sizeof(szReadBuffer), path.c_str());
-		server.rcon_password = szReadBuffer;
+		GetPrivateProfileString("ip", key.c_str(), "0.0.0.0", buffer.data(), static_cast<int>(buffer.size()), path.c_str());
+		server.address.ip = buffer.data();
+
+		server.address.port = GetPrivateProfileInt("port", key.c_str(), 0, path.c_str());
+
+		GetPrivateProfileString("pw", key.c_str(), "", buffer.data(), static_cast<int>(buffer.size()), path.c_str());
+		server.rcon_password = buffer.data();
 
 		g_ServersWithRcon.emplace_back(std::make_unique<Server>(server));
 		MainWindowAddOrUpdateOwnedServer(g_ServersWithRcon.back().get());
 	}
 
-	GetPrivateProfileString("bans", "count", "0", szCount, sizeof(szCount), path.c_str());
-	for (int i = 0; i < atoi(szCount); i++) {
-		std::string key_buffer = std::to_string(i);
-		GetPrivateProfileString("bans", key_buffer.c_str(), "", szReadBuffer, sizeof(szReadBuffer), path.c_str());
-		if (strcmp(szReadBuffer, "") == 0) {
-			return -2;
-		}
-		const std::string value = szReadBuffer;
+	gSettings.bAutoKickCheckEnable = GetPrivateProfileInt("bans", "runBanThread", defaults.bAutoKickCheckEnable, path.c_str());
+	gSettings.iAutoKickCheckDelay = GetPrivateProfileInt("bans", "delay", defaults.iAutoKickCheckDelay, path.c_str());
+	MainWindowUpdateAutoKickState();
 
-		key_buffer = std::to_string(i) + "type";
-		GetPrivateProfileString("bans", key_buffer.c_str(), "-1", szReadBuffer, sizeof(szReadBuffer), path.c_str());
-		if (strcmp(szReadBuffer, "-1") == 0) {
-			return -2;
+	int ban_count = GetPrivateProfileInt("bans", "count", 0, path.c_str());
+	g_vAutoKickEntries.reserve(ban_count);
+	for (int ban_index = 0; ban_index < ban_count; ban_index++) {
+		std::string key_buffer = std::to_string(ban_index);
+
+		GetPrivateProfileString("bans", key_buffer.c_str(), "", buffer.data(), static_cast<int>(buffer.size()), path.c_str());
+		const std::string value = buffer.data();
+		if (value.empty()) {
+			throw RconpanelException("Invalid empty ban value");
 		}
-		const std::string type = szReadBuffer;
+
+		key_buffer = std::to_string(ban_index) + "type";
+		GetPrivateProfileString("bans", key_buffer.c_str(), "", buffer.data(), static_cast<int>(buffer.size()), path.c_str());
+		const std::string type = buffer.data();
+		if (type.empty()) {
+			throw RconpanelException("Invalid or missing ban type");
+		}
 
 		AutoKickEntry entry = AutoKickEntry::from_type_and_value(type, value);
 		g_vAutoKickEntries.push_back(std::make_unique<AutoKickEntry>(entry));
 	}
-	return 1;
 }
 
-void SaveConfig() // Saves all servers and settings in the config file
-{
+void SaveConfig() {
 	// TODO: Store and reload max ping for auto-kick?
 	// TODO: Update ini paths with renamed program terminology (e.g. ban vs autokick)
 
 	MainWindowWriteConsole("Saving configuration file...");
 	auto path = ConfigLocation();
 
-	//clear old config so servers & bans that are not used anymore are not occupying any disk space:
+	// remove existing entries
+	WritePrivateProfileString("general", NULL, NULL, path.c_str());
 	WritePrivateProfileString("ip", NULL, NULL, path.c_str());
 	WritePrivateProfileString("pw", NULL, NULL, path.c_str());
 	WritePrivateProfileString("port", NULL, NULL, path.c_str());
 	WritePrivateProfileString("bans", NULL, NULL, path.c_str());
-	
-	std::string sWriteBuffer = std::to_string(g_ServersWithRcon.size());
-	if (!WritePrivateProfileString("server", "count", sWriteBuffer.c_str(), path.c_str()))
-		return;
 
-	for (unsigned int i = 0; i< g_ServersWithRcon.size(); i++) //write servers to it
-	{
-		std::string sKeyBuffer = std::to_string(i);
-		std::string sPortBuffer = std::to_string(g_ServersWithRcon[i]->address.port);
-		WritePrivateProfileString("ip", sKeyBuffer.c_str(), g_ServersWithRcon[i]->address.ip.c_str(), path.c_str());
-		WritePrivateProfileString("pw", sKeyBuffer.c_str(), g_ServersWithRcon[i]->rcon_password.c_str(), path.c_str());
-		WritePrivateProfileString("port", sKeyBuffer.c_str(), sPortBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("general", "timeout", std::to_string(gSettings.fTimeoutSecs).c_str(), path.c_str());
+	WritePrivateProfileString("general", "maxConsoleLineCount", std::to_string(gSettings.iMaxConsoleLineCount).c_str(), path.c_str());
+	WritePrivateProfileString("general", "limitConsoleLineCount", std::to_string(gSettings.bLimitConsoleLineCount).c_str(), path.c_str());
+	WritePrivateProfileString("general", "autoReloadDelay", std::to_string(gSettings.iAutoReloadDelaySecs).c_str(), path.c_str());
+	WritePrivateProfileString("general", "colorPlayers", std::to_string(gSettings.bColorPlayers).c_str(), path.c_str());
+	WritePrivateProfileString("general", "colorPings", std::to_string(gSettings.bColorPings).c_str(), path.c_str());
+	WritePrivateProfileString("general", "disableConsole", std::to_string(gSettings.bDisableConsole).c_str(), path.c_str());
+	WritePrivateProfileString("general", "serverlistAddress", gSettings.sServerlistAddress.c_str(), path.c_str());
+
+	WritePrivateProfileString("server", "count", std::to_string(g_ServersWithRcon.size()).c_str(), path.c_str());
+	for (size_t server_index = 0; server_index < g_ServersWithRcon.size(); server_index++) {
+		const Server& server = *g_ServersWithRcon[server_index];
+		WritePrivateProfileString("ip", std::to_string(server_index).c_str(), server.address.ip.c_str(), path.c_str());
+		WritePrivateProfileString("pw", std::to_string(server_index).c_str(), server.rcon_password.c_str(), path.c_str());
+		WritePrivateProfileString("port", std::to_string(server_index).c_str(), std::to_string(server.address.port).c_str(), path.c_str());
 	}
 
-	sWriteBuffer = std::to_string(gSettings.fTimeoutSecs);
-	WritePrivateProfileString("general", "timeout", sWriteBuffer.c_str(), path.c_str());
-	sWriteBuffer = std::to_string(gSettings.iMaxConsoleLineCount);
-	WritePrivateProfileString("general", "maxConsoleLineCount", sWriteBuffer.c_str(), path.c_str());
-	sWriteBuffer = std::to_string(gSettings.bLimitConsoleLineCount);
-	WritePrivateProfileString("general", "limitConsoleLineCount", sWriteBuffer.c_str(), path.c_str());
-	sWriteBuffer = std::to_string(gSettings.iAutoReloadDelaySecs);
-	WritePrivateProfileString("general", "autoReloadDelay", sWriteBuffer.c_str(), path.c_str());
-	sWriteBuffer = std::to_string(gSettings.bColorPlayers);
-	WritePrivateProfileString("general", "colorPlayers", sWriteBuffer.c_str(), path.c_str());
-	sWriteBuffer = std::to_string(gSettings.bColorPings);
-	WritePrivateProfileString("general", "colorPings", sWriteBuffer.c_str(), path.c_str());
-	sWriteBuffer = std::to_string(gSettings.bDisableConsole);
-	WritePrivateProfileString("general", "disableConsole", sWriteBuffer.c_str(), path.c_str());
-	
-	WritePrivateProfileString("general", "serverlistAddress", gSettings.sServerlistAddress.c_str(), path.c_str());
-	
-	sWriteBuffer = std::to_string(gSettings.bAutoKickCheckEnable);
-	WritePrivateProfileString("bans", "runBanThread", sWriteBuffer.c_str(), path.c_str());
-	sWriteBuffer = std::to_string(gSettings.iAutoKickCheckDelay);
-	WritePrivateProfileString("bans", "delay", sWriteBuffer.c_str(), path.c_str());
+	WritePrivateProfileString("bans", "runBanThread", std::to_string(gSettings.bAutoKickCheckEnable).c_str(), path.c_str());
+	WritePrivateProfileString("bans", "delay", std::to_string(gSettings.iAutoKickCheckDelay).c_str(), path.c_str());
 
-	std::string sKeyBuffer = std::to_string(g_vAutoKickEntries.size());
-	WritePrivateProfileString("bans", "count", sKeyBuffer.c_str(), path.c_str());
-
-	for (unsigned int i = 0; i < g_vAutoKickEntries.size(); i++)
-	{
-		sKeyBuffer = std::to_string(i);
-		WritePrivateProfileString("bans", sKeyBuffer.c_str(), g_vAutoKickEntries[i]->value_string().c_str(), path.c_str());
-
-		sKeyBuffer = std::to_string(i) + "type";
-		WritePrivateProfileString("bans", sKeyBuffer.c_str(), g_vAutoKickEntries[i]->type_string().c_str(), path.c_str());
+	WritePrivateProfileString("bans", "count", std::to_string(g_vAutoKickEntries.size()).c_str(), path.c_str());
+	for (unsigned int index = 0; index < g_vAutoKickEntries.size(); index++) {
+		const AutoKickEntry& entry = *g_vAutoKickEntries[index];
+		WritePrivateProfileString("bans", std::to_string(index).c_str(), entry.value_string().c_str(), path.c_str());
+		WritePrivateProfileString("bans", (std::to_string(index) + "type").c_str(), entry.type_string().c_str(), path.c_str());
 	}
 }

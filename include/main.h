@@ -29,6 +29,11 @@ struct Overload : Functors... {
 	using Functors::operator()...;
 };
 
+class RconpanelException : private std::runtime_error {
+public:
+	using std::runtime_error::runtime_error;
+	using std::runtime_error::what;
+};
 
 template <typename HandleT, HandleT InvalidHandle = static_cast<HandleT>(NULL)>
 class DeleteObjectRAIIWrapper {
@@ -113,7 +118,7 @@ struct ServerCvars {
 [[noreturn]] void HandleCriticalError(const std::string& message) noexcept;
 
 std::string ConfigLocation(void);
-int  LoadConfig(void);
+void LoadConfig(void);
 void SaveConfig(void);
 void DeleteConfig(void);
 
@@ -156,7 +161,7 @@ std::vector<T> FlatCopyVectorOfUniquePtrs(const std::vector<std::unique_ptr<T>>&
 //--------------------------------------------------------------------------------------------------
 
 void AutoKickTimerFunction();
-void MainWindowLogPb2LibExceptionsToConsole(std::function<void()> func, std::string_view action_description);
+void MainWindowLogExceptionsToConsole(std::function<void()> func, std::string_view action_description);
 void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr) noexcept;
 void MainWindowRemoveOwnedServer(const Server* stored_server_ptr) noexcept;
 void MainWindowUpdateAutoKickState() noexcept;
