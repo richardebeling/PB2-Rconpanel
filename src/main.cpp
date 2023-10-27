@@ -4,6 +4,9 @@
 
 //TODO: Save and restore window position?
 
+// TODO: Rcon Combobox Enter/Return is broken
+// TODO: Rcon Combobox fill with history
+
 // TODO: Make everything in the main window accessible via keyboard through menus?
 
 #ifdef _MSC_VER
@@ -53,6 +56,7 @@ UINT WM_REFETCHPLAYERS, WM_SERVERCHANGED, WM_PLAYERSREADY, WM_SERVERCVARSREADY, 
 
 DeleteObjectRAIIWrapper<HFONT> g_MainFont, g_MonospaceFont;
 
+WindowDimensions gDimensions;
 WindowHandles gWindows;
 Settings gSettings;
 
@@ -194,7 +198,6 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 		HandleCriticalError("Could not register window class");
 	}
 
-	// TODO: Get initial window size from dialog size also?
 	DWORD dwBaseUnits = GetDialogBaseUnits();
 	CreateWindowEx (0, classname, "DP:PB2 Rconpanel",
 					WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
@@ -543,7 +546,6 @@ void MainWindowUpdatePlayersListview() noexcept
 		}
 	}
 	ListView_SortItems(gWindows.hListPlayers, OnMainWindowListViewSort, 0);
-	ListView_SetColumnWidth(gWindows.hListPlayers, 7, LVSCW_AUTOSIZE_USEHEADER);
 }
 
 void MainWindowWriteConsole(const std::string_view str) // prints text to gWindows.hEditConsole, adds timestamp and linebreak
@@ -667,7 +669,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	gWindows.hWinMain = hwnd;
 
 	//The following controls will be resized when the window is shown and HandleResize is called.
-	gWindows.hStaticServer = CreateWindowEx(0, "STATIC", "Server: ", SS_SIMPLE | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, NULL, NULL, NULL);
+	gWindows.hStaticServer = CreateWindowEx(0, "STATIC", "Server:", SS_SIMPLE | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, NULL, NULL, NULL);
 
 	gWindows.hComboServer = CreateWindowEx(WS_EX_CLIENTEDGE, "COMBOBOX", "",
 						CBS_DROPDOWNLIST | CBS_SORT | WS_CHILD | WS_VISIBLE,
@@ -697,7 +699,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	gWindows.hButtonBanIP = CreateWindowEx(0, WC_BUTTON, "&Ban IP", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "&DPLogin Profile", WS_CHILD | WS_VISIBLE,
+	gWindows.hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "&DPLogin", WS_CHILD | WS_VISIBLE,
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
@@ -708,7 +710,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						hwnd, NULL, NULL, NULL);
 
 	gWindows.hComboRcon = CreateWindowEx(WS_EX_CLIENTEDGE, WC_COMBOBOX, "",
-						CBS_AUTOHSCROLL | CBS_SIMPLE | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+						CBS_AUTOHSCROLL | CBS_DROPDOWN | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
 	gWindows.hButtonSend = CreateWindowEx(0, WC_BUTTON, "&Send Rcon", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
@@ -719,19 +721,13 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	int dpi = GetDpiForWindow(gWindows.hWinMain);
-	RECT window_rect;
-	GetWindowRect(gWindows.hWinMain, &window_rect);
-	SendMessage(hwnd, WM_DPICHANGED, MAKEWPARAM(dpi, dpi), (LPARAM)&window_rect);
-
 	Edit_LimitText(gWindows.hEditConsole, 0);
 
 	LVCOLUMN lvc = { 0 };
 	std::string buffer;
-	lvc.mask = LVCF_TEXT | LVCF_SUBITEM | LVCF_FMT;
+	lvc.mask = LVCF_TEXT | LVCF_FMT;
 	for (int i = 0; i <= 7; i++)
 	{
-		lvc.iSubItem = i;
 		lvc.fmt = LVCFMT_RIGHT;
 		switch (i)
 		{
@@ -748,6 +744,11 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 		ListView_InsertColumn(gWindows.hListPlayers, i, &lvc);
 	}
 	ListView_SetExtendedListViewStyle(gWindows.hListPlayers, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+
+	const int dpi = GetDpiForWindow(gWindows.hWinMain);
+	RECT window_rect;
+	GetWindowRect(gWindows.hWinMain, &window_rect);
+	SendMessage(hwnd, WM_DPICHANGED, MAKEWPARAM(dpi, dpi), (LPARAM)&window_rect);
 
 	MainWindowLogExceptionsToConsole([]() {
 		LoadConfig();
@@ -1112,81 +1113,107 @@ int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
 	return 0;
 }
 
-void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy)
-{
-	DWORD dwBaseUnits = GetDialogBaseUnits();
-    int iMW = LOWORD(dwBaseUnits) / 4; //Multiplier width for base units -> pixels
-	int iMH = HIWORD(dwBaseUnits) / 8; //Multiplier height for base units -> pixels
+void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy) {
+	static int old_cx = cx;
+	static int old_cy = cy;
 
-	// TODO: Make DPI aware and mark as DPI aware?
-	// TODO: Fix clipping with DPI scaling enabled
+	const auto window_border_padding = gDimensions.padding_small;
 
-    // TODO: Add: calculate it all from a few, for humans readable areas (Server, Player, Console) so editing is easier.
-    //RECT rcServer =  {3*iMW, 3*iMH                   , cx - 3*iMW, 23*iMH};
-    //RECT rcPlayers = {3*iMW, rcServer.bottom + 2*iMH , cx - 3*iMW, ((cy > 244*iMH) ? cy/2-20*iMH : 102*iMH) + 25*iMH};
-    //RECT rcConsole = {3*iMW, rcPlayers.bottom + 2*iMH, cx - 3*iMW, cy - 3*iMH};
-    //printf ("Server : left: %d; top: %d; right: %d; bottom: %d\n", rcServer.left, rcServer.top, rcServer.right, rcServer.bottom);
-    //printf ("Player : left: %d; top: %d; right: %d; bottom: %d\n", rcPlayers.left, rcPlayers.top, rcPlayers.right, rcPlayers.bottom);
-    //printf ("Console: left: %d; top: %d; right: %d; bottom: %d\n", rcConsole.left, rcConsole.top, rcConsole.right, rcConsole.bottom);
+	auto row_top = window_border_padding;
+	int combo_server_left;
+	{ // server row
+		const auto static_top = row_top + gDimensions.static_vertical_offset_from_button;
+		MoveWindow(gWindows.hStaticServer, window_border_padding, static_top, gDimensions.static_server_width, gDimensions.static_height, false);
+		const auto static_right = window_border_padding + gDimensions.static_server_width;
 
-	MoveWindow(gWindows.hStaticServer, 3 * iMW, 4 * iMH, 30 * iMW, 8 * iMH, false);
-	MoveWindow(gWindows.hComboServer	 , 24*iMW, 3  *iMH, cx - 71*iMW, 8*iMH, FALSE);
-	MoveWindow(gWindows.hStaticServerInfo, 24*iMW, 15 *iMH, cx - 71*iMW, 8*iMH, FALSE);
-	
-	if (gSettings.bDisableConsole)
-	{
-		ShowWindow(gWindows.hComboRcon,   SW_HIDE);
-		ShowWindow(gWindows.hButtonSend,  SW_HIDE);
-		ShowWindow(gWindows.hEditConsole, SW_HIDE);
-		
-		MoveWindow(gWindows.hListPlayers, 3*iMW, 25*iMH, cx - 50*iMW, cy - 28*iMH, FALSE);
-	}
-	else
-	{
-		if (cy > 244*iMH) //if window is big enough
-		{
-			MoveWindow(gWindows.hListPlayers, 3 *iMW	 , 25 *iMH	  , cx - 50*iMW, cy/2-20*iMH, FALSE); //resize listview and console
-			MoveWindow(gWindows.hComboRcon  , 3 *iMW	 , cy/2+10*iMH, cx - 50*iMW, 10*iMH	    , FALSE);
-			MoveWindow(gWindows.hButtonSend , cx - 45*iMW, cy/2+9*iMH , 43*iMW	   , 12*iMH		, FALSE);
-			MoveWindow(gWindows.hEditConsole, 3 *iMW	 , cy/2+23*iMH, cx - 6 *iMW, cy/2-26*iMH, FALSE);
-		}
-		else
-		{
-			MoveWindow(gWindows.hListPlayers, 3 *iMW, 25 *iMH     , cx - 50*iMW, 102*iMH   , FALSE); //only resize console, keep listview's min size
-			MoveWindow(gWindows.hComboRcon  , 3 *iMW, 132*iMH     , cx - 50*iMW, 10*iMH	   , FALSE);
-			MoveWindow(gWindows.hButtonSend , cx - 45*iMW, 131*iMH,      43*iMW, 12*iMH	   , FALSE);
-			MoveWindow(gWindows.hEditConsole, 3 *iMW, 145*iMH     , cx - 6 *iMW, cy-148*iMH, FALSE);
-		}
-		ShowWindow(gWindows.hComboRcon,   SW_SHOW);
-		ShowWindow(gWindows.hButtonSend,  SW_SHOW);
-		ShowWindow(gWindows.hEditConsole, SW_SHOW);
+		const auto button_left = cx - window_border_padding - gDimensions.button_width;
+		MoveWindow(gWindows.hButtonJoin, button_left, row_top, gDimensions.button_width, gDimensions.button_height, false);
+
+		combo_server_left = static_right + gDimensions.padding_small;
+		const auto combo_server_right = button_left - gDimensions.padding_small;
+		MoveWindow(gWindows.hComboServer, combo_server_left, row_top + gDimensions.combobox_offset, combo_server_right - combo_server_left, gDimensions.button_height, false);
 	}
 
-	MoveWindow(gWindows.hButtonAutoKick		 , cx - 45*iMW, 54 *iMH, 43*iMW, 12*iMH, FALSE); //Move all buttons to left / right
-	MoveWindow(gWindows.hButtonBanIP		 , cx - 45*iMW, 67 *iMH, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonDPLoginProfile, cx - 45*iMW, 83 *iMH, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonForcejoin	 , cx - 45*iMW, 115*iMH, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonJoin		     , cx - 45*iMW, 2  *iMH + 1, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonKick		     , cx - 45*iMW, 41 *iMH, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonReload		 , cx - 45*iMW, 25 *iMH, 43*iMW, 12*iMH, FALSE);
-	MoveWindow(gWindows.hButtonWhois		 , cx - 45*iMW, 96 *iMH, 43*iMW, 12*iMH, FALSE);
+	row_top += gDimensions.button_height + gDimensions.padding_tiny;
+	{ // server info row
+		MoveWindow(gWindows.hStaticServerInfo, combo_server_left, row_top, cx - combo_server_left, gDimensions.static_height, false);
+	}
 
-#pragma warning(push)
-#pragma warning(disable:26451)  // We're not computing large numbers here
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NUMBER, 17*iMW);                   //num
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME,   cx - 218*iMW);             //name
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::BUILD,  18*iMW);                   //build
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::ID,     27*iMW);                   //ID
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::OP,     15*iMW);                   //OP
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::IP,     47*iMW);                   //IP
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::PING,   17*iMW);                   //Ping
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::SCORE,  20*iMW);                   //Score
-	ListView_SetColumnWidth(gWindows.hListPlayers, 7,                 LVSCW_AUTOSIZE_USEHEADER);
-#pragma warning(pop)
+	row_top += gDimensions.static_height + gDimensions.padding_small;
+	const auto buttons_left = cx - window_border_padding - gDimensions.button_width;
+	int buttons_bottom;
+	{ // button column
+		const auto padding_grouped = gDimensions.padding_tiny;
+		const auto padding_nongrouped = gDimensions.padding_small;
+
+		auto top = row_top;
+
+		MoveWindow(gWindows.hButtonReload, buttons_left, top, gDimensions.button_width, gDimensions.button_height, false);
+		top += gDimensions.button_height + padding_nongrouped;
+
+		MoveWindow(gWindows.hButtonKick, buttons_left, top, gDimensions.button_width, gDimensions.button_height, false);
+		top += gDimensions.button_height + padding_grouped;
+		MoveWindow(gWindows.hButtonAutoKick, buttons_left, top, gDimensions.button_width, gDimensions.button_height, false);
+		top += gDimensions.button_height + padding_grouped;
+		MoveWindow(gWindows.hButtonBanIP, buttons_left, top, gDimensions.button_width, gDimensions.button_height, false);
+		top += gDimensions.button_height + padding_nongrouped;
+
+		MoveWindow(gWindows.hButtonDPLoginProfile, buttons_left, top, gDimensions.button_width, gDimensions.button_height, false);
+		top += gDimensions.button_height + padding_grouped;
+		MoveWindow(gWindows.hButtonWhois, buttons_left, top, gDimensions.button_width, gDimensions.button_height, false);
+		top += gDimensions.button_height + padding_nongrouped;
+
+		MoveWindow(gWindows.hButtonForcejoin, buttons_left, top, gDimensions.button_width, gDimensions.button_height, false);
+		buttons_bottom = top + gDimensions.button_height;
+	}
+
+	int listview_bottom;
+	{ // list view column
+		auto remaining_height = cy - window_border_padding - row_top;
+		auto listview_height = gSettings.bDisableConsole ? remaining_height : remaining_height / 2;
+
+		// list view is at least as large as the button column
+		listview_height = max(listview_height, buttons_bottom - row_top);
+		auto listview_width = buttons_left - gDimensions.padding_small - window_border_padding;
+
+		// +1/-1 because windows controls are not pixel perfectly aligned to each other
+		MoveWindow(gWindows.hListPlayers, window_border_padding, row_top + 1, listview_width, listview_height - 1, false);
+		listview_bottom = row_top + listview_height;
+	}
+
+	row_top = listview_bottom + gDimensions.padding_large;
+
+	{ // rcon combobox row
+		auto button_left = cx - window_border_padding - gDimensions.button_width;
+		MoveWindow(gWindows.hButtonSend, button_left, row_top, gDimensions.button_width, gDimensions.button_height, false);
+
+		auto combo_width = button_left - window_border_padding - gDimensions.padding_small;
+		auto combo_height = cy - window_border_padding - row_top;
+		MoveWindow(gWindows.hComboRcon, window_border_padding, row_top + gDimensions.combobox_offset, combo_width, combo_height, false);
+	}
+
+	row_top += gDimensions.button_height + gDimensions.padding_small;
+
+	{ // console (rest of window)
+		auto width = cx - 2 * window_border_padding;
+		auto height = cy - window_border_padding - row_top;
+		MoveWindow(gWindows.hEditConsole, window_border_padding, row_top, width, height, false);
+	}
+
+	{ // toggle visibility
+		ShowWindow(gWindows.hComboRcon, gSettings.bDisableConsole ? SW_HIDE : SW_SHOW);
+		ShowWindow(gWindows.hButtonSend, gSettings.bDisableConsole ? SW_HIDE : SW_SHOW);
+		ShowWindow(gWindows.hEditConsole, gSettings.bDisableConsole ? SW_HIDE : SW_SHOW);
+	}
+
+	auto new_name_width = ListView_GetColumnWidth(gWindows.hListPlayers, Subitems::NAME) + cx - old_cx;
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME, new_name_width);
 
 	RedrawWindow(gWindows.hWinMain, NULL, NULL, RDW_ERASE | RDW_INVALIDATE);
 	
 	FORWARD_WM_SIZE(hwnd, state, cx, cy, DefWindowProc);
+	old_cx = cx;
+	old_cy = cy;
 }
 
 void OnMainWindowGetMinMaxInfo(HWND hwnd, LPMINMAXINFO lpMinMaxInfo)
@@ -1235,37 +1262,81 @@ void OnMainWindowDpiChanged(HWND hwnd, int newDpiX, int newDpiY, RECT* suggested
 	g_MonospaceFont = CreateFont(lfHeight, 0, 0, 0, FW_REGULAR, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, 0, "Consolas");
 
 	EnumChildWindows(hwnd, EnumWindowsSetFontCallback, (LPARAM)(HFONT)g_MainFont);
-	SendMessage(gWindows.hEditConsole, WM_SETFONT, (WPARAM)(HFONT)g_MonospaceFont, true);
+	EnumWindowsSetFontCallback(gWindows.hEditConsole, (LPARAM)(HFONT)g_MonospaceFont);
 
+	{
+		HWND hDlgDummy = CreateDialog(NULL, MAKEINTRESOURCE(IDD_DUMMY), hwnd, NULL);
 
-	if (gWindows.hDlgDummy) {
-		EndDialog(gWindows.hDlgDummy, 0);
+		// Annoying: The real rendered pixel values are slightly wrong of these controls. Win 10, 125% dpi scaling:
+		// Button set to 30 pixels will render 28px high
+		// ComboBox reporting a button height of 26px will render 28px high
+
+		COMBOBOXINFO combobox_info = { 0 };
+		combobox_info.cbSize = sizeof(combobox_info);
+		GetComboBoxInfo(GetDlgItem(hDlgDummy, IDC_DUMMY_COMBOBOX), &combobox_info);
+		const auto combobox_height = combobox_info.rcButton.bottom - combobox_info.rcButton.top;
+
+		RECT button_rect = { 0 };
+		GetWindowRect(GetDlgItem(hDlgDummy, IDC_DUMMY_BUTTON), &button_rect);
+
+		const auto button_height = button_rect.bottom - button_rect.top;
+		gDimensions.button_height = max(button_height, combobox_height);
+		gDimensions.button_width = button_rect.right - button_rect.left;
+
+		gDimensions.combobox_offset = (button_height - combobox_height) / 2;
+
+		// windows rendering is not pixel-perfectly consistent
+		gDimensions.combobox_offset -= 1;
+
+		RECT rect = { 0 };
+		GetWindowRect(GetDlgItem(hDlgDummy, IDC_DUMMY_BUTTON_PADDINGLARGE), &rect);
+		gDimensions.padding_large = rect.top - button_rect.bottom;
+
+		GetWindowRect(GetDlgItem(hDlgDummy, IDC_DUMMY_BUTTON_PADDINGSMALL), &rect);
+		gDimensions.padding_small = rect.top - button_rect.bottom;
+
+		GetWindowRect(GetDlgItem(hDlgDummy, IDC_DUMMY_BUTTON_PADDINGTINY), &rect);
+		gDimensions.padding_tiny = rect.top - button_rect.bottom;
+
+		GetWindowRect(GetDlgItem(hDlgDummy, IDC_DUMMY_STATIC), &rect);
+		gDimensions.static_height = rect.bottom - rect.top;
+		gDimensions.static_vertical_offset_from_button = rect.top - button_rect.top;
+
+#if 1
+		EndDialog(hDlgDummy, 0);
+#else
+		ShowWindow(hDlgDummy, SW_SHOWNORMAL);
+#endif
 	}
-	gWindows.hDlgDummy = CreateDialog(NULL, MAKEINTRESOURCE(IDD_DUMMY), hwnd, NULL);
 
-	/*
-	RECT rect = { 0 }, rect2 = { 0 };
-	GetWindowRect(GetDlgItem(gWindows.hDlgDummy, IDC_DUMMY_BUTTON), &rect);
-	gDimensions.button_height = rect.bottom - rect.top;
-	gDimensions.button_width = rect.right - right.left;
-
-	GetWindowRect(GetDlgItem(gWindows.hDlgDummy, IDC_DUMMY_BUTTON_PADDINGLARGE), &rect2);
-	gDimensions.padding_large = rect2.top - rect.top - gDimensions.button_height;
-
-	GetWindowRect(GetDlgItem(gWindows.hDlgDummy, IDC_DUMMY_BUTTON_PADDINGLARGE), &rect2);
-	gDimensions.padding_large = rect2.top - rect.top - gDimensions.button_height;
-
-
-	// TODO: store globally, use in WM_SIZE handler
-	/*
-	* Static height
-	* Static offset (button top to static top)
-	* Padding large
-	* Padding small
-	* Padding tiny
-	*/
+	gDimensions.static_server_width = GetStaticTextWidth(gWindows.hStaticServer);
 
 	SendMessage(hwnd, WM_SIZE, SIZE_RESTORED, MAKELPARAM(0ull + suggestedPos->right - suggestedPos->left, 0ull + suggestedPos->bottom - suggestedPos->top));
+
+	LVCOLUMN lvc = { 0 };
+	lvc.mask = LVCF_TEXT;
+	lvc.pszText = (char*)"Dummy";
+	auto dummy_column_index = ListView_InsertColumn(gWindows.hListPlayers, Subitems::PING + 1, &lvc);
+
+	// NUMBER, BUILD, OP, SCORE, PING: Size according to header (is bigger)
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NUMBER, LVSCW_AUTOSIZE_USEHEADER);
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::BUILD, LVSCW_AUTOSIZE_USEHEADER);
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::OP, LVSCW_AUTOSIZE_USEHEADER);
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::SCORE, LVSCW_AUTOSIZE_USEHEADER);
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::PING, LVSCW_AUTOSIZE_USEHEADER);
+
+	// ID: 7-digit number, IP: width(255.255.255.255)
+	const auto id_width = ListView_GetStringWidth(gWindows.hListPlayers, "0000000");
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::ID, id_width);
+	const auto ip_width = ListView_GetStringWidth(gWindows.hListPlayers, "255.255.255.255");
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::IP, ip_width);
+
+	// NAME: Take remaining width
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME, 0);
+	ListView_SetColumnWidth(gWindows.hListPlayers, dummy_column_index, LVSCW_AUTOSIZE_USEHEADER);
+	const auto remaining_width = ListView_GetColumnWidth(gWindows.hListPlayers, dummy_column_index);
+	ListView_DeleteColumn(gWindows.hListPlayers, dummy_column_index);
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME, remaining_width);
 }
 
 LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -2479,6 +2550,38 @@ bool HasClass(HWND hwnd, std::string_view classname) {
 	return classname == buffer.data();
 }
 
+int GetStaticTextWidth (HWND hwndStatic){
+	constexpr int default_value = 100;
+
+	std::vector<char> buffer(1ull + Static_GetTextLength(gWindows.hStaticServer));
+	Static_GetText(gWindows.hStaticServer, buffer.data(), static_cast<int>(buffer.size()));
+
+	HDC hdc = GetDC(hwndStatic);
+	if (!hdc) {
+		assert(false);
+		return default_value;
+	}
+
+	SIZE static_server_text_size;
+
+	HFONT current_font = reinterpret_cast<HFONT>(SendMessage(hwndStatic, WM_GETFONT, 0, 0));
+	HFONT old_font = NULL;
+	if (current_font) {
+		old_font = SelectFont(hdc, current_font);
+	}
+	auto retval = GetTextExtentPoint32A(hdc, buffer.data(), static_cast<int>(buffer.size()) - 1, &static_server_text_size);
+	if (current_font) {
+		SelectFont(hdc, old_font);
+	}
+	ReleaseDC(NULL, hdc);
+
+	if (!retval) {
+		assert(false);
+		return default_value;
+	}
+	return static_server_text_size.cx;
+}
+
 void Edit_ReduceLines(HWND hEdit, int iLines) {
 	if (iLines <= 0)
 		return;
@@ -2733,7 +2836,7 @@ void LoadConfig() {
 
 void SaveConfig() {
 	// TODO: Store and reload max ping for auto-kick?
-	// TODO: Update ini paths with renamed program terminology (e.g. ban vs autokick)
+	// TODO: Update ini paths with renamed program terminology (e.g. ban vs autokick) -> can also break other compatibility fixes (ban types, timeout unit)
 
 	MainWindowWriteConsole("Saving configuration file...");
 	auto path = ConfigLocation();

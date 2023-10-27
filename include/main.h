@@ -59,7 +59,6 @@ struct WindowHandles {
 	HWND hDlgServers = NULL;
 	HWND hDlgSettings = NULL;
 	HWND hDlgRconCommands = NULL;
-	HWND hDlgDummy = NULL;
 
 	HWND hComboServer = NULL;
 	HWND hListPlayers = NULL;
@@ -76,6 +75,22 @@ struct WindowHandles {
 	HWND hButtonJoin = NULL;
 	HWND hStaticServerInfo = NULL;
 	HWND hStaticServer = NULL;
+};
+
+struct WindowDimensions {
+	int	button_height = 0;
+	int button_width = 0;
+
+	int combobox_offset = 0;
+
+	int padding_large = 0;
+	int padding_small = 0;
+	int padding_tiny = 0;
+
+	int static_height = 0;
+	int static_vertical_offset_from_button = 0;
+
+	int static_server_width = 0;
 };
 
 struct AutoKickEntry {
@@ -130,6 +145,7 @@ DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC hDC, int side_length,
 BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font);
 void AddStyle(HWND hwnd, LONG style);
 void RemoveStyle(HWND hwnd, LONG style);
+int GetStaticTextWidth(HWND hwndStatic);
 bool HasStyle(HWND hwnd, LONG style);
 bool HasClass(HWND hwnd, std::string_view classname);
 void Edit_ReduceLines(HWND hEdit, int iLines);
