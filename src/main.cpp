@@ -51,9 +51,6 @@ AsyncRepeatedTimer g_AutoKickTimer;
 
 pb2lib::AsyncHostnameResolver g_HostnameResolver;
 
-// read-only after program initialization. Can be read by threads.
-UINT WM_REFETCHPLAYERS, WM_SERVERCHANGED, WM_PLAYERSREADY, WM_SERVERCVARSREADY, WM_RCONRESPONSEREADY, WM_HOSTNAMEREADY, WM_SERVERLISTREADY, WM_AUTOKICKENTRYADDED;
-
 DeleteObjectRAIIWrapper<HFONT> g_MainFont, g_MonospaceFont;
 
 WindowDimensions gDimensions;
@@ -161,15 +158,6 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 	icex.dwICC = ICC_LISTVIEW_CLASSES;
 	InitCommonControlsEx(&icex);
 
-	WM_REFETCHPLAYERS = RegisterWindowMessageOrCriticalError("RCONPANEL_REFETCHPLAYERS");
-	WM_PLAYERSREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_PLAYERSREADY");
-	WM_SERVERCHANGED = RegisterWindowMessageOrCriticalError("RCONPANEL_SERVERCHANGED");
-	WM_SERVERCVARSREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_SERVERCVARSREADY");
-	WM_RCONRESPONSEREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_RCONRESPONSEREADY");
-	WM_HOSTNAMEREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_HOSTNAMEREADY");
-	WM_SERVERLISTREADY = RegisterWindowMessageOrCriticalError("RCONPANEL_SERVERLISTREADY");
-	WM_AUTOKICKENTRYADDED = RegisterWindowMessageOrCriticalError("RCONPANEL_AUTOKICKENTRYADDED");
-	
 	if (OleInitialize(NULL) != S_OK) {
 		HandleCriticalError("OleInitialize returned non-ok status");
 	}
@@ -1354,14 +1342,14 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 			OnMainWindowDpiChanged(hwnd, LOWORD(wParam), HIWORD(wParam), (RECT*)lParam);
 			return 0;
 		}
-	}
 
-	if (message == WM_REFETCHPLAYERS) { MainWindowRefetchServerInfo(); return 0; };
-	if (message == WM_SERVERCHANGED) { MainWindowRefetchServerInfo(); return 0; };
-	if (message == WM_PLAYERSREADY) { OnMainWindowPlayersReady(); return 0; };
-	if (message == WM_SERVERCVARSREADY) { OnMainWindowServerCvarsReady(); return 0; };
-	if (message == WM_RCONRESPONSEREADY) { OnMainWindowRconResponseReady(); return 0; };
-	if (message == WM_HOSTNAMEREADY) { OnMainWindowHostnameReady((Server*)lParam); return 0; };
+		case WM_REFETCHPLAYERS: MainWindowRefetchServerInfo(); return 0;
+		case WM_SERVERCHANGED: MainWindowRefetchServerInfo(); return 0;
+		case WM_PLAYERSREADY: OnMainWindowPlayersReady(); return 0;
+		case WM_SERVERCVARSREADY: OnMainWindowServerCvarsReady(); return 0;
+		case WM_RCONRESPONSEREADY: OnMainWindowRconResponseReady(); return 0;
+		case WM_HOSTNAMEREADY: OnMainWindowHostnameReady((Server*)lParam); return 0;
+	}
 
 	return DefWindowProc(hwnd, message, wParam, lParam);
 }
@@ -1749,14 +1737,11 @@ LRESULT CALLBACK RotationDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
     	HANDLE_MSG(hWndDlg, WM_COMMAND,    OnRotationDlgCommand);
     	HANDLE_MSG(hWndDlg, WM_PAINT,      OnRotationDlgPaint);
 		HANDLE_MSG(hWndDlg, WM_VKEYTOITEM, OnRotationDlgVkeyToItem);
-    }
-    
-    if (Msg == WM_SERVERCHANGED) {
-		OnRotationDlgReloadContent(hWndDlg);
-		return TRUE;
-	}
 
-    return FALSE;
+		case WM_SERVERCHANGED: OnRotationDlgReloadContent(hWndDlg); return true;
+    }
+
+    return false;
 }
 
 //}-------------------------------------------------------------------------------------------------
@@ -2063,12 +2048,12 @@ LRESULT CALLBACK ServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lP
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnServersDlgInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnServersDlgCommand);
 		HANDLE_MSG(hWndDlg, WM_VKEYTOITEM, OnServersDlgVkeyToItem);
+
+		case WM_HOSTNAMEREADY: OnServersDlgHostnameReady(hWndDlg, (Server*)lParam); return true;
+		case WM_SERVERLISTREADY: OnServersDlgServerlistReady(hWndDlg); return true;
 	}
 
-	if (Msg == WM_HOSTNAMEREADY) { OnServersDlgHostnameReady(hWndDlg, (Server*)lParam); return 0; }
-	if (Msg == WM_SERVERLISTREADY) { OnServersDlgServerlistReady(hWndDlg); return 0; };
-
-	return FALSE;
+	return false;
 }
 
 //}-------------------------------------------------------------------------------------------------
@@ -2279,14 +2264,11 @@ LRESULT CALLBACK AutoKickEntriesDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, L
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnAutoKickEntriesDlgInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnAutoKickEntriesDlgCommand);
 		HANDLE_MSG(hWndDlg, WM_VKEYTOITEM, OnAutoKickEntriesDlgVkeyToItem);
+
+		case WM_AUTOKICKENTRYADDED: AutoKickEntriesDlgRefillList(GetDlgItem(hWndDlg, IDC_AUTOKICK_LIST)); return true;
 	}
 
-	if (Msg == WM_AUTOKICKENTRYADDED) {
-		AutoKickEntriesDlgRefillList(GetDlgItem(hWndDlg, IDC_AUTOKICK_LIST));
-		return TRUE;
-	}
-
-	return FALSE;
+	return false;
 }
 
 //}-------------------------------------------------------------------------------------------------
@@ -2437,14 +2419,11 @@ LRESULT CALLBACK BannedIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 		HANDLE_MSG(hWndDlg, WM_INITDIALOG, OnBannedIPsDlgInitDialog);
 		HANDLE_MSG(hWndDlg, WM_COMMAND,    OnBannedIPsDlgCommand);
 		HANDLE_MSG(hWndDlg, WM_VKEYTOITEM, OnBannedIPsDlgVkeyToItem);
-	}
 
-	if (Msg == WM_SERVERCHANGED) {
-		OnBannedIPsDlgReloadContent(hWndDlg);
-		return TRUE;
+		case WM_SERVERCHANGED: OnBannedIPsDlgReloadContent(hWndDlg); return true;
 	}
 	
-	return FALSE;
+	return false;
 }
 
 //}-------------------------------------------------------------------------------------------------

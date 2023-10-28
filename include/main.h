@@ -170,6 +170,15 @@ std::vector<T> FlatCopyVectorOfUniquePtrs(const std::vector<std::unique_ptr<T>>&
 	return result;
 }
 
+constexpr UINT WM_ENTER = WM_USER + 3;
+constexpr UINT WM_REFETCHPLAYERS = WM_USER + 4;
+constexpr UINT WM_SERVERCHANGED = WM_USER + 5;
+constexpr UINT WM_PLAYERSREADY = WM_USER + 6;
+constexpr UINT WM_SERVERCVARSREADY = WM_USER + 7;
+constexpr UINT WM_RCONRESPONSEREADY = WM_USER + 8;
+constexpr UINT WM_HOSTNAMEREADY = WM_USER + 9;
+constexpr UINT WM_SERVERLISTREADY = WM_USER + 10;
+constexpr UINT WM_AUTOKICKENTRYADDED = WM_USER + 11;
 
 //--------------------------------------------------------------------------------------------------
 // Main Window
