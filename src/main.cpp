@@ -1112,9 +1112,6 @@ int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
 }
 
 void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy) {
-	static int old_cx = cx;
-	static int old_cy = cy;
-
 	const auto window_border_padding = gDimensions.padding_small;
 
 	auto row_top = window_border_padding;
@@ -1204,14 +1201,18 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy) {
 		ShowWindow(gWindows.hEditConsole, gSettings.bDisableConsole ? SW_HIDE : SW_SHOW);
 	}
 
-	auto new_name_width = ListView_GetColumnWidth(gWindows.hListPlayers, Subitems::NAME) + cx - old_cx;
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME, new_name_width);
+	if (state != SIZE_MINIMIZED) {
+		static int old_cx = cx;
+		static int old_cy = cy;
+		auto new_name_width = ListView_GetColumnWidth(gWindows.hListPlayers, Subitems::NAME) + cx - old_cx;
+		ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME, new_name_width);
+		old_cx = cx;
+		old_cy = cy;
+	}
 
 	RedrawWindow(gWindows.hWinMain, NULL, NULL, RDW_ERASE | RDW_INVALIDATE);
 	
 	FORWARD_WM_SIZE(hwnd, state, cx, cy, DefWindowProc);
-	old_cx = cx;
-	old_cy = cy;
 }
 
 void OnMainWindowGetMinMaxInfo(HWND hwnd, LPMINMAXINFO lpMinMaxInfo)
