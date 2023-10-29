@@ -4,8 +4,6 @@
 
 //TODO: Save and restore window position?
 
-// TODO: Rcon Combobox Enter/Return is broken
-
 // TODO: Make everything in the main window accessible via keyboard through menus?
 
 #ifdef _MSC_VER
@@ -143,40 +141,56 @@ LRESULT CALLBACK CommandHistoryComboBoxEditProc(HWND hWnd, UINT uMsg, WPARAM wPa
 	HWND hwndComboBox = reinterpret_cast<HWND>(dwRefData);
 
 	switch (uMsg) {
-	case WM_KEYUP: {
-			std::vector<char> command(1ull + ComboBox_GetTextLength(hwndComboBox));
-			ComboBox_GetText(hwndComboBox, command.data(), static_cast<int>(command.size()));
-
-			const auto item_count = ComboBox_GetCount(hwndComboBox);
-			ComboBox_DeleteString(hwndComboBox, item_count - 1);
-			ComboBox_InsertString(hwndComboBox, -1, command.data());
-			ComboBox_SetCurSel(hwndComboBox, item_count);
-			break;
-		}
-
 	case WM_KEYDOWN:
+		switch (wParam) {
+			case VK_UP:
+				if (ComboBox_GetCurSel(hwndComboBox) == CB_ERR) {
+					ComboBox_SetCurSel(hwndComboBox, ComboBox_GetCount(hwndComboBox) - 1ll);
+					return 0;
+				}
+				break;
+
+			case VK_DOWN:
+				if (ComboBox_GetCurSel(hwndComboBox) == ComboBox_GetCount(hwndComboBox) - 1) {
+					ComboBox_SetText(hwndComboBox, "");
+					return 0;
+				}
+				break;
+
+			case VK_RETURN: {
+				WORD keyFlags = HIWORD(lParam);
+				if ((keyFlags & KF_REPEAT) == KF_REPEAT) {
+					break; // was a OS repeat of a held key
+				}
+
+				std::vector<char> command(1ull + ComboBox_GetTextLength(hwndComboBox));
+				ComboBox_GetText(hwndComboBox, command.data(), static_cast<int>(command.size()));
+
+				// weird: ComboBox_FindStringExact doesn't find empty items, so we have to manually search
+				std::vector<char> item_buffer(128);
+				for (int i = 0; i < ComboBox_GetCount(hwndComboBox); ++i) {
+					item_buffer.resize(1ull + ComboBox_GetLBTextLen(hwndComboBox, i));
+					ComboBox_GetLBText(hwndComboBox, i, item_buffer.data());
+
+					if (std::string_view(command.data()) == std::string_view(item_buffer.data())) {
+						ComboBox_DeleteString(hwndComboBox, i);
+						--i;
+					}
+				}
+
+				ComboBox_InsertString(hwndComboBox, -1, command.data());
+
+				SendMessage(GetParent(hwndComboBox), WM_SUBMITCOMMAND, (WPARAM)hwndComboBox, (LPARAM)command.data());
+
+				ComboBox_SetText(hwndComboBox, "");
+				return 0;
+			}
+		}
+		break;
+
+	case WM_CHAR:
 		if (wParam == VK_RETURN) {
-			WORD keyFlags = HIWORD(lParam);
-			if ((keyFlags & KF_REPEAT) == KF_REPEAT) {
-				break; // was a OS repeat of a held key
-			}
-
-			std::vector<char> command(1ull + ComboBox_GetTextLength(hwndComboBox));
-			ComboBox_GetText(hwndComboBox, command.data(), static_cast<int>(command.size()));
-
-			// "Move" command if it already existed in the history
-			const auto existing_index = ComboBox_FindStringExact(hwndComboBox, 0, command.data());
-			if (existing_index != CB_ERR) {
-				ComboBox_DeleteString(hwndComboBox, existing_index);
-			}
-
-			ComboBox_DeleteString(hwndComboBox, ComboBox_GetCount(hwndComboBox) - 1); // Clear "current input" item
-			ComboBox_InsertString(hwndComboBox, -1, command.data()); // Insert history item
-			SendMessage(GetParent(hwndComboBox), WM_ENTER, 0, (LPARAM)command.data()); // Notify our parent
-
-			// Insert new "current input" item and select it (=> clear input)
-			ComboBox_InsertString(hwndComboBox, -1, "");
-			ComboBox_SetCurSel(hwndComboBox, ComboBox_GetCount(hwndComboBox) - 1);
+			return 0;  // handled in WM_KEYDOWN. Return 0 is necessary here so windows doesn't give the "invalid input" alarm sound
 		}
 		break;
 	}
@@ -753,10 +767,10 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						hwnd, NULL, NULL, NULL);
 
 	// The rcon combobox should use its drop down for a command history
-	ComboBox_AddString(gWindows.hComboRcon, "");
 	COMBOBOXINFO combobox_info = { 0 };
 	combobox_info.cbSize = sizeof(combobox_info);
 	GetComboBoxInfo(gWindows.hComboRcon, &combobox_info);
+#pragma warning(suppress: 6387)
 	SetWindowSubclass(combobox_info.hwndItem, CommandHistoryComboBoxEditProc, 0, (DWORD_PTR)gWindows.hComboRcon);
 
 	Edit_LimitText(gWindows.hEditConsole, 0);
@@ -830,12 +844,17 @@ void OnMainWindowForcejoin(void)
 }
 
 void OnMainWindowSendRcon(void) {
-	// TODO
-	// SendMessage(gWindows.hComboRcon, WM_KEYDOWN, );
+	// TODO: Maybe trigger the submit logic using a custom message?
+	SendMessage(gWindows.hComboRcon, WM_KEYDOWN, VK_RETURN, 0);
+	SendMessage(gWindows.hComboRcon, WM_KEYUP, VK_RETURN, 0);
 }
 
-void OnMainWindowEnter(HWND sender) {
-	// TODO
+void OnMainWindowSubmitCommand(HWND sender, const char* command) {
+	if (sender == gWindows.hComboRcon) {
+		MainWindowSendRcon(command);
+	} else {
+		assert(false);
+	}
 }
 
 void OnMainWindowJoinServer(void)
@@ -1385,6 +1404,7 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 			return 0;
 		}
 
+		case WM_SUBMITCOMMAND: OnMainWindowSubmitCommand((HWND)(wParam), (const char*)lParam); return 0;
 		case WM_REFETCHPLAYERS: MainWindowRefetchServerInfo(); return 0;
 		case WM_SERVERCHANGED: MainWindowRefetchServerInfo(); return 0;
 		case WM_PLAYERSREADY: OnMainWindowPlayersReady(); return 0;

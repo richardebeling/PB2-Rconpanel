@@ -170,7 +170,7 @@ std::vector<T> FlatCopyVectorOfUniquePtrs(const std::vector<std::unique_ptr<T>>&
 	return result;
 }
 
-constexpr UINT WM_ENTER = WM_USER + 3;
+constexpr UINT WM_SUBMITCOMMAND = WM_USER + 3;
 constexpr UINT WM_REFETCHPLAYERS = WM_USER + 4;
 constexpr UINT WM_SERVERCHANGED = WM_USER + 5;
 constexpr UINT WM_PLAYERSREADY = WM_USER + 6;
@@ -216,6 +216,7 @@ LRESULT OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh);
 void OnMainWindowOpenDPLogin(void);
 void OnMainWindowOpenWhois(void);
 void OnMainWindowSendRcon(void);
+void OnMainWindowSubmitCommand(HWND sender, const char* command);
 void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy);
 void OnMainWindowPlayersReady() noexcept;
 void OnMainWindowServerCvarsReady() noexcept;
