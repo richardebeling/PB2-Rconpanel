@@ -724,29 +724,29 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonJoin = CreateWindowEx(0, WC_BUTTON, "&Join", WS_CHILD | WS_VISIBLE , 0, 0, 0, 0,
+	gWindows.hButtonJoin = CreateWindowEx(0, WC_BUTTON, "Join", WS_CHILD | WS_VISIBLE , 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonReload = CreateWindowEx(0, WC_BUTTON, "&Reload", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonReload = CreateWindowEx(0, WC_BUTTON, "Reload", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonKick = CreateWindowEx(0, WC_BUTTON, "&Kick", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonKick = CreateWindowEx(0, WC_BUTTON, "Kick", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonAutoKick = CreateWindowEx(0, WC_BUTTON, "&AutoKick", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonAutoKick = CreateWindowEx(0, WC_BUTTON, "AutoKick", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonBanIP = CreateWindowEx(0, WC_BUTTON, "&Ban IP", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonBanIP = CreateWindowEx(0, WC_BUTTON, "Ban IP", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "&DPLogin", WS_CHILD | WS_VISIBLE,
+	gWindows.hButtonDPLoginProfile = CreateWindowEx(0, WC_BUTTON, "DPLogin", WS_CHILD | WS_VISIBLE,
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonWhois = CreateWindowEx(0, WC_BUTTON, "&Whois IP", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonWhois = CreateWindowEx(0, WC_BUTTON, "Whois IP", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
-	gWindows.hButtonForcejoin = CreateWindowEx(0, WC_BUTTON, "&Forcejoin", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonForcejoin = CreateWindowEx(0, WC_BUTTON, "Forcejoin", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
 	gWindows.hComboRcon = CreateWindowEx(WS_EX_CLIENTEDGE, WC_COMBOBOX, "",
@@ -760,7 +760,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 #pragma warning(suppress: 6387)
 	SetWindowSubclass(combobox_info.hwndItem, CommandHistoryComboBoxEditProc, 0, (DWORD_PTR)gWindows.hComboRcon);
 
-	gWindows.hButtonSend = CreateWindowEx(0, WC_BUTTON, "&Send Rcon", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+	gWindows.hButtonSend = CreateWindowEx(0, WC_BUTTON, "Send Rcon", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
 	gWindows.hEditConsole = CreateWindowEx(WS_EX_CLIENTEDGE, WC_EDIT, "",
