@@ -1,5 +1,4 @@
 // TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin / ip whois?)
-// TODO: Save and restore window position?
 // TODO: Make everything in the main window accessible via keyboard through menus?
 
 #ifdef _MSC_VER
@@ -792,15 +791,15 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 	}
 	ListView_SetExtendedListViewStyle(gWindows.hListPlayers, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
 
-	const int dpi = GetDpiForWindow(gWindows.hWinMain);
-	RECT window_rect;
-	GetWindowRect(gWindows.hWinMain, &window_rect);
-	SendMessage(hwnd, WM_DPICHANGED, MAKEWPARAM(dpi, dpi), (LPARAM)&window_rect);
-
 	MainWindowLogExceptionsToConsole([]() {
 		LoadConfig();
 		MainWindowWriteConsole("Configuration loaded.");
 	}, "loading configuration");
+
+	const int dpi = GetDpiForWindow(gWindows.hWinMain);
+	RECT window_rect;
+	GetWindowRect(gWindows.hWinMain, &window_rect);
+	SendMessage(hwnd, WM_DPICHANGED, MAKEWPARAM(dpi, dpi), (LPARAM)&window_rect);
 	
 	MainWindowRefetchHostnames();
 
@@ -2805,6 +2804,20 @@ void LoadConfig() {
 	gSettings.iAutoReloadDelaySecs = GetPrivateProfileInt("general", "autoReloadDelay", defaults.iAutoReloadDelaySecs, path.c_str());
 	g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
 	
+
+	RECT window_pos = { 0 };
+	window_pos.left = GetPrivateProfileInt("window", "left", INT_MIN, path.c_str());
+	window_pos.top = GetPrivateProfileInt("window", "top", INT_MIN, path.c_str());
+	window_pos.right = GetPrivateProfileInt("window", "right", INT_MIN, path.c_str());
+	window_pos.bottom = GetPrivateProfileInt("window", "bottom", INT_MIN, path.c_str());
+
+	if (window_pos.left != INT_MIN && window_pos.right != INT_MIN && window_pos.top != INT_MIN && window_pos.bottom != INT_MIN) {
+		WINDOWPLACEMENT placement = { 0 };
+		placement.length = sizeof(placement);
+		placement.rcNormalPosition = window_pos;
+		SetWindowPlacement(gWindows.hWinMain, &placement);
+	}
+
 	GetPrivateProfileString("general", "serverlistAddress", defaults.sServerlistAddress.c_str(), buffer.data(), static_cast<int>(buffer.size()), path.c_str());
 	gSettings.sServerlistAddress = buffer.data();
 
@@ -2875,6 +2888,17 @@ void SaveConfig() {
 	WritePrivateProfileString("general", "colorPings", std::to_string(gSettings.bColorPings).c_str(), path.c_str());
 	WritePrivateProfileString("general", "disableConsole", std::to_string(gSettings.bDisableConsole).c_str(), path.c_str());
 	WritePrivateProfileString("general", "serverlistAddress", gSettings.sServerlistAddress.c_str(), path.c_str());
+
+	{
+		WINDOWPLACEMENT placement = { 0 };
+		placement.length = sizeof(placement);
+		GetWindowPlacement(gWindows.hWinMain, &placement);
+		RECT window_pos = placement.rcNormalPosition;
+		WritePrivateProfileString("window", "left", std::to_string(window_pos.left).c_str(), path.c_str());
+		WritePrivateProfileString("window", "top", std::to_string(window_pos.top).c_str(), path.c_str());
+		WritePrivateProfileString("window", "right", std::to_string(window_pos.right).c_str(), path.c_str());
+		WritePrivateProfileString("window", "bottom", std::to_string(window_pos.bottom).c_str(), path.c_str());
+	}
 
 	WritePrivateProfileString("server", "count", std::to_string(g_ServersWithRcon.size()).c_str(), path.c_str());
 	for (size_t server_index = 0; server_index < g_ServersWithRcon.size(); server_index++) {
