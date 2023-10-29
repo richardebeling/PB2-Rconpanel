@@ -1366,11 +1366,12 @@ void OnMainWindowDpiChanged(HWND hwnd, int newDpiX, int newDpiY, RECT* suggested
 	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::IP, ip_width);
 
 	// NAME: Take remaining width
+	const auto scrollbar_width = GetSystemMetrics(SM_CXVSCROLL);
 	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME, 0);
 	ListView_SetColumnWidth(gWindows.hListPlayers, dummy_column_index, LVSCW_AUTOSIZE_USEHEADER);
 	const auto remaining_width = ListView_GetColumnWidth(gWindows.hListPlayers, dummy_column_index);
 	ListView_DeleteColumn(gWindows.hListPlayers, dummy_column_index);
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME, remaining_width);
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NAME, 0ll + remaining_width - scrollbar_width);
 }
 
 LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
