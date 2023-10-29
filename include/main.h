@@ -212,7 +212,7 @@ void OnMainWindowGetMinMaxInfo(HWND hwnd, LPMINMAXINFO lpMinMaxInfo);
 void OnMainWindowJoinServer(void);
 void OnMainWindowKickPlayer(void);
 int  CALLBACK OnMainWindowListViewSort(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort);
-int  OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh);
+LRESULT OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh);
 void OnMainWindowOpenDPLogin(void);
 void OnMainWindowOpenWhois(void);
 void OnMainWindowSendRcon(void);

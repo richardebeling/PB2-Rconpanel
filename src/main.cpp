@@ -5,7 +5,6 @@
 //TODO: Save and restore window position?
 
 // TODO: Rcon Combobox Enter/Return is broken
-// TODO: Rcon Combobox fill with history
 
 // TODO: Make everything in the main window accessible via keyboard through menus?
 
@@ -140,6 +139,51 @@ ServerCvars ServerCvars::from_server(const Server& server, std::chrono::millisec
 	};
 }
 
+LRESULT CALLBACK CommandHistoryComboBoxEditProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+	HWND hwndComboBox = reinterpret_cast<HWND>(dwRefData);
+
+	switch (uMsg) {
+	case WM_KEYUP: {
+			std::vector<char> command(1ull + ComboBox_GetTextLength(hwndComboBox));
+			ComboBox_GetText(hwndComboBox, command.data(), static_cast<int>(command.size()));
+
+			const auto item_count = ComboBox_GetCount(hwndComboBox);
+			ComboBox_DeleteString(hwndComboBox, item_count - 1);
+			ComboBox_InsertString(hwndComboBox, -1, command.data());
+			ComboBox_SetCurSel(hwndComboBox, item_count);
+			break;
+		}
+
+	case WM_KEYDOWN:
+		if (wParam == VK_RETURN) {
+			WORD keyFlags = HIWORD(lParam);
+			if ((keyFlags & KF_REPEAT) == KF_REPEAT) {
+				break; // was a OS repeat of a held key
+			}
+
+			std::vector<char> command(1ull + ComboBox_GetTextLength(hwndComboBox));
+			ComboBox_GetText(hwndComboBox, command.data(), static_cast<int>(command.size()));
+
+			// "Move" command if it already existed in the history
+			const auto existing_index = ComboBox_FindStringExact(hwndComboBox, 0, command.data());
+			if (existing_index != CB_ERR) {
+				ComboBox_DeleteString(hwndComboBox, existing_index);
+			}
+
+			ComboBox_DeleteString(hwndComboBox, ComboBox_GetCount(hwndComboBox) - 1); // Clear "current input" item
+			ComboBox_InsertString(hwndComboBox, -1, command.data()); // Insert history item
+			SendMessage(GetParent(hwndComboBox), WM_ENTER, 0, (LPARAM)command.data()); // Notify our parent
+
+			// Insert new "current input" item and select it (=> clear input)
+			ComboBox_InsertString(hwndComboBox, -1, "");
+			ComboBox_SetCurSel(hwndComboBox, ComboBox_GetCount(hwndComboBox) - 1);
+		}
+		break;
+	}
+
+	return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
+
 
 //--------------------------------------------------------------------------------------------------
 // Program Entry Point                                                                             |
@@ -209,6 +253,7 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 
 		HWND hwndFocus = GetFocus();
 		bool isKeyMessage = (message.message == WM_KEYDOWN || message.message == WM_KEYUP);
+
 		if (isKeyMessage && HasClass(hwndFocus, "ListBox") && HasStyle(hwndFocus, LBS_WANTKEYBOARDINPUT)) {
 			// ListBoxes with LBS_WANTKEYBOARDINPUT should handle their inputs even in dialogs.
 		} else {
@@ -707,6 +752,13 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
+	// The rcon combobox should use its drop down for a command history
+	ComboBox_AddString(gWindows.hComboRcon, "");
+	COMBOBOXINFO combobox_info = { 0 };
+	combobox_info.cbSize = sizeof(combobox_info);
+	GetComboBoxInfo(gWindows.hComboRcon, &combobox_info);
+	SetWindowSubclass(combobox_info.hwndItem, CommandHistoryComboBoxEditProc, 0, (DWORD_PTR)gWindows.hComboRcon);
+
 	Edit_LimitText(gWindows.hEditConsole, 0);
 
 	LVCOLUMN lvc = { 0 };
@@ -777,11 +829,13 @@ void OnMainWindowForcejoin(void)
 	}, "force-joining");
 }
 
-void OnMainWindowSendRcon(void)
-{
-	std::string command(1ull + ComboBox_GetTextLength(gWindows.hComboRcon), '\0');
-	ComboBox_GetText(gWindows.hComboRcon, command.data(), static_cast<int>(command.size()));
-	MainWindowSendRcon(command);
+void OnMainWindowSendRcon(void) {
+	// TODO
+	// SendMessage(gWindows.hComboRcon, WM_KEYDOWN, );
+}
+
+void OnMainWindowEnter(HWND sender) {
+	// TODO
 }
 
 void OnMainWindowJoinServer(void)
@@ -978,7 +1032,6 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		}
 	
 		case CBN_SELENDOK: {
-			if (hwndCtl == gWindows.hComboRcon) OnMainWindowSendRcon();
 			if (hwndCtl == gWindows.hComboServer) {
 				PostMessage(hwnd, WM_SERVERCHANGED, 0, 0);
 				PostMessage(gWindows.hDlgRotation, WM_SERVERCHANGED, 0, 0);
@@ -1057,29 +1110,24 @@ void OnMainWindowCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 			ShowAboutDialog(hwnd); break;
 	}
 
-	FORWARD_WM_COMMAND(hwnd, id, hwndCtl, codeNotify, DefWindowProc);
+	return FORWARD_WM_COMMAND(hwnd, id, hwndCtl, codeNotify, DefWindowProc);
 }
 
-int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
-{
+LRESULT OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh) {
     if (nmh->hwndFrom == gWindows.hListPlayers) {
 		switch (nmh->code) {			
-			case NM_DBLCLK:
-			{
+			case NM_DBLCLK: {
 				ShowPlayerInfo(hwnd);
 				break;
 			}
 			
-			case LVN_COLUMNCLICK:
-			{
+			case LVN_COLUMNCLICK: {
 				NMLISTVIEW* pNmListview = (NMLISTVIEW*)nmh;
 				ListView_SortItems(gWindows.hListPlayers, OnMainWindowListViewSort, pNmListview->iSubItem);
-				FORWARD_WM_NOTIFY(hwnd, id, nmh, DefWindowProc);
 				break;
 			}
 			
-			case NM_RCLICK:
-			{
+			case NM_RCLICK: {
 				auto* player = MainWindowGetSelectedPlayerOrNull();
 				if (player && player->address) {
 					SetClipboardContent(player->address->ip);
@@ -1088,15 +1136,13 @@ int OnMainWindowNotify(HWND hwnd, int id, NMHDR* nmh)
 				break;
 			}
 		
-			case NM_CUSTOMDRAW:
-			{
+			case NM_CUSTOMDRAW: {
 				return OnPlayerListCustomDraw((LPARAM) nmh);
 			}
 		}
 	}
 	
-	FORWARD_WM_NOTIFY(hwnd, id, nmh, DefWindowProc);
-	return 0;
+	return FORWARD_WM_NOTIFY(hwnd, id, nmh, DefWindowProc);
 }
 
 void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy) {
@@ -1200,31 +1246,27 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy) {
 
 	RedrawWindow(gWindows.hWinMain, NULL, NULL, RDW_ERASE | RDW_INVALIDATE);
 	
-	FORWARD_WM_SIZE(hwnd, state, cx, cy, DefWindowProc);
+	return FORWARD_WM_SIZE(hwnd, state, cx, cy, DefWindowProc);
 }
 
 void OnMainWindowGetMinMaxInfo(HWND hwnd, LPMINMAXINFO lpMinMaxInfo)
 {
 	DWORD dwBaseUnits = GetDialogBaseUnits();
-	if (gSettings.bDisableConsole)
-	{
+	if (gSettings.bDisableConsole) {
 		lpMinMaxInfo->ptMinTrackSize.x = MulDiv(230, LOWORD(dwBaseUnits), 4);
 		lpMinMaxInfo->ptMinTrackSize.y = MulDiv(159, HIWORD(dwBaseUnits), 8);	
-	}
-	else
-	{
+	} else {
 		lpMinMaxInfo->ptMinTrackSize.x = MulDiv(230, LOWORD(dwBaseUnits), 4);
 		lpMinMaxInfo->ptMinTrackSize.y = MulDiv(203, HIWORD(dwBaseUnits), 8);	
 	}
-	FORWARD_WM_GETMINMAXINFO(hwnd, lpMinMaxInfo, DefWindowProc);
+	return FORWARD_WM_GETMINMAXINFO(hwnd, lpMinMaxInfo, DefWindowProc);
 }
 
 HBRUSH OnMainWindowCtlColorStatic(HWND hwnd, HDC hdc, HWND hwndChild, int type_string)
 {
 	static DeleteObjectRAIIWrapper<HBRUSH> consoleBackgroundBrush(CreateSolidBrush(RGB(255, 255, 255)));
 
-	if (hwndChild == gWindows.hEditConsole) //paint the background of the console white
-	{
+	if (hwndChild == gWindows.hEditConsole) { //paint the background of the console white
 		SetTextColor(hdc, RGB(0, 0, 0) );
 		SetBkColor  (hdc, RGB(255, 255, 255) );
 		return consoleBackgroundBrush;
