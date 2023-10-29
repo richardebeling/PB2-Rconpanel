@@ -43,6 +43,8 @@ struct Address {
 	std::string ip = "";
 	int port = 0;
 
+	auto operator<=>(const Address&) const = default;
+
 	explicit operator sockaddr_in() const noexcept;
 	explicit operator std::string() const;
 };

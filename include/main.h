@@ -187,7 +187,6 @@ void MainWindowLogExceptionsToConsole(std::function<void()> func, std::string_vi
 void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr);
 void MainWindowRemoveOwnedServer(const Server* stored_server_ptr) noexcept;
 void MainWindowUpdateAutoKickState() noexcept;
-void MainWindowUpdatePlayersListview() noexcept;
 void MainWindowRefetchServerInfo();
 void MainWindowSendRcon(const std::string& command);
 

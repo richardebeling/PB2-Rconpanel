@@ -258,7 +258,7 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 		//     Especially annoying: Alt-tab will trigger them
 		// * Mnemonics will only work if some child window is selected, which isn't the case after startup or after alt-tabbing out and back in.
 		// See https://devblogs.microsoft.com/oldnewthing/20031021-00/?p=42083
-		// TODO: Maybe check out how other native WinAPI guis handle this.
+		// TODO: Maybe check out how other native WinAPI GUIs handle this.
 
 		HWND hwndFocus = GetFocus();
 		bool isKeyMessage = (message.message == WM_KEYDOWN || message.message == WM_KEYUP);
@@ -545,47 +545,6 @@ void MainWindowRefetchServerInfo() {
 	g_FetchServerCvarsFuture = cvars_promise.get_future();
 	std::jthread fetch_cvars_thread(fetch_cvars_thread_function, std::move(cvars_promise), *server, gWindows.hWinMain, gSettings.timeout);
 	fetch_cvars_thread.detach();
-}
-
-void MainWindowUpdatePlayersListview() noexcept
-{
-	ListView_DeleteAllItems(gWindows.hListPlayers);
-
-	LVITEM LvItem = { 0 };
-	for(unsigned int playerIndex = 0; playerIndex < g_vPlayers.size(); playerIndex++)
-	{
-		const pb2lib::Player& player = g_vPlayers[playerIndex];
-		LvItem.mask = LVIF_TEXT | LVIF_PARAM;
-		LvItem.iItem = playerIndex;
-		LvItem.lParam = playerIndex;
-		LvItem.iSubItem = Subitems::NUMBER;
-		std::string itemText = std::to_string(player.number);
-		LvItem.pszText = (LPSTR)itemText.c_str();
-		ListView_InsertItem(gWindows.hListPlayers, &LvItem);
-
-		for (int column = 1; column < 8; column++)
-		{
-			itemText = [&](){
-				switch (column) {
-					case Subitems::NAME: return player.name;
-					case Subitems::BUILD: return std::to_string(player.build);
-					case Subitems::ID: return player.id ? std::to_string(*player.id) : "-";
-					case Subitems::OP: return player.op ? std::to_string(player.op) : "-";
-					case Subitems::IP: return player.address ? player.address->ip : "";
-					case Subitems::PING: return player.ping ? std::to_string(*player.ping) : "";
-					case Subitems::SCORE: return player.score ? std::to_string(*player.score) : "";
-				}
-				assert(false);
-				return ""s;
-			}();
-
-			LvItem.mask = LVIF_TEXT;
-			LvItem.iSubItem = column;
-			LvItem.pszText = (LPSTR)itemText.c_str();
-			ListView_SetItem(gWindows.hListPlayers, &LvItem);
-		}
-	}
-	ListView_SortItems(gWindows.hListPlayers, OnMainWindowListViewSort, 0);
 }
 
 void MainWindowWriteConsole(const std::string_view str) noexcept { // prints text to gWindows.hEditConsole, adds timestamp and linebreak
@@ -960,8 +919,56 @@ void OnMainWindowPlayersReady() {
 	// Message might be from an outdated / older thread -> only process if the current future is ready
 	if (g_FetchPlayersFuture.valid() && g_FetchPlayersFuture.wait_for(0s) != std::future_status::timeout) {
 		MainWindowLogExceptionsToConsole([&]() {
+			std::optional<pb2lib::Player> old_selected_player = std::nullopt;
+			if (const auto old_selected_player_ptr = MainWindowGetSelectedPlayerOrNull()) {
+				old_selected_player = *old_selected_player_ptr;
+			}
+
+			ListView_DeleteAllItems(gWindows.hListPlayers);
 			g_vPlayers = g_FetchPlayersFuture.get();
-			MainWindowUpdatePlayersListview();
+
+			LVITEM LvItem = { 0 };
+			for (unsigned int playerIndex = 0; playerIndex < g_vPlayers.size(); playerIndex++)
+			{
+				const pb2lib::Player& player = g_vPlayers[playerIndex];
+				LvItem.mask = LVIF_TEXT | LVIF_PARAM;
+				LvItem.iItem = playerIndex;
+				LvItem.lParam = playerIndex;
+				LvItem.iSubItem = Subitems::NUMBER;
+				std::string itemText = std::to_string(player.number);
+				LvItem.pszText = (LPSTR)itemText.c_str();
+
+				if (old_selected_player && player.number == old_selected_player->number && player.address == old_selected_player->address) {
+					LvItem.mask |= LVIF_STATE;
+					LvItem.state = LVIS_SELECTED | LVIS_FOCUSED;
+				}
+
+				ListView_InsertItem(gWindows.hListPlayers, &LvItem);
+
+				for (int column = 1; column < 8; column++)
+				{
+					itemText = [&]() {
+						switch (column) {
+							case Subitems::NAME: return player.name;
+							case Subitems::BUILD: return std::to_string(player.build);
+							case Subitems::ID: return player.id ? std::to_string(*player.id) : "-";
+							case Subitems::OP: return player.op ? std::to_string(player.op) : "-";
+							case Subitems::IP: return player.address ? player.address->ip : "";
+							case Subitems::PING: return player.ping ? std::to_string(*player.ping) : "";
+							case Subitems::SCORE: return player.score ? std::to_string(*player.score) : "";
+						}
+						assert(false);
+						return ""s;
+					}();
+
+					LvItem.mask = LVIF_TEXT;
+					LvItem.iSubItem = column;
+					LvItem.pszText = (LPSTR)itemText.c_str();
+					ListView_SetItem(gWindows.hListPlayers, &LvItem);
+				}
+			}
+			ListView_SortItems(gWindows.hListPlayers, OnMainWindowListViewSort, 0);
+
 			MainWindowWriteConsole("The player list was reloaded.");
 		}, "loading players");
 	}
