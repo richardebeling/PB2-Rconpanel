@@ -146,6 +146,7 @@ void SingleRemoteEndpointUdpSocket::receive(std::vector<char>* buffer, std::chro
 
 std::future<std::string> AsyncHostnameResolver::resolve(const Address& address, CallbackT callback) {
 	sockaddr_in addr = static_cast<sockaddr_in>(address);
+	std::lock_guard guard(requests_by_address_mutex_);
 
 	auto new_entry_it = requests_by_address_.emplace(addr, MapValue{
 		std::promise<std::string>{},
@@ -166,6 +167,10 @@ std::future<std::string> AsyncHostnameResolver::resolve(const Address& address, 
 	return new_entry_it->second.promise.get_future();
 }
 
+void AsyncHostnameResolver::drop_outstanding(const Address& address) {
+	std::lock_guard guard(requests_by_address_mutex_);
+	requests_by_address_.erase(static_cast<sockaddr_in>(address));
+}
 
 void AsyncHostnameResolver::thread_func(std::stop_token stop_token) {
 	constexpr auto wake_up_interval = 100ms;
@@ -190,14 +195,17 @@ void AsyncHostnameResolver::thread_func(std::stop_token stop_token) {
 
 		std::string hostname = matches[1];
 
-		auto [begin, end] = requests_by_address_.equal_range(remote_address);
-		for (auto it = begin; it != end; ++it) {
-			it->second.promise.set_value(hostname);
-			it->second.callback(hostname);
-		}
+		{
+			std::lock_guard guard(requests_by_address_mutex_);
 
-		// TODO Servers that never respond will never be deleted -> slowly leak memory here. Fix it?
-		requests_by_address_.erase(begin, end);
+			auto [begin, end] = requests_by_address_.equal_range(remote_address);
+			for (auto it = begin; it != end; ++it) {
+				it->second.promise.set_value(hostname);
+				it->second.callback(hostname);
+			}
+
+			requests_by_address_.erase(begin, end);
+		}
 	}
 }
 

@@ -262,7 +262,7 @@ void OnRotationDlgReloadContent(HWND hwnd);
 // Servers Dialog
 //--------------------------------------------------------------------------------------------------
 void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr);
-void ServersDlgFetchHostname(HWND hDlg, Server* server);
+void ServersDlgFetchHostname(HWND hDlg, Server* server, bool drop_outstanding_request = false);
 
 LRESULT CALLBACK ServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 BOOL OnServersDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);

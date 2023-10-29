@@ -123,6 +123,7 @@ class AsyncHostnameResolver {
 public:
 	using CallbackT = std::function<void(const std::string&)>;
 	std::future<std::string> resolve(const Address& address, CallbackT callback = {});
+	void drop_outstanding(const Address& address);
 
 private:
 	void thread_func(std::stop_token);
@@ -138,6 +139,7 @@ private:
 		}
 	};
 	std::multimap<sockaddr_in, MapValue, MapComparator> requests_by_address_;
+	std::mutex requests_by_address_mutex_;
 
 	UdpSocket socket_;
 	std::jthread receive_thread_{ [this](std::stop_token st) { thread_func(std::move(st)); } };

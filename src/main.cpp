@@ -1855,9 +1855,14 @@ void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr) {
 	ListBox_AddOrUpdateString(list, display_string, stable_server_ptr);
 }
 
-void ServersDlgFetchHostname(HWND hDlg, Server* server) {
+void ServersDlgFetchHostname(HWND hDlg, Server* server, bool drop_outstanding_fetches) {
+	if (drop_outstanding_fetches) {
+		g_HostnameResolver.drop_outstanding(server->address);
+	}
+
 	HWND hWinMain = gWindows.hWinMain;
 	UINT message = WM_HOSTNAMEREADY;
+
 	server->hostname = g_HostnameResolver.resolve(server->address, [hWinMain, hDlg, message, server](const std::string& resolved_hostname) {
 		PostMessage(hWinMain, message, 0, (LPARAM)server);
 		PostMessage(hDlg, message, 0, (LPARAM)server);
@@ -1905,7 +1910,7 @@ void OnServersDlgServerlistReady(HWND hWndDlg) noexcept {
 
 	for (const auto& server_ptr : g_Serverlist) {
 		ServersDlgAddOrUpdateServer(GetDlgItem(hWndDlg, IDC_SERVERS_LISTLEFT), server_ptr.get());
-		ServersDlgFetchHostname(hWndDlg, server_ptr.get());
+		ServersDlgFetchHostname(hWndDlg, server_ptr.get(), /*drop_outstanding_fetches=*/true);
 	}
 }
 
