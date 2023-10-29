@@ -43,7 +43,7 @@ struct Address {
 	std::string ip = "";
 	int port = 0;
 
-	explicit operator sockaddr_in() const;
+	explicit operator sockaddr_in() const noexcept;
 	explicit operator std::string() const;
 };
 
@@ -88,7 +88,7 @@ public:
 	UdpSocket& operator=(const UdpSocket&) = delete;
 	UdpSocket& operator=(UdpSocket&&) = delete;
 
-	void clear_receive_queue(void) noexcept;
+	void clear_receive_queue(void);
 	void send(const sockaddr_in& address, const std::string& packet_content);  // require std::string because pb2 requires terminating NULL in the packet.
 	bool wait_for_data(std::chrono::milliseconds timeout) const;
 	void receive(std::vector<char>* buffer, sockaddr_in* remote_address, std::chrono::milliseconds timeout);
@@ -109,7 +109,7 @@ public:
 	SingleRemoteEndpointUdpSocket& operator=(const SingleRemoteEndpointUdpSocket&) = delete;
 	SingleRemoteEndpointUdpSocket& operator=(SingleRemoteEndpointUdpSocket&&) = delete;
 
-	void clear_receive_queue(void) noexcept;
+	void clear_receive_queue(void);
 	void send(const std::string& packet_content);
 	void receive(std::vector<char>* buffer, std::chrono::milliseconds timeout);
 

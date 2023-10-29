@@ -88,14 +88,14 @@ AutoKickEntry AutoKickEntry::from_type_and_value(std::string_view type, std::str
 
 
 
-bool AutoKickEntry::matches(AutoKickEntry::IdT id) const {
+bool AutoKickEntry::matches(AutoKickEntry::IdT id) const noexcept {
 	return std::visit(Overload(
 		[&](const IdT& stored_id) { return stored_id == id; },
 		[](const NameT&) { return false; }
 	), value);
 }
 
-bool AutoKickEntry::matches(AutoKickEntry::NameT name) const {
+bool AutoKickEntry::matches(AutoKickEntry::NameT name) const noexcept {
 	return std::visit(Overload(
 		[](const IdT&) { return false; },
 		[&](const NameT& stored_name) { return strcasecmp(stored_name.c_str(), name.c_str()) == 0; }
@@ -303,14 +303,14 @@ void MainWindowLogExceptionsToConsole(std::function<void()> func, std::string_vi
 	}
 }
 
-void MainWindowSendRcon(const std::string& command) noexcept {
+void MainWindowSendRcon(const std::string& command) {
 	const Server* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
 	}
 
 	const pb2lib::Address& address = server->address;
-	const std::string rcon_password = server->rcon_password;
+	const std::string& rcon_password = server->rcon_password;
 	const auto timeout = gSettings.timeout;
 	const HWND hwnd = gWindows.hWinMain;
 
@@ -330,7 +330,7 @@ void MainWindowSendRcon(const std::string& command) noexcept {
 	MainWindowWriteConsole("rcon " + command);
 }
 
-void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr) noexcept {
+void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr) {
 	const Server& server = *stable_server_ptr;
 	const std::string display_string = static_cast<std::string>(server);
 
@@ -513,7 +513,7 @@ void ShowAboutDialog(HWND hwnd)
 					MB_OK | MB_ICONINFORMATION);
 }
 
-void MainWindowRefetchServerInfo() noexcept {
+void MainWindowRefetchServerInfo() {
 	g_AutoReloadTimer.reset_current_timeout();
 
 	auto* server = MainWindowGetSelectedServerOrLoggedNull();
@@ -593,8 +593,7 @@ void MainWindowUpdatePlayersListview() noexcept
 	ListView_SortItems(gWindows.hListPlayers, OnMainWindowListViewSort, 0);
 }
 
-void MainWindowWriteConsole(const std::string_view str) // prints text to gWindows.hEditConsole, adds timestamp and linebreak
-{
+void MainWindowWriteConsole(const std::string_view str) noexcept { // prints text to gWindows.hEditConsole, adds timestamp and linebreak
 	// may be called by multiple threads, shouldn't intermingle output
 	static std::mutex mutex;
 	std::lock_guard guard(mutex);
@@ -855,8 +854,7 @@ void OnMainWindowSubmitCommand(HWND sender, const char* command) {
 	}
 }
 
-void OnMainWindowJoinServer(void)
-{
+void OnMainWindowJoinServer(void) {
 	const auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!server) {
 		return;
@@ -877,8 +875,7 @@ void OnMainWindowJoinServer(void)
 	}
 }
 
-void OnMainWindowOpenWhois(void)
-{
+void OnMainWindowOpenWhois(void) {
 	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
 	if (!player) {
 		return;
@@ -893,8 +890,7 @@ void OnMainWindowOpenWhois(void)
 	ShellExecute(0, "open", sUrl.c_str(), 0, 0, 1);
 }
 
-void OnMainWindowOpenDPLogin(void)
-{
+void OnMainWindowOpenDPLogin(void) {
 	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
 	if (!player) {
 		return;
@@ -908,8 +904,7 @@ void OnMainWindowOpenDPLogin(void)
 	ShellExecute(0, "open", url.c_str(), 0, 0, 1);
 }
 
-void OnMainWindowKickPlayer(void)
-{
+void OnMainWindowKickPlayer(void) {
 	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
 	auto* server = MainWindowGetSelectedServerOrLoggedNull();
 	if (!player || !server) {
@@ -930,8 +925,7 @@ void OnMainWindowKickPlayer(void)
 	}, "kicking");
 }
 
-void OnMainWindowBanIP(void)
-{
+void OnMainWindowBanIP(void) {
 	auto* player = MainWindowGetSelectedPlayerOrLoggedNull();
 	if (!player) {
 		return;
@@ -967,7 +961,7 @@ void OnMainWindowAutoKick(void) {
 	SendMessage(gWindows.hDlgAutoKickEntries, WM_AUTOKICKENTRYADDED, 0, 0);
 }
 
-void OnMainWindowPlayersReady() noexcept {
+void OnMainWindowPlayersReady() {
 	// Message might be from an outdated / older thread -> only process if the current future is ready
 	if (g_FetchPlayersFuture.valid() && g_FetchPlayersFuture.wait_for(0s) != std::future_status::timeout) {
 		MainWindowLogExceptionsToConsole([&]() {
@@ -978,7 +972,7 @@ void OnMainWindowPlayersReady() noexcept {
 	}
 }
 
-void OnMainWindowServerCvarsReady() noexcept {
+void OnMainWindowServerCvarsReady() {
 	if (g_FetchServerCvarsFuture.valid() && g_FetchServerCvarsFuture.wait_for(0s) != std::future_status::timeout) {
 		std::string display_text = "Error";
 
@@ -998,7 +992,7 @@ void OnMainWindowServerCvarsReady() noexcept {
 	}
 }
 
-void OnMainWindowRconResponseReady() noexcept {
+void OnMainWindowRconResponseReady() {
 	for (auto& future : g_RconResponses) {
 		if (future.wait_for(0s) == std::future_status::timeout) {
 			continue;
@@ -1011,7 +1005,7 @@ void OnMainWindowRconResponseReady() noexcept {
 	std::erase_if(g_RconResponses, [](const auto& future) { return !future.valid(); });
 }
 
-void OnMainWindowHostnameReady(Server* server_instance) noexcept {
+void OnMainWindowHostnameReady(Server* server_instance) {
 	std::lock_guard guard(g_ThreadGlobalReadMutex);
 	for (const auto& server_ptr : g_ServersWithRcon) {
 		if (server_ptr.get() == server_instance) {
@@ -1861,12 +1855,12 @@ LRESULT CALLBACK RCONCommandsDlgProc (HWND hWndDlg, UINT Msg, WPARAM wParam, LPA
 // Callback Servers Dialog                                                                  |
 //{-------------------------------------------------------------------------------------------------
 
-void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept {
+void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr) {
 	std::string display_string = static_cast<std::string>(*stable_server_ptr);
 	ListBox_AddOrUpdateString(list, display_string, stable_server_ptr);
 }
 
-void ServersDlgFetchHostname(HWND hDlg, Server* server) noexcept {
+void ServersDlgFetchHostname(HWND hDlg, Server* server) {
 	HWND hWinMain = gWindows.hWinMain;
 	UINT message = WM_HOSTNAMEREADY;
 	server->hostname = g_HostnameResolver.resolve(server->address, [hWinMain, hDlg, message, server](const std::string& resolved_hostname) {
@@ -2494,15 +2488,7 @@ LRESULT CALLBACK BannedIPsDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM 
 	exit(-1);
 }
 
-UINT RegisterWindowMessageOrCriticalError(const std::string& message_name) noexcept {
-	auto result = RegisterWindowMessage(message_name.c_str());
-	if (result == NULL) {
-		HandleCriticalError("Registering window message failed. GetLastError() = " + std::to_string(GetLastError()));
-	}
-	return result;
-}
-
-DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC device_context, int side_length, DWORD color) {
+DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC device_context, int side_length, DWORD color) noexcept {
 	HBITMAP result_bitmap = CreateCompatibleBitmap(device_context, side_length, side_length);
 
 	HDC bitmap_context = CreateCompatibleDC(device_context);
@@ -2541,7 +2527,7 @@ std::string GetHttpResponse(const std::string& url) {
 	return response;
 }
 
-void SetClipboardContent(const std::string& content) {
+void SetClipboardContent(const std::string& content) noexcept {
 	HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, content.size() + 1);
 	if (hMem == NULL) {
 		return;
@@ -2561,28 +2547,28 @@ void SetClipboardContent(const std::string& content) {
 	CloseClipboard();
 }
 
-BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font) {
+BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font) noexcept {
 	SendMessage(child, WM_SETFONT, font, true);
 	return true;
 };
 
-void AddStyle(HWND hwnd, LONG style) {
+void AddStyle(HWND hwnd, LONG style) noexcept {
 	auto old_style = GetWindowLong(hwnd, GWL_STYLE);
 	SetWindowLong(hwnd, GWL_STYLE, old_style | style);
 }
 
-void RemoveStyle(HWND hwnd, LONG style) {
+void RemoveStyle(HWND hwnd, LONG style) noexcept {
 	auto old_style = GetWindowLong(hwnd, GWL_STYLE);
 	SetWindowLong(hwnd, GWL_STYLE, old_style & ~style);
 }
 
-bool HasStyle(HWND hwnd, LONG style) {
+bool HasStyle(HWND hwnd, LONG style) noexcept {
 	auto set_style = GetWindowLong(hwnd, GWL_STYLE);
 	return set_style & style;
 }
 
-bool HasClass(HWND hwnd, std::string_view classname) {
-	std::array<char, 512> buffer;
+bool HasClass(HWND hwnd, std::string_view classname) noexcept {
+	std::array<char, 512> buffer = { 0 };
 	GetClassName(hwnd, buffer.data(), static_cast<int>(buffer.size()));
 	return classname == buffer.data();
 }
@@ -2619,7 +2605,7 @@ int GetStaticTextWidth (HWND hwndStatic){
 	return static_server_text_size.cx;
 }
 
-void Edit_ReduceLines(HWND hEdit, int iLines) {
+void Edit_ReduceLines(HWND hEdit, int iLines) noexcept {
 	if (iLines <= 0)
 		return;
 	
@@ -2629,7 +2615,7 @@ void Edit_ReduceLines(HWND hEdit, int iLines) {
 	}
 }
 
-void Edit_ScrollToEnd(HWND hEdit) {
+void Edit_ScrollToEnd(HWND hEdit) noexcept {
 	auto text_length = Edit_GetTextLength(hEdit);
 	Edit_SetSel(hEdit, text_length, text_length);
 	Edit_ScrollCaret(hEdit);
@@ -2711,7 +2697,7 @@ void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2,
 	*pb3 = atoi((*it++).c_str());
 }
 
-std::optional<std::string> GetPb2InstallPath() {
+std::optional<std::string> GetPb2InstallPath() noexcept {
 	for (auto root : { HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE }) {
 		HKEY key;
 		if (RegOpenKeyEx(root, "SOFTWARE\\Digital Paint\\Paintball2", 0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS)
@@ -2793,13 +2779,14 @@ void AutoKickTimerFunction() {
 	MainWindowWriteConsole("AutoKick checked all servers.");
 }
 
-std::string ConfigLocation() {
+std::string ConfigLocation() noexcept {
 	char buffer[MAX_PATH] = { '\0' }; //get path of config file
 	GetModuleFileName(GetModuleHandle(NULL), buffer, MAX_PATH);
 	buffer[strlen(buffer) - 3] = '\0';
 	strcat(buffer, "ini");
 	return buffer;
 }
+
 void LoadConfig() {
 	auto path = ConfigLocation();
 

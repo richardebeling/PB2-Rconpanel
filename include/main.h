@@ -101,8 +101,8 @@ struct AutoKickEntry {
 
 	static AutoKickEntry from_type_and_value(std::string_view type, std::string_view value);
 
-	bool matches(NameT name) const;
-	bool matches(IdT id) const;
+	bool matches(NameT name) const noexcept;
+	bool matches(IdT id) const noexcept;
 
 	std::string type_string() const;
 	std::string value_string() const;
@@ -127,29 +127,27 @@ struct ServerCvars {
 	static ServerCvars from_server(const Server& server, std::chrono::milliseconds timeout);
 };
 
-// TODO: Mark stuff as noexcept
 // TODO: Clang format, clang tidy
 
 [[noreturn]] void HandleCriticalError(const std::string& message) noexcept;
 
-std::string ConfigLocation(void);
+std::string ConfigLocation(void) noexcept;
 void LoadConfig(void);
 void SaveConfig(void);
 
-UINT RegisterWindowMessageOrCriticalError(const std::string& message_name) noexcept;
-void SetClipboardContent(const std::string& content);
+void SetClipboardContent(const std::string& content) noexcept;
 std::string GetHttpResponse(const std::string& url);
 void SplitIpAddressToBytes(std::string_view ip, BYTE* pb0, BYTE* pb1, BYTE* pb2, BYTE* pb3);
 
-DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC hDC, int side_length, DWORD color);
-BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font);
-void AddStyle(HWND hwnd, LONG style);
-void RemoveStyle(HWND hwnd, LONG style);
+DeleteObjectRAIIWrapper<HBITMAP> GetFilledSquareBitmap(HDC hDC, int side_length, DWORD color) noexcept;
+BOOL CALLBACK EnumWindowsSetFontCallback(HWND child, LPARAM font) noexcept;
+void AddStyle(HWND hwnd, LONG style) noexcept;
+void RemoveStyle(HWND hwnd, LONG style) noexcept;
+bool HasStyle(HWND hwnd, LONG style) noexcept;
+bool HasClass(HWND hwnd, std::string_view classname) noexcept;
 int GetStaticTextWidth(HWND hwndStatic);
-bool HasStyle(HWND hwnd, LONG style);
-bool HasClass(HWND hwnd, std::string_view classname);
-void Edit_ReduceLines(HWND hEdit, int iLines);
-void Edit_ScrollToEnd(HWND hEdit);
+void Edit_ReduceLines(HWND hEdit, int iLines) noexcept;
+void Edit_ScrollToEnd(HWND hEdit) noexcept;
 // original [List|Combo]Box_FindItemData doesn't find item data but item string.
 int ComboBox_CustomFindItemData(HWND hComboBox, const void* itemData) noexcept;
 int ListBox_CustomFindItemData(HWND hList, const void* itemData) noexcept;
@@ -157,7 +155,7 @@ void ListBox_CustomDeleteString(HWND list, int index) noexcept;
 void ListBox_AddOrUpdateString(HWND list, const std::string& item_text, const void* item_data);
 void ListBox_SendSelChange(HWND list) noexcept;
 
-std::optional<std::string> GetPb2InstallPath(void);
+std::optional<std::string> GetPb2InstallPath(void) noexcept;
 void StartServerbrowser(void);
 
 template<typename T>
@@ -186,15 +184,15 @@ constexpr UINT WM_AUTOKICKENTRYADDED = WM_USER + 11;
 
 void AutoKickTimerFunction();
 void MainWindowLogExceptionsToConsole(std::function<void()> func, std::string_view action_description);
-void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr) noexcept;
+void MainWindowAddOrUpdateOwnedServer(const Server* stable_server_ptr);
 void MainWindowRemoveOwnedServer(const Server* stored_server_ptr) noexcept;
 void MainWindowUpdateAutoKickState() noexcept;
 void MainWindowUpdatePlayersListview() noexcept;
-void MainWindowRefetchServerInfo() noexcept;
-void MainWindowSendRcon(const std::string& command) noexcept;
+void MainWindowRefetchServerInfo();
+void MainWindowSendRcon(const std::string& command);
 
 Server* MainWindowGetSelectedServerOrLoggedNull() noexcept;
-void MainWindowWriteConsole(std::string_view);
+void MainWindowWriteConsole(std::string_view) noexcept;
 void LoadBannedIPsToListbox(HWND hListBox);
 void LoadRotationToListbox(HWND hListBox);
 void ShowAboutDialog(HWND hwnd);
@@ -218,10 +216,10 @@ void OnMainWindowOpenWhois(void);
 void OnMainWindowSendRcon(void);
 void OnMainWindowSubmitCommand(HWND sender, const char* command);
 void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy);
-void OnMainWindowPlayersReady() noexcept;
-void OnMainWindowServerCvarsReady() noexcept;
-void OnMainWindowRconResponseReady() noexcept;
-void OnMainWindowHostnameReady(Server* server_instance) noexcept;
+void OnMainWindowPlayersReady();
+void OnMainWindowServerCvarsReady();
+void OnMainWindowRconResponseReady();
+void OnMainWindowHostnameReady(Server* server_instance);
 
 //--------------------------------------------------------------------------------------------------
 // Forcejoin Dialog
@@ -263,8 +261,8 @@ void OnRotationDlgReloadContent(HWND hwnd);
 //--------------------------------------------------------------------------------------------------
 // Servers Dialog
 //--------------------------------------------------------------------------------------------------
-void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr) noexcept;
-void ServersDlgFetchHostname(HWND hDlg, Server* server) noexcept;
+void ServersDlgAddOrUpdateServer(HWND list, const Server* stable_server_ptr);
+void ServersDlgFetchHostname(HWND hDlg, Server* server);
 
 LRESULT CALLBACK ServersDlgProc(HWND hWndDlg, UINT Msg, WPARAM wParam, LPARAM lParam);
 BOOL OnServersDlgInitDialog(HWND hwnd, HWND hwndFocus, LPARAM lParam);

@@ -12,7 +12,7 @@ using namespace std::string_literals;
 using namespace std::string_view_literals;
 
 
-Address::operator sockaddr_in() const {
+Address::operator sockaddr_in() const noexcept {
 	sockaddr_in result = { 0 };
 	result.sin_family = AF_INET;
 	result.sin_port = htons(port);
@@ -50,7 +50,7 @@ UdpSocket::~UdpSocket() {
 	closesocket(socket_handle_);
 }
 
-void UdpSocket::clear_receive_queue() noexcept {
+void UdpSocket::clear_receive_queue() {
 	fd_set fdset = { 0 };
 	timeval tv = { 0 };
 	FD_ZERO(&fdset);
@@ -125,7 +125,7 @@ SingleRemoteEndpointUdpSocket::SingleRemoteEndpointUdpSocket(const Address& remo
 	remote_address_ = static_cast<sockaddr_in>(remote_address);
 }
 
-void SingleRemoteEndpointUdpSocket::clear_receive_queue() noexcept {
+void SingleRemoteEndpointUdpSocket::clear_receive_queue() {
 	return socket_.clear_receive_queue();
 }
 
