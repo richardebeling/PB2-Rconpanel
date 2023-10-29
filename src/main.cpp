@@ -758,6 +758,13 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						CBS_AUTOHSCROLL | CBS_DROPDOWN | WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
+	ComboBox_SetCueBannerText(gWindows.hComboRcon, L"rcon command");
+	COMBOBOXINFO combobox_info = { 0 };
+	combobox_info.cbSize = sizeof(combobox_info);
+	GetComboBoxInfo(gWindows.hComboRcon, &combobox_info);
+#pragma warning(suppress: 6387)
+	SetWindowSubclass(combobox_info.hwndItem, CommandHistoryComboBoxEditProc, 0, (DWORD_PTR)gWindows.hComboRcon);
+
 	gWindows.hButtonSend = CreateWindowEx(0, WC_BUTTON, "&Send Rcon", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
@@ -765,14 +772,6 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						WS_VSCROLL | ES_AUTOVSCROLL | ES_MULTILINE | ES_READONLY | WS_CHILD | WS_VISIBLE,
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
-
-	ComboBox_SetCueBannerText(gWindows.hComboRcon, L"rcon command");
-	// The rcon combobox should use its drop down for a command history
-	COMBOBOXINFO combobox_info = { 0 };
-	combobox_info.cbSize = sizeof(combobox_info);
-	GetComboBoxInfo(gWindows.hComboRcon, &combobox_info);
-#pragma warning(suppress: 6387)
-	SetWindowSubclass(combobox_info.hwndItem, CommandHistoryComboBoxEditProc, 0, (DWORD_PTR)gWindows.hComboRcon);
 
 	Edit_LimitText(gWindows.hEditConsole, 0);
 
@@ -845,9 +844,7 @@ void OnMainWindowForcejoin(void)
 }
 
 void OnMainWindowSendRcon(void) {
-	// TODO: Maybe trigger the submit logic using a custom message?
 	SendMessage(gWindows.hComboRcon, WM_KEYDOWN, VK_RETURN, 0);
-	SendMessage(gWindows.hComboRcon, WM_KEYUP, VK_RETURN, 0);
 }
 
 void OnMainWindowSubmitCommand(HWND sender, const char* command) {
