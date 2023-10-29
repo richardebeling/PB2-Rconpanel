@@ -2847,6 +2847,7 @@ void LoadConfig() {
 
 	gSettings.bAutoKickCheckEnable = GetPrivateProfileInt("bans", "runBanThread", defaults.bAutoKickCheckEnable, path.c_str());
 	gSettings.iAutoKickCheckDelay = GetPrivateProfileInt("bans", "delay", defaults.iAutoKickCheckDelay, path.c_str());
+	gSettings.iAutoKickCheckMaxPingMsecs = GetPrivateProfileInt("bans", "maxPing", defaults.iAutoKickCheckMaxPingMsecs, path.c_str());
 	MainWindowUpdateAutoKickState();
 
 	int ban_count = GetPrivateProfileInt("bans", "count", 0, path.c_str());
@@ -2873,7 +2874,6 @@ void LoadConfig() {
 }
 
 void SaveConfig() {
-	// TODO: Store and reload max ping for auto-kick?
 	// TODO: Update ini paths with renamed program terminology (e.g. ban vs autokick) -> can also break other compatibility fixes (ban types, timeout unit)
 
 	MainWindowWriteConsole("Saving configuration file...");
@@ -2916,6 +2916,7 @@ void SaveConfig() {
 
 	WritePrivateProfileString("bans", "runBanThread", std::to_string(gSettings.bAutoKickCheckEnable).c_str(), path.c_str());
 	WritePrivateProfileString("bans", "delay", std::to_string(gSettings.iAutoKickCheckDelay).c_str(), path.c_str());
+	WritePrivateProfileString("bans", "maxPing", std::to_string(gSettings.iAutoKickCheckMaxPingMsecs).c_str(), path.c_str());
 
 	WritePrivateProfileString("bans", "count", std::to_string(g_vAutoKickEntries.size()).c_str(), path.c_str());
 	for (unsigned int index = 0; index < g_vAutoKickEntries.size(); index++) {
