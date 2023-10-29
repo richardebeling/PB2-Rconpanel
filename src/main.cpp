@@ -1,9 +1,5 @@
-//TODO: Add: Modifiable messages that will be said as console before players are kicked.
-//TODO: Add: Dialog that can be used to change servers settings and save current settings as configuration file for a server
-//TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin / ip whois?)
-
-//TODO: Save and restore window position?
-
+// TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin / ip whois?)
+// TODO: Save and restore window position?
 // TODO: Make everything in the main window accessible via keyboard through menus?
 
 #ifdef _MSC_VER
