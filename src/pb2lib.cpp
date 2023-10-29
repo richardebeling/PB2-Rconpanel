@@ -236,9 +236,10 @@ std::string send_connectionless(const Address& address, std::string_view message
 		response += partial_response;
 		received_anything = true;
 
-		if (partial_response.size() < 1000) {
-			// early exit if we don't expect additional packets
-			break;  // todo: possibly wrong, but can we do better?
+		if (partial_response.size() < 500) {
+			// early exit if we don't expect additional packets. This is possibly wrong, but makes for much smoother UX.
+			// I've never observed an initial packet of <500 bytes with a follow up packet. pb2 currently splits at 1400 byte
+			break;
 		}
 	}
 
@@ -503,8 +504,6 @@ std::vector<Player> get_players(const Address& address, std::string_view rcon_pa
 
 	annotate_score_ping_address_from_rcon_status(&result, address, rcon_password, timeout);
 
-	// TODO: Maybe probe player count first with `status`, and only use logged rcon if there are players?
-	// Problem: Bots don't currently show up in connectionless `status` response.
 	annotate_team_from_status(&result, address, timeout);
 
 	return result;

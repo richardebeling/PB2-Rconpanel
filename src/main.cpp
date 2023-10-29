@@ -1484,8 +1484,7 @@ void OnSettingsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 
 		gSettings.iAutoReloadDelaySecs = GetDlgItemInt(hwnd, IDC_SETTINGS_EDITAUTORELOAD, NULL, FALSE);
 		g_AutoReloadTimer.set_interval(gSettings.iAutoReloadDelaySecs);
-			
-		// TODO: Also use 0 = unlimited semantics?
+
 		gSettings.iMaxConsoleLineCount = GetDlgItemInt(hwnd, IDC_SETTINGS_EDITLINECOUNT, NULL, FALSE);
 		gSettings.bLimitConsoleLineCount = 0;
 		if (IsDlgButtonChecked(hwnd, IDC_SETTINGS_CHECKLINECOUNT) == BST_CHECKED) {
