@@ -766,6 +766,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
+	ComboBox_SetCueBannerText(gWindows.hComboRcon, L"rcon command");
 	// The rcon combobox should use its drop down for a command history
 	COMBOBOXINFO combobox_info = { 0 };
 	combobox_info.cbSize = sizeof(combobox_info);
@@ -1236,8 +1237,7 @@ void OnMainWindowSize(HWND hwnd, UINT state, int cx, int cy) {
 		MoveWindow(gWindows.hButtonSend, button_left, row_top, gDimensions.button_width, gDimensions.button_height, false);
 
 		auto combo_width = button_left - window_border_padding - gDimensions.padding_small;
-		auto combo_height = cy - window_border_padding - row_top;
-		MoveWindow(gWindows.hComboRcon, window_border_padding, row_top + gDimensions.combobox_offset, combo_width, combo_height, false);
+		MoveWindow(gWindows.hComboRcon, window_border_padding, row_top + gDimensions.combobox_offset, combo_width, gDimensions.button_height, false);
 	}
 
 	row_top += gDimensions.button_height + gDimensions.padding_small;
