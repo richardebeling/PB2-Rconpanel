@@ -1,5 +1,4 @@
 // TODO: IDs and IPs Dialog: Show information about these numbers (maybe a button that links to dplogin / ip whois?)
-// TODO: Make everything in the main window accessible via keyboard through menus?
 
 #ifdef _MSC_VER
 #define _CRT_SECURE_NO_WARNINGS
