@@ -146,8 +146,8 @@ void RemoveStyle(HWND hwnd, LONG style) noexcept;
 bool HasStyle(HWND hwnd, LONG style) noexcept;
 bool HasClass(HWND hwnd, std::string_view classname) noexcept;
 int GetStaticTextWidth(HWND hwndStatic);
+void Edit_RestoreSelectionAndScrollAfter(HWND hEdit, std::function<int64_t(void)> func);
 void Edit_ReduceLines(HWND hEdit, int iLines) noexcept;
-void Edit_ScrollToEnd(HWND hEdit) noexcept;
 // original [List|Combo]Box_FindItemData doesn't find item data but item string.
 int ComboBox_CustomFindItemData(HWND hComboBox, const void* itemData) noexcept;
 int ListBox_CustomFindItemData(HWND hList, const void* itemData) noexcept;

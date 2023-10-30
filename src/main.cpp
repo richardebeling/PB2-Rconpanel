@@ -552,7 +552,6 @@ void MainWindowWriteConsole(const std::string_view str) noexcept { // prints tex
 	static std::mutex mutex;
 	std::lock_guard guard(mutex);
 
-	// TODO: Sometimes flickers, loses focus of players listview. Can we do better?
 	auto const time = std::chrono::time_point_cast<std::chrono::seconds>(
 		std::chrono::current_zone()->to_local(std::chrono::system_clock::now())
 	);
@@ -564,22 +563,23 @@ void MainWindowWriteConsole(const std::string_view str) noexcept { // prints tex
 	formatted = std::regex_replace(formatted, std::regex{"\n"}, "\n---------> "); // indent text after line ending
 	formatted = std::regex_replace(formatted, std::regex{"\n"}, "\r\n");
 
-	// add linebreak (if its not the first line) and the the text to the end of gWindows.hEditConsole
-	Edit_SetSel(gWindows.hEditConsole, -2, -2);
-	DWORD start = 0, end = 0;
-	SendMessage(gWindows.hEditConsole, EM_GETSEL, (WPARAM)&start, (LPARAM)&end);
-	if (start != 0)
-		Edit_ReplaceSel(gWindows.hEditConsole, "\r\n");
+	SendMessage(gWindows.hEditConsole, WM_SETREDRAW, FALSE, 0);
 
-	// Add new text
-	Edit_ReplaceSel(gWindows.hEditConsole, formatted.c_str());
+	Edit_RestoreSelectionAndScrollAfter(gWindows.hEditConsole, [&]() {
+		auto length = Edit_GetTextLength(gWindows.hEditConsole);
+		if (0 != length) {
+			formatted = "\r\n" + formatted;
+		}
 
-	//remove first line until linecount is equal to gSettings.iMaxConsoleLineCount
+		Edit_SetSel(gWindows.hEditConsole, length, length);
+		Edit_ReplaceSel(gWindows.hEditConsole, formatted.c_str());
+		return 0;
+	});
+
 	if (gSettings.bLimitConsoleLineCount)
 		Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
 
-	//Scroll to the bottom of gWindows.hEditConsole so the user directly sees what has just been added
-	Edit_ScrollToEnd(gWindows.hEditConsole);
+	SendMessage(gWindows.hEditConsole, WM_SETREDRAW, TRUE, 0);
 }
 
 //}-------------------------------------------------------------------------------------------------
@@ -722,7 +722,7 @@ BOOL OnMainWindowCreate(HWND hwnd, LPCREATESTRUCT lpCreateStruct)
 						hwnd, NULL, NULL, NULL);
 
 	gWindows.hEditConsole = CreateWindowEx(WS_EX_CLIENTEDGE, WC_EDIT, "",
-						WS_VSCROLL | ES_AUTOVSCROLL | ES_MULTILINE | ES_READONLY | WS_CHILD | WS_VISIBLE,
+						WS_VSCROLL | ES_MULTILINE | ES_READONLY | WS_CHILD | WS_VISIBLE,
 						0, 0, 0, 0,
 						hwnd, NULL, NULL, NULL);
 
@@ -1497,7 +1497,6 @@ void OnSettingsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		if (IsDlgButtonChecked(hwnd, IDC_SETTINGS_CHECKLINECOUNT) == BST_CHECKED) {
 			gSettings.bLimitConsoleLineCount = 1;
 			Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
-			Edit_ScrollToEnd(gWindows.hEditConsole);
 		}
 		
 		gSettings.bColorPlayers = IsDlgButtonChecked(hwnd, IDC_SETTINGS_CHECKCOLORPLAYERS) == BST_CHECKED;
@@ -2612,20 +2611,51 @@ int GetStaticTextWidth (HWND hwndStatic){
 	return static_server_text_size.cx;
 }
 
+void Edit_RestoreSelectionAndScrollAfter(HWND hEdit, std::function<int64_t (void)> func) {
+	DWORD old_selection_start = 0, old_selection_end = 0;
+	SendMessage(gWindows.hEditConsole, EM_GETSEL, (LPARAM)&old_selection_start, (LPARAM)&old_selection_end);
+
+	SCROLLINFO old_scroll_info = { 0 };
+	old_scroll_info.cbSize = sizeof(old_scroll_info);
+	old_scroll_info.fMask = SIF_ALL;
+	GetScrollInfo(gWindows.hEditConsole, SB_VERT, &old_scroll_info);
+
+	int64_t selection_offset = func();
+
+	// This always makes the selection start the "anchor" since EM_GETSEL doesn't always return the anchor first.
+	// It makes selecting backwards awkward, but I don't see a nice way to fix this.
+#pragma warning (suppress : 4244)
+	old_selection_start = max(0, static_cast<int64_t>(old_selection_start) + selection_offset);
+#pragma warning (suppress : 4244)
+	old_selection_end = max(0, static_cast<int64_t>(old_selection_end) + selection_offset);
+	Edit_SetSel(gWindows.hEditConsole, old_selection_start, old_selection_end);
+
+	if (old_scroll_info.nPos + static_cast<int>(old_scroll_info.nPage) > old_scroll_info.nMax) {
+		// Stay at the end if stuff was appended
+		SendMessage(gWindows.hEditConsole, EM_LINESCROLL, 0, Edit_GetLineCount(hEdit));
+	}
+	else {
+		// Keep position
+		// Can only scroll relatively to current position, so go to top first.
+		SendMessage(gWindows.hEditConsole, EM_LINESCROLL, 0, INT_MIN);
+		SendMessage(gWindows.hEditConsole, EM_LINESCROLL, 0, old_scroll_info.nPos);
+	}
+}
+
 void Edit_ReduceLines(HWND hEdit, int iLines) noexcept {
 	if (iLines <= 0)
 		return;
 	
-	while (Edit_GetLineCount(hEdit) > iLines) {
-		Edit_SetSel(hEdit, 0, 1ull + Edit_LineLength(hEdit, 0));
-		Edit_ReplaceSel(hEdit, "");
-	}
-}
-
-void Edit_ScrollToEnd(HWND hEdit) noexcept {
-	auto text_length = Edit_GetTextLength(hEdit);
-	Edit_SetSel(hEdit, text_length, text_length);
-	Edit_ScrollCaret(hEdit);
+	Edit_RestoreSelectionAndScrollAfter(hEdit, [&]() {
+		int chars_removed = 0;
+		while (Edit_GetLineCount(hEdit) > iLines) {
+			int line_length = 1ull + Edit_LineLength(hEdit, 0);
+			chars_removed += line_length;
+			Edit_SetSel(hEdit, 0, line_length);
+			Edit_ReplaceSel(hEdit, "");
+		}
+		return -chars_removed;
+	});
 }
 
 int ComboBox_CustomFindItemData(HWND hComboBox, const void* itemData) noexcept {
