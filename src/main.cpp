@@ -1361,15 +1361,23 @@ void OnMainWindowDpiChanged(HWND hwnd, int newDpiX, int newDpiY, RECT* suggested
 	// NUMBER, BUILD, OP, SCORE, PING: Size according to header (is bigger)
 	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::NUMBER, LVSCW_AUTOSIZE_USEHEADER);
 	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::BUILD, LVSCW_AUTOSIZE_USEHEADER);
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::OP, LVSCW_AUTOSIZE_USEHEADER);
 	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::SCORE, LVSCW_AUTOSIZE_USEHEADER);
 	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::PING, LVSCW_AUTOSIZE_USEHEADER);
 
-	// ID: 7-digit number, IP: width(255.255.255.255)
-	const auto id_width = ListView_GetStringWidth(gWindows.hListPlayers, "0000000");
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::ID, id_width);
+	// https://learn.microsoft.com/en-us/windows/win32/controls/lvm-getstringwidth says:
+	// If you use the returned string width as the column width in the LVM_SETCOLUMNWIDTH message,
+	// the string will be truncated. To retrieve the column width that can contain the string without
+	// truncating it, you must add padding to the returned string width.
+	// -- thanks for nothing microsoft
+	constexpr int column_padding = 14;
+
+	// ID: 7-digit number, OP: 3-digit number, IP: width(255.255.255.255)
+	const auto id_width = ListView_GetStringWidth(gWindows.hListPlayers, "000000");
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::ID, id_width + column_padding);
+	const auto op_width = ListView_GetStringWidth(gWindows.hListPlayers, "000");
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::OP, op_width + column_padding);
 	const auto ip_width = ListView_GetStringWidth(gWindows.hListPlayers, "255.255.255.255");
-	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::IP, ip_width);
+	ListView_SetColumnWidth(gWindows.hListPlayers, Subitems::IP, ip_width + column_padding);
 
 	// NAME: Take remaining width
 	const auto scrollbar_width = GetSystemMetrics(SM_CXVSCROLL);
