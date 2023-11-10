@@ -1,16 +1,23 @@
 # Rconpanel for Digital Paint: Paintball 2 servers
-TODO: Description
-TODO: Screenshots (remake?)
+This is a remote administration tool for Digital Paint: Paintball 2 servers.
 
-## Building
+No installation is required, simply run the executable.
+Settings will be stored in an .ini file next to the binary.
+To uninstall, simply remove the binary and the .ini file.
 
-Use the provided project file for Visual Studio. In the past, I had success building using these commands with MinGW-G++:
+The main window shows connected players and allows performing admin tasks.
+You can also perform manual rcon communication with the server here.
+There are dialogs for changing the rotation and banned IP addresses.
+There's also an Auto-Kick feature based on high pings, player IDs, or names.
 
-```
-mkdir build
 
-g++.exe --std=c++20 -Os -c main.cpp -o build\main.o
-g++.exe --std=c++20 -Os -c rconfunctions.cpp -o build\rconfunctions.o
-windres.exe -J rc -O coff -i resource.rc -o "build\resource.res"
-g++.exe -o"build\Rconpanel.exe build\main.o build\rconfunctions.o build\resource.res -Os -s -lshlwapi -mwindows
-```
+## Screenshots
+<img src="/screenshots/main.png?raw=true" width="60%" alt="Screenshot of the main window"/>
+<img src="/screenshots/rotation.png?raw=true" width="60%" alt="Screenshot of the rotation dialog"/>
+
+
+## Contributing
+Feel free to contact me or open an issue if something doesn't work.
+
+Small PRs with improvements are welcome.
+Contact me if you want to do larger changes to ensure there will be capacities for code review and maintenance.
