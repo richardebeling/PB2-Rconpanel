@@ -505,6 +505,18 @@ void annotate_team_from_status(std::vector<Player>* players, const Address& addr
 }
 
 std::vector<Player> get_players(const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout) {
+	return {
+		Player{.name = "Jambob", .number = 2, .op = 0, .build = 45, .id=std::nullopt, .address= Address{"10.65.233.128", 0}, .ping = 23, .score = 7, .team = Team::RED},
+		Player{.name = "ChargedSt", .number = 8, .op = 0, .build = 45, .id = std::nullopt, .address = Address{"10.228.145.58", 0}, .ping = 15, .score = 5, .team = Team::RED},
+		Player{.name = "L1ghtn1ng", .number = 4, .op = 0, .build = 45, .id = 8167925, .address = Address{"10.144.118.173", 0}, .ping = 38, .score = 13, .team = Team::RED },
+		Player{.name = "Stunning Muffin", .number = 9, .op = 0, .build = 45, .id = 4015103, .address = Address{"10.209.8.215", 0}, .ping = 27, .score = 9, .team = Team::RED },
+
+		Player{ .name = "Berryy", .number = 3, .op = 200, .build = 45, .id = 4683232, .address = Address{"10.90.233.183", 0}, .ping = 103, .score = 8, .team = Team::BLUE },
+		Player{ .name = "Joe-Cakes", .number = 6, .op = 0, .build = 45, .id = 1838660, .address = Address{"10.109.134.182", 0}, .ping = 26, .score = 21, .team = Team::BLUE },
+		Player{ .name = "Louisinator", .number = 7, .op = 0, .build = 45, .id = std::nullopt, .address = Address{"10.240.61.13", 0}, .ping = 19, .score = 6, .team = Team::BLUE },
+		Player{ .name = "Bumpy Sean", .number = 5, .op = 0, .build = 45, .id = std::nullopt, .address = Address{"10.12.235.197", 0}, .ping = 32, .score = 15, .team = Team::BLUE },
+	};
+
 	std::vector<Player> result = get_players_from_rcon_sv_players(address, rcon_password, timeout);
 	if (result.empty()) {
 		return result;

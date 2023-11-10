@@ -1007,9 +1007,24 @@ void OnMainWindowRconResponseReady() {
 }
 
 void OnMainWindowHostnameReady(Server* server_instance) {
+	std::map<int, std::string> mocked_hostnames = {
+		{27910, "[UaD] Public"},
+		{27915, "[UaD] PGP"},
+		{27920, "[UaD] Speed"},
+		{27925, "[UaD] Jump"},
+		{27930, "[UaD] Deathmatch"},
+		{27935, "[UaD] Match 1"},
+		{27940, "[UaD] Match 2"},
+	};
+
 	std::lock_guard guard(g_ThreadGlobalReadMutex);
 	for (const auto& server_ptr : g_ServersWithRcon) {
 		if (server_ptr.get() == server_instance) {
+			if (mocked_hostnames.contains(server_ptr->address.port)) {
+				std::promise<std::string> p;
+				server_ptr->hostname = p.get_future();
+				p.set_value(mocked_hostnames[server_ptr->address.port]);
+			}
 			MainWindowAddOrUpdateOwnedServer(server_ptr.get());
 		}
 	}
