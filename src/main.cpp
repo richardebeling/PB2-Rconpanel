@@ -120,7 +120,7 @@ AutoKickEntry::operator std::string() const {
 
 ServerCvars ServerCvars::from_server(const Server& server, std::chrono::milliseconds timeout) {
 	const std::vector<std::string> status_vars = { "mapname", "password", "elim", "timelimit", "maxclients" };
-	auto values = pb2lib::get_cvars(server.address, server.rcon_password, status_vars, timeout);
+	auto values = pb2lib::get_cvars({.address=&server.address, .timeout=timeout}, server.rcon_password, status_vars);
 
 	return ServerCvars{
 		.mapname = values[0],
@@ -313,7 +313,7 @@ void MainWindowSendRcon(const std::string& command) {
 
 	std::thread thread([address, rcon_password, command, timeout, hwnd](std::promise<std::string> promise) {
 		try {
-			promise.set_value(pb2lib::send_rcon(address, rcon_password, command, timeout));
+			promise.set_value(pb2lib::send_rcon(pb2lib::SendArgs{.address=&address, .timeout=timeout}, rcon_password, command));
 		}
 		catch (pb2lib::Exception&) {
 			promise.set_exception(std::current_exception());
@@ -517,7 +517,7 @@ void MainWindowRefetchServerInfo() {
 
 	auto fetch_players_thread_function = [](std::promise<std::vector<pb2lib::Player>> promise, Server server, HWND window, std::chrono::milliseconds timeout) {
 		try {
-			promise.set_value(pb2lib::get_players(server.address, server.rcon_password, timeout));
+			promise.set_value(pb2lib::get_players(pb2lib::SendArgs{.address=&server.address, .timeout=timeout}, server.rcon_password));
 		}
 		catch (pb2lib::Exception&) {
 			promise.set_exception(std::current_exception());
@@ -782,7 +782,7 @@ void OnMainWindowForcejoin(void)
 	}
 
 	MainWindowLogExceptionsToConsole([&]() {
-		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.timeout);
+		auto updated_players = pb2lib::get_players_from_rcon_sv_players(pb2lib::SendArgs{.address=&server->address, .timeout=gSettings.timeout}, server->rcon_password);
 		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
 			return updated_player.number == player->number && updated_player.name == player->name; });
 
@@ -865,7 +865,7 @@ void OnMainWindowKickPlayer(void) {
 	}
 
 	MainWindowLogExceptionsToConsole([&]() {
-		auto updated_players = pb2lib::get_players_from_rcon_sv_players(server->address, server->rcon_password, gSettings.timeout);
+		auto updated_players = pb2lib::get_players_from_rcon_sv_players(pb2lib::SendArgs{.address=&server->address, .timeout=gSettings.timeout}, server->rcon_password);
 		auto matching_updated_player_it = std::ranges::find_if(updated_players, [&](const pb2lib::Player& updated_player) {
 			return updated_player.number == player->number && updated_player.name == player->name; });
 
@@ -1547,7 +1547,7 @@ void LoadRotationToListbox(HWND hListBox) {
 	}
 	
 	MainWindowLogExceptionsToConsole([&]() {
-		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv maplist", gSettings.timeout);
+		const std::string response = pb2lib::send_rcon(pb2lib::SendArgs{.address=&server->address, .timeout=gSettings.timeout}, server->rcon_password, "sv maplist");
 		const std::regex rx(R"(^\d+ (.*?)$)");
 
 		ListBox_ResetContent(hListBox);
@@ -1577,7 +1577,7 @@ void OnRotationDlgReloadContent(HWND hwnd) {
 	LoadRotationToListbox(GetDlgItem(hwnd, IDC_ROTATION_LIST));
 
 	MainWindowLogExceptionsToConsole([&]() {
-		std::string answer = pb2lib::get_cvar(server->address, server->rcon_password, "rot_file", gSettings.timeout);
+		std::string answer = pb2lib::get_cvar(pb2lib::SendArgs{.address=&server->address, .timeout=gSettings.timeout}, server->rcon_password, "rot_file");
 		SetDlgItemText(hwnd, IDC_ROTATION_EDITFILE, answer.c_str());
 	}, "getting rot_file");
 
@@ -1648,7 +1648,7 @@ void OnRotationDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 		std::string answer;
 
 		MainWindowLogExceptionsToConsole([&]() {
-			answer = pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.timeout);
+			answer = pb2lib::send_rcon(pb2lib::SendArgs{.address=&server->address, .timeout=gSettings.timeout}, server->rcon_password, command);
 		}, "changing rotation");
 
 		LoadRotationToListbox(hList);
@@ -2348,7 +2348,7 @@ void LoadBannedIPsToListbox(HWND hListBox) {
 	}
 
 	MainWindowLogExceptionsToConsole([&]() {
-		const std::string response = pb2lib::send_rcon(server->address, server->rcon_password, "sv listip", gSettings.timeout);
+		const std::string response = pb2lib::send_rcon(pb2lib::SendArgs{.address=&server->address, .timeout=gSettings.timeout}, server->rcon_password, "sv listip");
 		const std::regex rx(R"([\d ]{3}\.[\d ]{3}\.[\d ]{3}\.[\d ]{3})");
 
 		ListBox_ResetContent(hListBox);
@@ -2388,7 +2388,7 @@ void OnBannedIPsDlgCommand(HWND hwnd, int id, HWND hwndCtl, UINT codeNotify) {
 
 		command += compact_edit_ip;
 		MainWindowLogExceptionsToConsole([&]() {
-			pb2lib::send_rcon(server->address, server->rcon_password, command, gSettings.timeout);
+			pb2lib::send_rcon(pb2lib::SendArgs{.address=&server->address, .timeout=gSettings.timeout}, server->rcon_password, command);
 		}, "modifying banned IPs");
 
 		LoadBannedIPsToListbox(GetDlgItem(hwnd, IDC_IPS_LIST));
@@ -2791,7 +2791,7 @@ void AutoKickTimerFunction() {
 
     for (const auto& server : servers)
 	{
-		std::vector <pb2lib::Player> players = pb2lib::get_players(server.address, server.rcon_password, gSettings.timeout);
+		std::vector <pb2lib::Player> players = pb2lib::get_players(pb2lib::SendArgs{.address=&server.address, .timeout=gSettings.timeout}, server.rcon_password);
 			
         for (const auto& player : players)
 		{
@@ -2799,7 +2799,7 @@ void AutoKickTimerFunction() {
 			{
 				MainWindowLogExceptionsToConsole([&]() {
 					std::string command = "kick " + std::to_string(player.number);
-					auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.timeout);
+					auto response = pb2lib::send_rcon(pb2lib::SendArgs{.address=&server.address, .timeout=gSettings.timeout}, server.rcon_password, command);
 					MainWindowWriteConsole("Player " + player.name + " on server " + static_cast<std::string>(server) + " had a too high ping and was kicked.");
 				}, "auto-kicking");
 				continue;
@@ -2815,7 +2815,7 @@ void AutoKickTimerFunction() {
 
 			MainWindowLogExceptionsToConsole([&]() {
 				std::string command = "kick " + std::to_string(player.number);
-				auto response = pb2lib::send_rcon(server.address, server.rcon_password, command, gSettings.timeout);
+				auto response = pb2lib::send_rcon(pb2lib::SendArgs{.address=&server.address, .timeout=gSettings.timeout}, server.rcon_password, command);
 				MainWindowWriteConsole("Found and kicked player " + player.name + " on server " + static_cast<std::string>(server));
 			}, "auto-kicking");
 		}

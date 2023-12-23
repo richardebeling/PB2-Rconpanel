@@ -150,16 +150,36 @@ private:
 
 Team team_from_string(std::string_view team_string);
 
-std::string send_connectionless(const Address& address, std::string_view message, std::chrono::milliseconds timeout);
-std::string send_rcon(const Address& address, std::string_view rcon_password, std::string_view message, std::chrono::milliseconds timeout);
 
-std::string get_cvar(const Address& address, std::string_view rcon_password, std::string_view cvar, std::chrono::milliseconds timeout);
-std::vector<std::string> get_cvars(const Address& address, std::string_view rcon_password, const std::vector<std::string>& cvars, std::chrono::milliseconds timeout);
+struct PacketAwareSendArgs {
+	// RCON in general works through Printf-redirect in SVC_RemoteCommand, buffer size is set to 1384 here, flushing happens on every print call.
+	// Out-of-band answer in SV_StatusString also truncates to this length.
+	constexpr static size_t MAX_PACKET_SIZE = 1384;
 
-std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout);
-void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout);
-void annotate_team_from_status(std::vector<Player>* players, const Address& address, std::chrono::milliseconds timeout);
-std::vector<Player> get_players(const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout);
+	const Address* address = nullptr;
+	std::chrono::milliseconds timeout = 0ms;
+	size_t assume_additional_packet_if_packet_bigger_than = 0;
+};
+
+std::string send_connectionless(const PacketAwareSendArgs& args, std::string_view message);
+std::string send_rcon(const PacketAwareSendArgs& args, std::string_view rcon_password, std::string_view message);
+
+
+struct SendArgs {
+	const Address* address;
+	std::chrono::milliseconds timeout;
+};
+std::string send_rcon(const SendArgs& args, std::string_view rcon_password, std::string_view message);
+
+std::string get_cvar(const SendArgs& args, std::string_view rcon_password, std::string_view cvar);
+std::vector<std::string> get_cvars(const SendArgs& args, std::string_view rcon_password, const std::vector<std::string>& cvars);
+
+// TODO: Send/receive asynchronously
+std::vector<Player> get_players_from_rcon_sv_players(const SendArgs& args, std::string_view rcon_password);
+void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const SendArgs& args, std::string_view rcon_password);
+void annotate_team_from_status(std::vector<Player>* players, const SendArgs& args);
+std::vector<Player> get_players(const SendArgs& args, std::string_view rcon_password);
+
 }
 
 #endif // __PB2LIB_H_INCLUDED

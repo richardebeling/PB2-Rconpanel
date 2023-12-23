@@ -210,8 +210,8 @@ void AsyncHostnameResolver::thread_func(std::stop_token stop_token) {
 }
 
 
-std::string send_connectionless(const Address& address, std::string_view message, std::chrono::milliseconds timeout) {
-	SingleRemoteEndpointUdpSocket socket(address);
+std::string send_connectionless(const PacketAwareSendArgs& args, std::string_view message) {
+	SingleRemoteEndpointUdpSocket socket(*args.address);
 	socket.clear_receive_queue();
 
 	std::string packet_content = "\xFF\xFF\xFF\xFF";
@@ -223,7 +223,7 @@ std::string send_connectionless(const Address& address, std::string_view message
 
 	std::vector<char> buffer;
 	while (true) {
-		socket.receive(&buffer, timeout);
+		socket.receive(&buffer, args.timeout);
 
 		if (buffer.empty()) { // timeout
 			break;
@@ -244,9 +244,7 @@ std::string send_connectionless(const Address& address, std::string_view message
 		response += partial_response;
 		received_anything = true;
 
-		if (partial_response.size() < 500) {
-			// early exit if we don't expect additional packets. This is possibly wrong, but makes for much smoother UX.
-			// I've never observed an initial packet of <500 bytes with a follow up packet. pb2 currently splits at 1400 byte
+		if (partial_response.size() < args.assume_additional_packet_if_packet_bigger_than) {
 			break;
 		}
 	}
@@ -259,13 +257,13 @@ std::string send_connectionless(const Address& address, std::string_view message
 }
 
 
-std::string send_rcon(const Address& address, std::string_view rcon_password, std::string_view message, std::chrono::milliseconds timeout) {
+std::string send_rcon(const PacketAwareSendArgs& args, std::string_view rcon_password, std::string_view message) {
 	std::string packet = "rcon ";
 	packet += rcon_password;
 	packet += " ";
 	packet += message;
 
-	std::string response = send_connectionless(address, packet, timeout);
+	std::string response = send_connectionless(args, packet);
 
 	if (response == "print\nBad rcon_password.\n") {
 		throw Exception("Bad rcon password");
@@ -275,10 +273,21 @@ std::string send_rcon(const Address& address, std::string_view rcon_password, st
 }
 
 
-std::string get_cvar(const Address& address, std::string_view rcon_password, std::string_view cvar, std::chrono::milliseconds timeout) {
+std::string send_rcon(const SendArgs& args, std::string_view rcon_password, std::string_view message) {
+	// If the caller doesn't want to bother with packet splitting, we'll just assume that no reasonable print with more than 512 chars will happen.
+	PacketAwareSendArgs forward_args{
+		.address = args.address,
+		.timeout = args.timeout,
+		.assume_additional_packet_if_packet_bigger_than = PacketAwareSendArgs::MAX_PACKET_SIZE - 512
+	};
+	return send_rcon(forward_args, rcon_password, message);
+}
+
+
+std::string get_cvar(const SendArgs& args, std::string_view rcon_password, std::string_view cvar) {
 	// Separate implementation from get_cvars because it doesn't have the delimiter problem
 
-	std::string response = send_rcon(address, rcon_password, cvar, timeout);
+	std::string response = send_rcon(args, rcon_password, cvar);
 
 	std::smatch matches;
 	if (std::regex_match(response, matches, std::regex("print\n\".*?\" is \"(.*)\"\n"))) {
@@ -294,7 +303,7 @@ std::string get_cvar(const Address& address, std::string_view rcon_password, std
 }
 
 
-std::vector<std::string> get_cvars(const Address& address, std::string_view rcon_password, const std::vector<std::string>& cvars, std::chrono::milliseconds timeout) {
+std::vector<std::string> get_cvars(const SendArgs& args, std::string_view rcon_password, const std::vector<std::string>& cvars) {
 	// PB2 rcon tokenizing (Cmd_TokenizeString) will treat any char <= 32 as a space, so we can't use ASCII End-of-transmission-block or similar.
 	static constexpr char delimiter = '\x9C'; // latin-1 "string terminator"
 
@@ -303,7 +312,7 @@ std::vector<std::string> get_cvars(const Address& address, std::string_view rcon
 		command += "$" + cvars[i] + delimiter;
 	}
 
-	std::string response = send_rcon(address, rcon_password, command, timeout);
+	std::string response = send_rcon(args, rcon_password, command);
 	response = response.substr(6);  // "print\n"
 
 	if (std::ranges::count(response, delimiter) != cvars.size()) {
@@ -340,10 +349,17 @@ Team team_from_string(std::string_view team_string) {
 }
 
 
-std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout) {
+std::vector<Player> get_players_from_rcon_sv_players(const SendArgs& args, std::string_view rcon_password) {
 	std::vector<Player> result;
 
-	const std::string response = send_rcon(address, rcon_password, "sv players", timeout);
+	// rcon sv players : longest player line I can come up with is 69 bytes-- " 123 (1234567)] * OP (9999), XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX (b123)"
+	PacketAwareSendArgs forward_args{
+		.address = args.address,
+		.timeout = args.timeout,
+		.assume_additional_packet_if_packet_bigger_than = PacketAwareSendArgs::MAX_PACKET_SIZE - 100
+	};
+
+	const std::string response = send_rcon(forward_args, rcon_password, "sv players");
 	auto lines = response
 		| std::ranges::views::split('\n')
 		| std::ranges::views::transform([](auto&& rng) { return std::string(rng.begin(), rng.end()); });
@@ -420,8 +436,14 @@ std::vector<Player> get_players_from_rcon_sv_players(const Address& address, std
 	return result;
 }
 
-void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout) {
-	const std::string response = send_rcon(address, rcon_password, "status", timeout);
+void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const SendArgs& args, std::string_view rcon_password) {
+	// rcon status : player lines are 68 chars long -> if there's more than 68 bytes left, we must be at the end of the message
+	PacketAwareSendArgs forward_args{
+		.address = args.address,
+		.timeout = args.timeout,
+		.assume_additional_packet_if_packet_bigger_than = PacketAwareSendArgs::MAX_PACKET_SIZE - 100
+	};
+	const std::string response = send_rcon(forward_args, rcon_password, "status");
 
 	const std::regex rx(R"((\d+)\s*(\d+)\s*(\d+)\s{0,1}(.+?)\s*(\d+|CNCT)\s*(\d+\.\d+\.\d+\.\d+):(\d{1,5})\s*(\d{2,5}))");
 	//						 NUM-1	 SCORE-2 PING-3		 NAME-4	  LASTMSG-5    IP-6					PORT-7		QPORT-8
@@ -458,10 +480,17 @@ void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, 
 	}
 }
 
-void annotate_team_from_status(std::vector<Player>* players, const Address& address, std::chrono::milliseconds timeout) {
+void annotate_team_from_status(std::vector<Player>* players, const SendArgs& args) {
 	// Currently doesn't annotate bot teams as bots are not reported in connectionless status response
 
-	const std::string response = send_connectionless(address, "status", timeout);
+	// non-rcon status: stops adding player lines if that would exceed 1384 bytes // SV_StatusString, if (statusLength + playerLength >= sizeof(status))
+	PacketAwareSendArgs forward_args{
+		.address = args.address,
+		.timeout = args.timeout,
+		.assume_additional_packet_if_packet_bigger_than = PacketAwareSendArgs::MAX_PACKET_SIZE - 100
+	};
+	const std::string response = send_connectionless(forward_args, "status");
+
 	if (!response.starts_with("print\n")) {
 		throw Exception("Unexpected status response: " + response);
 	}
@@ -504,15 +533,15 @@ void annotate_team_from_status(std::vector<Player>* players, const Address& addr
 	}
 }
 
-std::vector<Player> get_players(const Address& address, std::string_view rcon_password, std::chrono::milliseconds timeout) {
-	std::vector<Player> result = get_players_from_rcon_sv_players(address, rcon_password, timeout);
+std::vector<Player> get_players(const SendArgs& args, std::string_view rcon_password) {
+	std::vector<Player> result = get_players_from_rcon_sv_players(args, rcon_password);
 	if (result.empty()) {
 		return result;
 	}
 
-	annotate_score_ping_address_from_rcon_status(&result, address, rcon_password, timeout);
+	annotate_score_ping_address_from_rcon_status(&result, args, rcon_password);
 
-	annotate_team_from_status(&result, address, timeout);
+	annotate_team_from_status(&result, args);
 
 	return result;
 }
