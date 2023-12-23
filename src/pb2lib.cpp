@@ -123,12 +123,8 @@ void UdpSocket::receive(std::vector<char>* buffer, sockaddr_in* remote_address, 
 
 SingleRemoteEndpointUdpSocket::SingleRemoteEndpointUdpSocket(const Address& remote_address) {
 	remote_address_ = static_cast<sockaddr_in>(remote_address);
+	socket_.clear_receive_queue();
 }
-
-void SingleRemoteEndpointUdpSocket::clear_receive_queue() {
-	return socket_.clear_receive_queue();
-}
-
 
 void SingleRemoteEndpointUdpSocket::send(const std::string& packet_content) {
 	return socket_.send(remote_address_, packet_content);
@@ -210,14 +206,13 @@ void AsyncHostnameResolver::thread_func(std::stop_token stop_token) {
 }
 
 
-std::string send_connectionless(const PacketAwareSendArgs& args, std::string_view message) {
-	SingleRemoteEndpointUdpSocket socket(*args.address);
-	socket.clear_receive_queue();
-
+void async_send_connectionless(SingleRemoteEndpointUdpSocket& socket, const PacketAwareSendArgs& args, std::string_view message) {
 	std::string packet_content = "\xFF\xFF\xFF\xFF";
 	packet_content += message;
 	socket.send(packet_content);
+}
 
+std::string async_receive_connectionless(SingleRemoteEndpointUdpSocket& socket, const PacketAwareSendArgs& args) {
 	std::string response = "print\n";
 	bool received_anything = false;
 
@@ -257,30 +252,38 @@ std::string send_connectionless(const PacketAwareSendArgs& args, std::string_vie
 }
 
 
-std::string send_rcon(const PacketAwareSendArgs& args, std::string_view rcon_password, std::string_view message) {
-	std::string packet = "rcon ";
-	packet += rcon_password;
-	packet += " ";
-	packet += message;
+std::string send_connectionless(const PacketAwareSendArgs& args, std::string_view message) {
+	SingleRemoteEndpointUdpSocket socket(*args.address);
 
-	std::string response = send_connectionless(args, packet);
-
-	if (response == "print\nBad rcon_password.\n") {
-		throw Exception("Bad rcon password");
-	}
-
-	return response;
+	async_send_connectionless(socket, args, message);
+	return async_receive_connectionless(socket, args);
 }
 
 
-std::string send_rcon(const SendArgs& args, std::string_view rcon_password, std::string_view message) {
+std::string make_rcon_message(std::string_view command, std::string_view rcon_password) {
+	std::string message = "rcon ";
+	message += rcon_password;
+	message += " ";
+	message += command;
+
+	return message;
+}
+
+std::string send_rcon(const SendArgs& args, std::string_view rcon_password, std::string_view command) {
 	// If the caller doesn't want to bother with packet splitting, we'll just assume that no reasonable print with more than 512 chars will happen.
 	PacketAwareSendArgs forward_args{
 		.address = args.address,
 		.timeout = args.timeout,
 		.assume_additional_packet_if_packet_bigger_than = PacketAwareSendArgs::MAX_PACKET_SIZE - 512
 	};
-	return send_rcon(forward_args, rcon_password, message);
+
+	std::string response = send_connectionless(forward_args, make_rcon_message(command, rcon_password));
+
+	if (response == "print\nBad rcon_password.\n") {
+		throw Exception("Bad rcon password");
+	}
+
+	return response;
 }
 
 
@@ -349,17 +352,9 @@ Team team_from_string(std::string_view team_string) {
 }
 
 
-std::vector<Player> get_players_from_rcon_sv_players(const SendArgs& args, std::string_view rcon_password) {
+std::vector<Player> get_players_from_rcon_sv_players_response(std::string_view response) {
 	std::vector<Player> result;
 
-	// rcon sv players : longest player line I can come up with is 69 bytes-- " 123 (1234567)] * OP (9999), XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX (b123)"
-	PacketAwareSendArgs forward_args{
-		.address = args.address,
-		.timeout = args.timeout,
-		.assume_additional_packet_if_packet_bigger_than = PacketAwareSendArgs::MAX_PACKET_SIZE - 100
-	};
-
-	const std::string response = send_rcon(forward_args, rcon_password, "sv players");
 	auto lines = response
 		| std::ranges::views::split('\n')
 		| std::ranges::views::transform([](auto&& rng) { return std::string(rng.begin(), rng.end()); });
@@ -436,21 +431,21 @@ std::vector<Player> get_players_from_rcon_sv_players(const SendArgs& args, std::
 	return result;
 }
 
-void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const SendArgs& args, std::string_view rcon_password) {
-	// rcon status : player lines are 68 chars long -> if there's more than 68 bytes left, we must be at the end of the message
-	PacketAwareSendArgs forward_args{
-		.address = args.address,
-		.timeout = args.timeout,
-		.assume_additional_packet_if_packet_bigger_than = PacketAwareSendArgs::MAX_PACKET_SIZE - 100
-	};
-	const std::string response = send_rcon(forward_args, rcon_password, "status");
+std::vector<Player> get_players_from_rcon_sv_players(const SendArgs& args, std::string_view rcon_password) {
+	std::string response = send_rcon(args, rcon_password, "sv players");
+	return get_players_from_rcon_sv_players_response(response);
+}
 
+void annotate_score_ping_address_from_rcon_status_response(std::vector<Player>* players, std::string_view response) {
 	const std::regex rx(R"((\d+)\s*(\d+)\s*(\d+)\s{0,1}(.+?)\s*(\d+|CNCT)\s*(\d+\.\d+\.\d+\.\d+):(\d{1,5})\s*(\d{2,5}))");
 	//						 NUM-1	 SCORE-2 PING-3		 NAME-4	  LASTMSG-5    IP-6					PORT-7		QPORT-8
 
-	for(auto it = std::sregex_iterator(response.begin(), response.end(), rx); it != std::sregex_iterator(); ++it) {
-		const std::smatch match = *it;
-		const std::string name = match[4];
+	using ItT = std::regex_iterator<std::string_view::const_iterator>;
+	using MatchT = std::match_results<std::string_view::const_iterator>;
+
+	for(auto it = ItT(response.begin(), response.end(), rx); it != ItT{}; ++it) {
+		const MatchT match = *it;
+		const std::string name = match[4].str();
 		const int number = std::stoi(match[1]);
 		if (name == "CNCT") {
 			continue;
@@ -480,32 +475,28 @@ void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, 
 	}
 }
 
-void annotate_team_from_status(std::vector<Player>* players, const SendArgs& args) {
+void annotate_team_from_status_response(std::vector<Player>* players, std::string_view response) {
 	// Currently doesn't annotate bot teams as bots are not reported in connectionless status response
 
-	// non-rcon status: stops adding player lines if that would exceed 1384 bytes // SV_StatusString, if (statusLength + playerLength >= sizeof(status))
-	PacketAwareSendArgs forward_args{
-		.address = args.address,
-		.timeout = args.timeout,
-		.assume_additional_packet_if_packet_bigger_than = PacketAwareSendArgs::MAX_PACKET_SIZE - 100
-	};
-	const std::string response = send_connectionless(forward_args, "status");
-
 	if (!response.starts_with("print\n")) {
-		throw Exception("Unexpected status response: " + response);
+		throw Exception("Unexpected status response: " + std::string(response));
 	}
 
-	std::string serverinfo = response.substr("print\n"s.size());
+	std::string_view serverinfo = response.substr("print\n"sv.size());
 	serverinfo = serverinfo.substr(0, serverinfo.find('\n'));
 
 	const std::regex rx(R"((?:^|\\)p([byrpo])\\((\!\d+)+)(?:$|\\))");
-	for (auto it = std::sregex_iterator(serverinfo.begin(), serverinfo.end(), rx); it != std::sregex_iterator{}; ++it) {
-		const std::smatch match = *it;
 
-		const std::string team_string = match[1];
+	using ItT = std::regex_iterator<std::string_view::const_iterator>;
+	using MatchT = std::match_results<std::string_view::const_iterator>;
+
+	for (auto it = ItT(serverinfo.begin(), serverinfo.end(), rx); it != ItT{}; ++it) {
+		const MatchT match = *it;
+
+		const std::string team_string = match[1].str();
 		const Team team = team_from_string(team_string);
 
-		const std::string concatenated_numbers = match[2];
+		const std::string concatenated_numbers = match[2].str();
 		auto number_strings = concatenated_numbers
 			| std::ranges::views::split('!')
 			| std::ranges::views::transform([](auto&& rng) { return std::string(rng.begin(), rng.end()); })
@@ -534,14 +525,27 @@ void annotate_team_from_status(std::vector<Player>* players, const SendArgs& arg
 }
 
 std::vector<Player> get_players(const SendArgs& args, std::string_view rcon_password) {
-	std::vector<Player> result = get_players_from_rcon_sv_players(args, rcon_password);
-	if (result.empty()) {
-		return result;
-	}
+	// rcon sv players : longest player line I can come up with is 69 bytes-- " 123 (1234567)] * OP (9999), XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX (b123)"
+	// rcon status : player lines are 68 chars long -> if there's more than 68 bytes left, we must be at the end of the message
+	// non-rcon status: stops adding player lines if that would exceed 1384 bytes // SV_StatusString, if (statusLength + playerLength >= sizeof(status))
+	PacketAwareSendArgs forward_args{
+		.address = args.address,
+		.timeout = args.timeout,
+		.assume_additional_packet_if_packet_bigger_than = PacketAwareSendArgs::MAX_PACKET_SIZE - 100
+	};
 
-	annotate_score_ping_address_from_rcon_status(&result, args, rcon_password);
+	SingleRemoteEndpointUdpSocket rcon_sv_players_socket(*args.address);
+	async_send_connectionless(rcon_sv_players_socket, forward_args, make_rcon_message("sv players", rcon_password));
 
-	annotate_team_from_status(&result, args);
+	SingleRemoteEndpointUdpSocket rcon_status_socket(*args.address);
+	async_send_connectionless(rcon_status_socket, forward_args, make_rcon_message("status", rcon_password));
+
+	SingleRemoteEndpointUdpSocket status_socket(*args.address);
+	async_send_connectionless(status_socket, forward_args, "status");
+
+	std::vector<Player> result = get_players_from_rcon_sv_players_response(async_receive_connectionless(rcon_sv_players_socket, forward_args));
+	annotate_score_ping_address_from_rcon_status_response(&result, async_receive_connectionless(rcon_status_socket, forward_args));
+	annotate_team_from_status_response(&result, async_receive_connectionless(status_socket, forward_args));
 
 	return result;
 }

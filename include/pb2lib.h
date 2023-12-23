@@ -111,7 +111,6 @@ public:
 	SingleRemoteEndpointUdpSocket& operator=(const SingleRemoteEndpointUdpSocket&) = delete;
 	SingleRemoteEndpointUdpSocket& operator=(SingleRemoteEndpointUdpSocket&&) = delete;
 
-	void clear_receive_queue(void);
 	void send(const std::string& packet_content);
 	void receive(std::vector<char>* buffer, std::chrono::milliseconds timeout);
 
@@ -161,8 +160,9 @@ struct PacketAwareSendArgs {
 	size_t assume_additional_packet_if_packet_bigger_than = 0;
 };
 
+void async_send_connectionless(SingleRemoteEndpointUdpSocket& socket, const PacketAwareSendArgs& args, std::string_view message);
+std::string async_receive_connectionless(SingleRemoteEndpointUdpSocket& socket, const PacketAwareSendArgs& args);
 std::string send_connectionless(const PacketAwareSendArgs& args, std::string_view message);
-std::string send_rcon(const PacketAwareSendArgs& args, std::string_view rcon_password, std::string_view message);
 
 
 struct SendArgs {
@@ -170,14 +170,18 @@ struct SendArgs {
 	std::chrono::milliseconds timeout;
 };
 std::string send_rcon(const SendArgs& args, std::string_view rcon_password, std::string_view message);
+std::string make_rcon_message(std::string_view command, std::string_view rcon_password);
 
 std::string get_cvar(const SendArgs& args, std::string_view rcon_password, std::string_view cvar);
 std::vector<std::string> get_cvars(const SendArgs& args, std::string_view rcon_password, const std::vector<std::string>& cvars);
 
-// TODO: Send/receive asynchronously
+
 std::vector<Player> get_players_from_rcon_sv_players(const SendArgs& args, std::string_view rcon_password);
-void annotate_score_ping_address_from_rcon_status(std::vector<Player>* players, const SendArgs& args, std::string_view rcon_password);
-void annotate_team_from_status(std::vector<Player>* players, const SendArgs& args);
+std::vector<Player> get_players_from_rcon_sv_players_response(std::string_view response);
+
+void annotate_score_ping_address_from_rcon_status_response(std::vector<Player>* players, std::string_view response);
+void annotate_team_from_status_response(std::vector<Player>* players, std::string_view response);
+
 std::vector<Player> get_players(const SendArgs& args, std::string_view rcon_password);
 
 }
