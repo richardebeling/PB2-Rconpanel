@@ -177,6 +177,7 @@ constexpr UINT WM_RCONRESPONSEREADY = WM_USER + 8;
 constexpr UINT WM_HOSTNAMEREADY = WM_USER + 9;
 constexpr UINT WM_SERVERLISTREADY = WM_USER + 10;
 constexpr UINT WM_AUTOKICKENTRYADDED = WM_USER + 11;
+constexpr UINT WM_WRITECONSOLE = WM_USER + 12;
 
 //--------------------------------------------------------------------------------------------------
 // Main Window
@@ -191,7 +192,7 @@ void MainWindowRefetchServerInfo();
 void MainWindowSendRcon(const std::string& command);
 
 Server* MainWindowGetSelectedServerOrLoggedNull() noexcept;
-void MainWindowWriteConsole(std::string_view) noexcept;
+void MainWindowWriteConsole(std::string_view);
 void LoadBannedIPsToListbox(HWND hListBox);
 void LoadRotationToListbox(HWND hListBox);
 void ShowAboutDialog(HWND hwnd);

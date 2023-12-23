@@ -285,6 +285,14 @@ int WINAPI WinMain (HINSTANCE hThisInstance, HINSTANCE hPrevInstance, PSTR lpszA
 
 // TODO: Namespacing instead of function name prefixing
 
+void MainWindowWriteConsole(std::string_view message) {
+	// May be called by multiple threads, asynchronously, or even before the window finished initializing
+
+	assert(gWindows.hWinMain != NULL);
+	auto* str = new std::string(message);
+	PostMessage(gWindows.hWinMain, WM_WRITECONSOLE, 0, (LPARAM)str);
+}
+
 void MainWindowLogExceptionsToConsole(std::function<void()> func, std::string_view action_description) {
 	try {
 		func();
@@ -544,41 +552,6 @@ void MainWindowRefetchServerInfo() {
 	g_FetchServerCvarsFuture = cvars_promise.get_future();
 	std::jthread fetch_cvars_thread(fetch_cvars_thread_function, std::move(cvars_promise), *server, gWindows.hWinMain, gSettings.timeout);
 	fetch_cvars_thread.detach();
-}
-
-void MainWindowWriteConsole(const std::string_view str) noexcept { // prints text to gWindows.hEditConsole, adds timestamp and linebreak
-	// may be called by multiple threads, shouldn't intermingle output
-	static std::mutex mutex;
-	std::lock_guard guard(mutex);
-
-	auto const time = std::chrono::time_point_cast<std::chrono::seconds>(
-		std::chrono::current_zone()->to_local(std::chrono::system_clock::now())
-	);
-	std::string formatted = std::format("[{:%H:%M:%S}] {}", time, str); 
-
-	if (formatted.ends_with('\n')) {
-		formatted = formatted.substr(0, formatted.find_last_not_of('\n') + 1); // remove trailing newlines
-	}
-	formatted = std::regex_replace(formatted, std::regex{"\n"}, "\n---------> "); // indent text after line ending
-	formatted = std::regex_replace(formatted, std::regex{"\n"}, "\r\n");
-
-	SendMessage(gWindows.hEditConsole, WM_SETREDRAW, FALSE, 0);
-
-	Edit_RestoreSelectionAndScrollAfter(gWindows.hEditConsole, [&]() {
-		auto length = Edit_GetTextLength(gWindows.hEditConsole);
-		if (0 != length) {
-			formatted = "\r\n" + formatted;
-		}
-
-		Edit_SetSel(gWindows.hEditConsole, length, length);
-		Edit_ReplaceSel(gWindows.hEditConsole, formatted.c_str());
-		return 0;
-	});
-
-	if (gSettings.bLimitConsoleLineCount)
-		Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
-
-	SendMessage(gWindows.hEditConsole, WM_SETREDRAW, TRUE, 0);
 }
 
 //}-------------------------------------------------------------------------------------------------
@@ -1015,6 +988,41 @@ void OnMainWindowHostnameReady(Server* server_instance) {
 	}
 }
 
+void OnMainWindowWriteConsole(std::string* str) noexcept {
+	// prints text to gWindows.hEditConsole, adds timestamp and linebreak
+	// only called from main thread when handling a WM_WRITECONSOLE message
+
+	auto const time = std::chrono::time_point_cast<std::chrono::seconds>(
+		std::chrono::current_zone()->to_local(std::chrono::system_clock::now())
+	);
+	std::string formatted = std::format("[{:%H:%M:%S}] {}", time, *str);
+	delete str;
+
+	if (formatted.ends_with('\n')) {
+		formatted = formatted.substr(0, formatted.find_last_not_of('\n') + 1); // remove trailing newlines
+	}
+	formatted = std::regex_replace(formatted, std::regex{"\n"}, "\n---------> "); // indent text after line ending
+	formatted = std::regex_replace(formatted, std::regex{"\n"}, "\r\n");
+
+	SendMessage(gWindows.hEditConsole, WM_SETREDRAW, FALSE, 0);
+
+	Edit_RestoreSelectionAndScrollAfter(gWindows.hEditConsole, [&]() {
+		auto length = Edit_GetTextLength(gWindows.hEditConsole);
+		if (0 != length) {
+			formatted = "\r\n" + formatted;
+		}
+
+		Edit_SetSel(gWindows.hEditConsole, length, length);
+		Edit_ReplaceSel(gWindows.hEditConsole, formatted.c_str());
+		return 0;
+		});
+
+	if (gSettings.bLimitConsoleLineCount)
+		Edit_ReduceLines(gWindows.hEditConsole, gSettings.iMaxConsoleLineCount);
+
+	SendMessage(gWindows.hEditConsole, WM_SETREDRAW, TRUE, 0);
+}
+
 void OnMainWindowDestroy(HWND hwnd)
 {
 	SaveConfig();
@@ -1412,6 +1420,7 @@ LRESULT CALLBACK WindowProcedure (HWND hwnd, UINT message, WPARAM wParam, LPARAM
 		case WM_SERVERCVARSREADY: OnMainWindowServerCvarsReady(); return 0;
 		case WM_RCONRESPONSEREADY: OnMainWindowRconResponseReady(); return 0;
 		case WM_HOSTNAMEREADY: OnMainWindowHostnameReady((Server*)lParam); return 0;
+		case WM_WRITECONSOLE: OnMainWindowWriteConsole((std::string*)lParam); return 0;
 	}
 
 	return DefWindowProc(hwnd, message, wParam, lParam);
